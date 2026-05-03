@@ -1,0 +1,238 @@
+# Proposed amendment to specs/spec-format.yaml.
+#
+# Status:    proposed
+# Date:      2026-05-03
+# Surfaced by:
+#   - Audit of specs/overview.yaml against spec-format.yaml
+#   - Audit of specs/storage.yaml against spec-format.yaml
+#   - Audit of specs/execution.yaml against spec-format.yaml
+#
+# All proposed changes are ADDITIVE (new sub-requirements, additions to
+# enumerated lists). No existing requirement text is rewritten in a way
+# that changes its meaning, so spec-format.COMPAT.1 ("v1 spec format is
+# frozen once published — no removal of recognized keys, no semantic
+# changes to existing fields") is preserved. Treat this as defect-fix
+# clarifications of ambiguous corners, not a schema bump.
+#
+# Once accepted, fold into spec-format.yaml under the indicated
+# requirement IDs and bump spec-format.metadata.updated_at.
+
+amendment_for: spec-format
+amendment_date: 2026-05-03
+state: proposed
+
+summary: |
+  Three schema gaps were found by auditing three real specs (overview,
+  storage, execution) against the current spec-format.yaml. In every
+  case the existing specs use a pattern the format does not explicitly
+  bless. Rather than rewrite the 14 existing specs, this amendment
+  legitimizes the patterns the human author already used:
+
+    GAP A — Short-form ACID references within a single spec.
+            Tasks like `references: [SYS.1, SYS.2]` work in practice
+            but are not literal ACIDs by ACID.1's definition.
+            Resolved by adding ACID.1.1 + TASK.3.1 specifying short
+            form and the validator's resolution rule.
+
+    GAP B — Constraint objects use `description`, not `name`.
+            Every constraints block in every existing spec has fields
+            like `description: "Engineering invariants ..."`. CONST.1
+            says constraints have "the same shape as components", but
+            components.COMP.2 mandates `name`. The existing specs are
+            wrong by literal reading; the format is more useful if
+            this asymmetry is explicit. Resolved by adding CONST.3.
+
+    GAP C — Component IDs containing hyphens.
+            execution.yaml uses `EXEC-SCOPE`, `EXEC-CONC`, `EXEC-CRED`.
+            COMP.1's example list is `(e.g. AUTH, RUN)` — pure letters.
+            Resolved by adding COMP.1.1 making the allowed character
+            set explicit.
+
+  Plus a small EXTRA.2 list addition to bless `extra.notes`, which
+  appears in 3 of 14 existing specs (overview, execution, spec-format
+  itself).
+
+migration_impact: |
+  No content changes required in any of the 14 existing specs. They
+  already use the patterns this amendment legitimizes. The validator
+  implementation (build-order step 3) targets the amended schema.
+
+changes:
+
+  - id: gap-a-short-form-acid
+    title: Allow short-form ACID references within the same spec
+    affects: [ACID.1, TASK.3]
+    rationale: |
+      Inside one spec, every cross-reference is to another requirement
+      in the same spec. Forcing the author to type `overview.SYS.1`
+      inside overview.yaml's own tasks block is busywork and obscures
+      the ID. Every real spec in the repository already uses bare
+      `<COMPONENT>.<requirement-id>` for self-references; this
+      amendment makes that the documented form rather than an
+      undocumented convention.
+
+      Cross-spec references still require the full ACID — there is no
+      ambiguity to resolve when a reference points outside the current
+      spec, and dropping the prefix there would force the validator to
+      guess.
+
+      The validator's resolution rule is therefore: a reference token
+      with two dot-separated segments (`<COMPONENT>.<id>`) is a
+      short-form reference and the spec's own `metadata.id` supplies
+      the missing prefix; a token with three or more segments is
+      already fully-qualified and is taken verbatim.
+
+    edits:
+
+      - target: ACID
+        kind: add-sub-requirement
+        new_id: "1.1"
+        new_text: |
+          Within the body of a spec, references to that spec's own
+          requirements MAY omit the `<spec.id>.` prefix and use the
+          short form `<COMPONENT>.<requirement-id>`. The validator
+          resolves the prefix from the enclosing `metadata.id`.
+          Cross-spec references MUST use the fully-qualified form.
+
+      - target: TASK
+        kind: add-sub-requirement
+        new_id: "3.1"
+        new_text: |
+          References inside `tasks[].references` may use either
+          fully-qualified ACIDs or the short form defined in
+          `spec-format.ACID.1.1`; mixing the two forms in the same
+          list is permitted.
+
+  - id: gap-b-constraint-description-field
+    title: Make explicit that constraint objects use `description`, not `name`
+    affects: [CONST.1, COMP.2]
+    rationale: |
+      CONST.1 says constraints have "the same shape as `components`",
+      but `components`.`COMP.2` requires a `name` field. Every existing
+      constraints block uses `description` instead — overview.ENG,
+      overview.SEC, storage.COMPAT, execution.EXEC-SCOPE, etc. The
+      mismatch comes from a real semantic distinction: a component is
+      a thing (it has a name); a constraint is a rule (it has a
+      description of what the rule covers). Make the asymmetry
+      explicit so the validator and the human author agree.
+
+      `name` on components stays unchanged. `description` on constraint
+      objects is added as an explicit additive sub-requirement on
+      CONST. The "same shape" wording in CONST.1 is preserved as the
+      outer shape (mapping of uppercase ID -> object with a
+      `requirements` mapping); only the per-block label field differs.
+
+    edits:
+
+      - target: CONST
+        kind: add-requirement
+        new_id: "3"
+        new_text: |
+          Each constraint object has a `description` field (a free-form
+          string explaining the rule's scope) and a `requirements`
+          mapping. The outer shape mirrors a component object except
+          that constraint objects use `description` where component
+          objects use `name`; both fields are required by their
+          respective objects, and Markdown is permitted in both.
+
+  - id: gap-c-hyphenated-component-ids
+    title: Allow hyphens in component and constraint IDs
+    affects: [COMP.1]
+    rationale: |
+      `execution.yaml` declares constraint IDs `EXEC-SCOPE`,
+      `EXEC-CONC`, `EXEC-CRED`. These read better as compound
+      identifiers than the no-hyphen alternatives (`EXECSCOPE` is
+      ambiguous; `EXEC` + numeric suffixes lose semantic grouping).
+      The format's example list `(e.g. AUTH, RUN)` is not exhaustive
+      but is the only cue, and it implies pure letters. Lock the
+      character set explicitly.
+
+      Hyphens are already allowed in requirement IDs (REQ.1 lists
+      `2-note` as an example), so allowing them in component IDs
+      keeps the lexicon consistent.
+
+    edits:
+
+      - target: COMP
+        kind: add-sub-requirement
+        new_id: "1.1"
+        new_text: |
+          Component IDs use uppercase ASCII letters, optionally
+          joined by hyphens (e.g. `AUTH`, `RUN`, `EXEC-SCOPE`). No
+          lowercase letters, digits, or other characters are
+          permitted in a component ID. The same rule applies to
+          constraint group IDs.
+
+  - id: minor-bless-extra-notes
+    title: Add `notes` to the conventional `extra` keys list
+    affects: [EXTRA.2]
+    rationale: |
+      `extra.notes` appears in overview.yaml, execution.yaml, and
+      spec-format.yaml itself. It is the most-used `extra` field
+      after `owners` and `related_specs`. EXTRA.1 already covers it
+      under "project-defined fields" so no semantic change is needed,
+      but blessing it as conventional aligns the format with how the
+      v1 specs actually use it.
+
+    edits:
+
+      - target: EXTRA
+        kind: replace-requirement-text
+        requirement_id: "2"
+        replaced_meaning: false
+        rationale_for_no_meaning_change: |
+          The current text uses "include" — an open-ended list. Adding
+          `notes` to that list does not retract or alter the existing
+          conventional keys; it only documents an additional one. This
+          is an additive amplification of an open-ended enumeration,
+          not a redefinition.
+        current_text: |
+          Common conventional keys include `owners` (list of handles),
+          `related_specs` (list of spec IDs), and `template` (boolean
+          marking a template spec)
+        new_text: |
+          Common conventional keys include `owners` (list of handles),
+          `related_specs` (list of spec IDs), `notes` (free-form
+          Markdown string for trailing prose), and `template` (boolean
+          marking a template spec)
+
+verification:
+  - existing_spec: overview.yaml
+    notes: |
+      `references: [SYS.1, SYS.2]` and similar — covered by GAP A.
+      `constraints.ENG.description` and `constraints.SEC.description`
+      — covered by GAP B. `extra.notes` — covered by minor lock-in.
+  - existing_spec: storage.yaml
+    notes: |
+      `constraints.COMPAT.description` — covered by GAP B. All
+      task `references` use short-form — covered by GAP A.
+  - existing_spec: execution.yaml
+    notes: |
+      Constraint IDs `EXEC-SCOPE`, `EXEC-CONC`, `EXEC-CRED` —
+      covered by GAP C. Constraint blocks use `description` —
+      covered by GAP B. Tasks use short-form references — covered
+      by GAP A. `extra.notes` — covered by minor lock-in.
+  - existing_spec: spec-format.yaml
+    notes: |
+      Self-affected: tasks use short-form `references` (GAP A);
+      constraint COMPAT uses `description` (GAP B); `extra.notes`
+      present (minor lock-in).
+
+open_questions:
+  - id: future-strict-vs-lenient
+    text: |
+      Should the validator's lenient mode also accept fully-qualified
+      ACIDs that name a non-existent spec, treating them as dangling
+      warnings rather than errors? The current VAL.3 says dangling
+      refs are flagged; the strict-vs-lenient interaction is not yet
+      specified for the dangling case. Resolve in the validator
+      implementation task, not here.
+
+extra:
+  authors: [claude]
+  follow_up: |
+    On signoff, fold the four edits into spec-format.yaml at the
+    indicated requirement IDs, bump metadata.updated_at to the
+    accepted date, and delete this proposal file (or keep under
+    specs/_proposed/_accepted/ for traceability — to be decided
+    when proposal lifecycle is fleshed out).
