@@ -156,45 +156,53 @@ func (c *Client) Pull(ctx context.Context, since string, fn func(eventlog.Record
 	return count, nil
 }
 
-// SyncResult is the combined outcome of Sync (Pull then Push).
-type SyncResult struct {
-	Pulled int
-	Push   PushResult
+// RunArgs is the per-call configuration for the half- and full-sync
+// operations that wrap the watermark + log dance around HTTP calls.
+type RunArgs struct {
+	WorkspaceRoot string
+	Remote        string
+	EventsLogPath string
 }
 
-// Sync pushes local events past the watermark, then pulls anything
-// new from the server, then saves the advanced watermark
-// (sync.CLIENT.3).
-//
-// The push-first ordering is what makes the algorithm correct
-// against a single non-empty side: a fresh local syncing into a
-// non-empty server skips the push (no local events past empty
-// watermark) and pulls everything; a non-empty local syncing into a
-// fresh server pushes everything; both-sides-non-empty diverges and
-// returns *ConflictError, which the rebase engine (sync.GIT.*)
-// consumes once it lands.
-func (c *Client) Sync(ctx context.Context, workspaceRoot, remote string, eventsLogPath string) (SyncResult, error) {
-	wm, err := LoadWatermark(workspaceRoot, remote)
+// PushOnly is the push half of Sync. Reads events past the watermark,
+// pushes them, and on success advances the watermark and saves it.
+// Returns a zero-Accepted PushResult when there is nothing to push,
+// so callers can branch on Accepted == 0 without special-casing.
+func (c *Client) PushOnly(ctx context.Context, args RunArgs) (PushResult, error) {
+	wm, err := LoadWatermark(args.WorkspaceRoot, args.Remote)
 	if err != nil {
-		return SyncResult{}, err
+		return PushResult{}, err
 	}
+	tail, err := readEventsAfter(args.EventsLogPath, wm.LastAckedEventID)
+	if err != nil {
+		return PushResult{}, err
+	}
+	if len(tail) == 0 {
+		return PushResult{HeadID: wm.LastAckedEventID}, nil
+	}
+	push, err := c.Push(ctx, wm.LastAckedEventID, tail)
+	if err != nil {
+		return PushResult{}, err
+	}
+	wm.LastAckedEventID = push.HeadID
+	wm.AckedAt = time.Now().UTC()
+	if err := SaveWatermark(args.WorkspaceRoot, wm); err != nil {
+		return push, err
+	}
+	return push, nil
+}
 
-	var push PushResult
-	tail, err := readEventsAfter(eventsLogPath, wm.LastAckedEventID)
+// PullOnly is the pull half of Sync. Streams events past the
+// watermark into the local events.log, advancing the watermark to
+// the last received event id on success.
+func (c *Client) PullOnly(ctx context.Context, args RunArgs) (int, error) {
+	wm, err := LoadWatermark(args.WorkspaceRoot, args.Remote)
 	if err != nil {
-		return SyncResult{}, err
+		return 0, err
 	}
-	if len(tail) > 0 {
-		push, err = c.Push(ctx, wm.LastAckedEventID, tail)
-		if err != nil {
-			return SyncResult{}, err
-		}
-		wm.LastAckedEventID = push.HeadID
-	}
-
-	logWriter, err := openAppend(eventsLogPath)
+	logWriter, err := openAppend(args.EventsLogPath)
 	if err != nil {
-		return SyncResult{Push: push}, err
+		return 0, err
 	}
 	defer logWriter.Close()
 	var newHead string
@@ -206,17 +214,43 @@ func (c *Client) Sync(ctx context.Context, workspaceRoot, remote string, eventsL
 		return nil
 	})
 	if err != nil {
-		return SyncResult{Push: push, Pulled: pulled}, err
+		return pulled, err
 	}
 	if newHead != "" {
 		wm.LastAckedEventID = newHead
+		wm.AckedAt = time.Now().UTC()
+		if err := SaveWatermark(args.WorkspaceRoot, wm); err != nil {
+			return pulled, err
+		}
 	}
+	return pulled, nil
+}
 
-	wm.AckedAt = time.Now().UTC()
-	if err := SaveWatermark(workspaceRoot, wm); err != nil {
-		return SyncResult{Pulled: pulled, Push: push}, err
+// SyncResult is the combined outcome of Sync.
+type SyncResult struct {
+	Pulled int
+	Push   PushResult
+}
+
+// Sync runs PushOnly then PullOnly against the configured remote
+// (sync.CLIENT.3). The push-first ordering keeps watermark
+// advancement clean: a fresh local syncing into a non-empty server
+// skips the push and pulls everything; a non-empty local syncing
+// into a fresh server pushes everything; both-non-empty returns
+// *ConflictError, surfacing the divergence for the rebase engine
+// (sync.GIT.*) to handle.
+func (c *Client) Sync(ctx context.Context, workspaceRoot, remote string, eventsLogPath string) (SyncResult, error) {
+	args := RunArgs{
+		WorkspaceRoot: workspaceRoot,
+		Remote:        remote,
+		EventsLogPath: eventsLogPath,
 	}
-	return SyncResult{Pulled: pulled, Push: push}, nil
+	push, err := c.PushOnly(ctx, args)
+	if err != nil {
+		return SyncResult{Push: push}, err
+	}
+	pulled, err := c.PullOnly(ctx, args)
+	return SyncResult{Push: push, Pulled: pulled}, err
 }
 
 // scanSSE parses Server-Sent Events emitted by /sync/events GET and

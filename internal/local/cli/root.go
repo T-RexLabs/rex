@@ -62,6 +62,9 @@ for each command group.`,
 	root.AddCommand(newRunCmd())
 	root.AddCommand(newHooksCmd())
 	root.AddCommand(newStatusCmd())
+	root.AddCommand(newSyncCmd())
+	root.AddCommand(newPushCmd())
+	root.AddCommand(newPullCmd())
 
 	return root
 }
