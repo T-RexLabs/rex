@@ -60,6 +60,98 @@ func TestStatusJSON(t *testing.T) {
 	}
 }
 
+func TestStatusReportsZeroRemotesByDefault(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "wr", "--name", "WR"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	out, err := executeCommand(t, "status", "--workspace", dir)
+	if err != nil {
+		t.Fatalf("status: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "remotes:     none") {
+		t.Fatalf("expected 'remotes: none' line: %s", out)
+	}
+}
+
+func TestStatusListsRemotesWithDraftCounts(t *testing.T) {
+	t.Parallel()
+
+	_, hs := startCentral(t)
+	dir := t.TempDir()
+	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "rs", "--name", "RS"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	// Push the workspace.created event to seed a watermark.
+	if _, err := executeCommand(t, "push",
+		"--workspace", dir, "--url", hs.URL, "--remote", "primary",
+	); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+	// Run a shell command so there are drafts past the watermark.
+	if _, err := executeCommand(t, "run", "start",
+		"--workspace", dir, "--shell", "true", "--run-id", "rs-run",
+	); err != nil {
+		t.Fatalf("run start: %v", err)
+	}
+
+	out, err := executeCommand(t, "status", "--workspace", dir)
+	if err != nil {
+		t.Fatalf("status: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "remotes:") {
+		t.Fatalf("missing remotes section: %s", out)
+	}
+	if !strings.Contains(out, "primary") {
+		t.Fatalf("missing primary remote line: %s", out)
+	}
+	// 4 draft events from `run start` (run.started + node.started +
+	// node.succeeded + run.completed).
+	if !strings.Contains(out, "4") {
+		t.Fatalf("expected 4 drafts: %s", out)
+	}
+}
+
+func TestStatusJSONRemotesIsArray(t *testing.T) {
+	t.Parallel()
+
+	_, hs := startCentral(t)
+	dir := t.TempDir()
+	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "rj", "--name", "RJ"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if _, err := executeCommand(t, "push",
+		"--workspace", dir, "--url", hs.URL, "--remote", "primary",
+	); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+
+	out, err := executeCommand(t, "status", "--workspace", dir, "--json")
+	if err != nil {
+		t.Fatalf("status --json: %v\n%s", err, out)
+	}
+	var v map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &v); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	remotes, ok := v["remotes"].([]any)
+	if !ok {
+		t.Fatalf("remotes should be []any, got %T (%v)", v["remotes"], v["remotes"])
+	}
+	if len(remotes) != 1 {
+		t.Fatalf("remotes len: got %d want 1 (%v)", len(remotes), remotes)
+	}
+	r0 := remotes[0].(map[string]any)
+	if r0["name"] != "primary" {
+		t.Fatalf("remote[0].name: got %v", r0["name"])
+	}
+	if r0["drafts"].(float64) != 0 {
+		t.Fatalf("remote[0].drafts: got %v want 0", r0["drafts"])
+	}
+}
+
 func TestStatusFailsWithoutWorkspace(t *testing.T) {
 	t.Parallel()
 
