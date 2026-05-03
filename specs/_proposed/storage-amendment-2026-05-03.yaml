@@ -1,0 +1,86 @@
+# Proposed amendment to specs/storage.yaml.
+#
+# Status:    proposed
+# Date:      2026-05-03
+# Surfaced by:
+#   - Pre-implementation review of sync.yaml against the storage layer
+#     already shipped in internal/core/storage/eventlog.
+#   - Companion to specs/_proposed/sync-amendment-2026-05-03.yaml; the
+#     two changes must land together.
+#
+# This amendment adjusts only the on-disk description of the drafts/
+# directory. The canonical event store (.rex/events.log) is unchanged.
+#
+# Once accepted, fold into specs/storage.yaml at the indicated
+# requirement id and bump storage.metadata.updated_at.
+
+amendment_for: storage
+amendment_date: 2026-05-03
+state: proposed
+
+summary: |
+  Aligns storage.WS.2.12 with the sync amendment that reframes drafts
+  as per-remote watermarks rather than a separate event store.
+  Storage now describes the drafts/ directory as holding per-remote
+  watermark TOML files referencing events.log, not as an
+  event-sourced store of its own.
+
+migration_impact: |
+  Replaces an unimplemented "drafts as a separate event store"
+  obligation with a per-remote watermark file format. Existing
+  events.log code is unchanged.
+
+changes:
+
+  - id: gap-b-drafts-watermarks
+    title: Reframe `.rex/drafts/` as per-remote watermark files
+    affects: [WS.2.12]
+    rationale: |
+      The previous wording — "drafts/ — local-only events not yet
+      pushed to any remote (event-sourced once committed)" — implied
+      a separate event store and a "promote-draft-to-event" code
+      path. The companion sync amendment establishes that drafts
+      are per-remote watermarks over the canonical events.log. This
+      amendment updates storage to describe that file shape.
+
+    edits:
+
+      - target: WS
+        kind: replace-requirement-text
+        requirement_id: "2.12"
+        replaced_meaning: false
+        rationale_for_no_meaning_change: |
+          The user-visible semantic ("things that haven't been
+          pushed are drafts") is unchanged. The on-disk
+          representation changes from a separate event store to a
+          per-remote watermark file referencing the canonical
+          events.log.
+        current_text: |
+          `drafts/` — local-only events not yet pushed to any
+          remote (event-sourced once committed)
+        new_text: |
+          `drafts/<remote>.toml` — per-remote watermark files
+          (local-only, never synced); each file records the
+          highest event-id from `events.log` that the named
+          remote has acknowledged (`last_acked_event_id`) plus
+          the timestamp of that acknowledgement. Events in
+          `events.log` past that id are drafts for that remote
+          per `sync.DRAFT.1`. The canonical event store remains
+          `events.log`; this directory holds bookkeeping only
+
+verification:
+  - existing_implementation: internal/core/storage/eventlog
+    notes: |
+      Unaffected. The watermark files are read/written by the
+      sync engine, not by the eventlog package.
+  - companion: specs/_proposed/sync-amendment-2026-05-03.yaml
+    notes: |
+      Sync amendment GAP B carries the matching DRAFT.1 update.
+      Land both together.
+
+extra:
+  authors: [claude]
+  follow_up: |
+    On signoff, fold the edit into specs/storage.yaml at WS.2.12,
+    bump metadata.updated_at, and move this proposal file to
+    specs/_proposed/_accepted/.

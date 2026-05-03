@@ -1,0 +1,206 @@
+# Proposed amendment to specs/sync.yaml.
+#
+# Status:    proposed
+# Date:      2026-05-03
+# Surfaced by:
+#   - Pre-implementation review of sync.yaml against the storage layer
+#     already shipped in internal/core/storage/eventlog.
+#   - Sequencing discussion for build-order step 5 (Sync protocol).
+#
+# Two clarifying changes. Both preserve sync.COMPAT-equivalent
+# additivity (sync.yaml does not yet define a compat block, but the
+# parent contract from overview.SYS.4 — additive evolution only —
+# applies). Treat these as defect-fixes for ambiguities surfaced by
+# trying to stand up the implementation, not as schema bumps.
+#
+# Once accepted, fold into specs/sync.yaml under the indicated
+# requirement IDs and bump sync.metadata.updated_at.
+
+amendment_for: sync
+amendment_date: 2026-05-03
+state: proposed
+
+summary: |
+  Two corrections needed before any sync code lands:
+
+    GAP A — HLC tiebreaker conflates clock and actor.
+            ORDER.1 currently reads:
+              "Every event carries a hybrid logical clock timestamp:
+               (physical_ms, logical_counter, node_id)"
+            but storage.EVENTS.2 (already implemented) records the
+            originating identity in a separate `actor` field, and
+            internal/core/storage/eventlog.HLC is a 2-tuple. Adding
+            node_id to the HLC's on-wire shape would break the
+            already-shipped event log. Resolved by reframing ORDER.1
+            and ORDER.3 so HLC stays (physical_ms, logical_counter)
+            and the cross-node tiebreaker is (HLC, actor) with a
+            "c-" / "l-" actor prefix sorting central before local.
+
+    GAP B — DRAFT.1 implies drafts are a separate event store.
+            DRAFT.1 says "drafts are stored under .rex/drafts/ until
+            the next successful push", and storage.WS.2.12 calls
+            drafts an "event-sourced once committed" file set —
+            implying drafts move from one store to another at push
+            time. That duplicates state and forces a promote step.
+            Resolved by reframing drafts as per-remote watermarks
+            over the canonical events.log: a draft for remote R is
+            any event whose id is past R's last-acknowledged id.
+            CLIENT.5's "multiple remotes" clause is what forces the
+            per-remote dimension; "draft" is a per-remote concept,
+            never a global one.
+
+migration_impact: |
+  - GAP A: zero code impact in production storage. The existing HLC
+    type stays as-is. The sync layer adopts the (HLC, actor)
+    comparator at construction time; eventlog.HLC.Less continues to
+    serve in-process ordering exactly as before.
+  - GAP B: replaces an unimplemented "drafts as a separate file"
+    obligation with a per-remote watermark file. The watermarks live
+    at .rex/drafts/<remote>.toml (one file per remote) per the
+    accompanying storage amendment; events.log is still the canonical
+    event store and is unchanged.
+
+changes:
+
+  - id: gap-a-hlc-actor-tiebreak
+    title: Move node-id tiebreaking out of HLC and onto the (HLC, actor) pair
+    affects: [ORDER.1, ORDER.3]
+    rationale: |
+      The HLC type already shipped in internal/core/storage/eventlog
+      is a 2-tuple (Wall int64, Logical uint32) per
+      storage.event-log-storage. Per overview.SYS.4 we cannot
+      retroactively add a third field to the on-wire HLC. The
+      originating node identity is already recorded in the event
+      record's `actor` field (storage.EVENTS.2) — the natural place
+      for cross-node tiebreaking.
+
+      The "central sorts before local" requirement is preserved by
+      requiring central actors to start with the literal prefix
+      "c-" and local actors to start with "l-". Lexicographic
+      comparison of actor strings then puts central before local
+      without per-comparison lookup. Implementation of the actor
+      format itself belongs to identity-and-trust.
+
+    edits:
+
+      - target: ORDER
+        kind: replace-requirement-text
+        requirement_id: "1"
+        replaced_meaning: false
+        rationale_for_no_meaning_change: |
+          The clock is still HLC; tiebreaking still uses an
+          identity dimension; central still sorts before local.
+          The change names the field already used by the storage
+          layer (actor) instead of an unshipped separate field
+          (node_id) and stays compatible with the on-wire HLC
+          type that storage.event-log-storage already locked in.
+        current_text: |
+          Every event carries a hybrid logical clock timestamp:
+          `(physical_ms, logical_counter, node_id)`
+        new_text: |
+          Every event carries a hybrid logical clock timestamp
+          `(physical_ms, logical_counter)` plus the originating
+          identity in the event record's `actor` field
+          (storage.EVENTS.2); the pair (HLC, actor) is the
+          cross-node ordering key.
+
+      - target: ORDER
+        kind: replace-requirement-text
+        requirement_id: "3"
+        replaced_meaning: false
+        rationale_for_no_meaning_change: |
+          The ordering rule's intent — total order with central
+          first — is preserved. The encoding moves from a
+          separate node_id field into a string prefix on the
+          actor: central actors start with "c-", local actors
+          start with "l-", so lex comparison puts central first
+          without a per-comparison lookup.
+        current_text: |
+          Events are ordered by `(physical_ms, logical_counter,
+          node_id)` lexicographically; ties on the first two are
+          broken by node ID with central nodes always sorting
+          before local nodes
+        new_text: |
+          Events are ordered by `(physical_ms, logical_counter,
+          actor)` lexicographically. Central actors are formed
+          with the literal prefix `c-` and local actors with the
+          prefix `l-`, so lexicographic comparison of the actor
+          field places central nodes ahead of local nodes on a
+          tie. Concrete actor format (the suffix after the
+          prefix) is owned by `identity-and-trust.yaml`.
+
+  - id: gap-b-drafts-as-watermarks
+    title: Reframe drafts as per-remote watermarks over events.log
+    affects: [DRAFT.1]
+    rationale: |
+      DRAFT.1's current wording — "stored under .rex/drafts/ until
+      the next successful push" — implies drafts are physically
+      separated from the canonical event log and moved into it on
+      push. That duplicates state and forces a "promote draft to
+      event" code path that is not actually needed: the canonical
+      events.log already holds every event the local node has
+      written; what we are missing is per-remote bookkeeping for
+      "what has the remote acknowledged so far?".
+
+      CLIENT.5's "multiple remotes" clause forces the per-remote
+      dimension — an event pushed to remote A may still be a draft
+      for remote B. Implementing drafts as per-remote watermarks
+      over events.log makes both concerns fall out cleanly: there
+      is one canonical event store, and per-remote
+      `.rex/drafts/<remote>.toml` files record `last_acked_event_id`.
+      A "draft for remote R" is any event whose id is past R's
+      acked id. The companion storage amendment updates
+      storage.WS.2.12 to match.
+
+    edits:
+
+      - target: DRAFT
+        kind: replace-requirement-text
+        requirement_id: "1"
+        replaced_meaning: false
+        rationale_for_no_meaning_change: |
+          DRAFT.1 still defines a draft as a change written to the
+          local node but not acknowledged by all remotes. The
+          on-disk shape changes from "moved into a separate
+          drafts store" to "tracked by a per-remote watermark
+          file"; the user-visible semantic ("not yet pushed") is
+          identical.
+        current_text: |
+          A draft is any change that has been written to the local
+          node but not yet acknowledged by all of its remotes;
+          drafts are stored under `.rex/drafts/` until the next
+          successful push
+        new_text: |
+          A draft is any event-sourced change written to the local
+          node but not yet acknowledged by a given remote.
+          "Draft" is a per-remote concept: an event pushed to one
+          remote may still be a draft for another. Drafts are not
+          a separate event store — the canonical store is
+          `.rex/events.log`. Per-remote watermark files at
+          `.rex/drafts/<remote>.toml` record the highest event id
+          each remote has acknowledged; events past that id are
+          drafts for that remote. See storage.WS.2.12 for the
+          on-disk shape.
+
+verification:
+  - existing_implementation: internal/core/storage/eventlog
+    notes: |
+      HLC type is unchanged by GAP A. Cross-node tiebreaking is
+      added at the sync layer when we build it; existing
+      in-process ordering via HLC.Less stays exactly as is.
+  - existing_implementation: ".rex/events.log writer/reader"
+    notes: |
+      Canonical event store is unchanged by GAP B. The drafts
+      watermark layer is new code; events.log itself is untouched.
+  - companion: specs/_proposed/storage-amendment-2026-05-03.yaml
+    notes: |
+      The storage amendment updates storage.WS.2.12 in lock-step;
+      the two amendments must land together.
+
+extra:
+  authors: [claude]
+  follow_up: |
+    On signoff, fold the four edits into specs/sync.yaml at the
+    indicated requirement IDs, bump metadata.updated_at, and move
+    this proposal file to specs/_proposed/_accepted/. The companion
+    storage amendment moves alongside.
