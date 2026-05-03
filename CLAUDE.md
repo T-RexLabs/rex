@@ -4,9 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-This repo currently contains only the v1 specifications under `specs/` plus `readme.md`. There is no Go code, no `go.mod`, no build, lint, or test tooling yet. The first implementation task (`overview.bootstrap-repo`) is to scaffold the Go module, repo layout, and CI — do not fabricate commands that do not yet exist.
+The Go module `github.com/asabla/rex` is scaffolded. Two thin-shell binaries exist as stubs: `cmd/rex` (local CLI) and `cmd/rex-central` (central server). No domain logic is implemented yet — the next task is `overview.shared-core-package`, then the build order below.
 
-Once Go scaffolding lands, update this file with the real `go build`, `go test`, `golangci-lint run`, and single-test invocations.
+### Common commands
+
+- Build both binaries: `make build` (outputs to `bin/`)
+- Run all tests: `make test` (or `make test-race`)
+- Vet: `make vet`
+- Format: `make fmt`
+- Lint: `make lint` (requires `golangci-lint` installed locally; CI runs it via `golangci/golangci-lint-action`)
+- Sync modules: `make tidy`
+- Run a single test: `go test -run TestName ./path/to/pkg` (e.g. `go test -run TestRunVersion ./cmd/rex`)
+- Run a single binary directly: `go run ./cmd/rex --version`
+
+CI lives in `.github/workflows/ci.yml` and runs build, vet, race tests, `go mod tidy` drift check, and golangci-lint on every push and PR.
 
 ## Read these first, every session
 
@@ -89,10 +100,10 @@ Captured in `readme.md` and `overview.SCOPE.*` — do not implement:
 - Central-to-central federation (local node fans out)
 - Hardware-backed key storage (software ed25519 only; signer interface leaves room for it later)
 
-## Project conventions (apply once code lands)
+## Project conventions
 
-- **Go module path:** TBD — confirm with the human before the first commit.
-- **Minimum Go version:** latest stable.
+- **Go module path:** `github.com/asabla/rex`.
+- **Go version:** pinned via `go.mod` (currently 1.22.1); CI uses `go-version-file: go.mod`. Bump in `go.mod` and CI follows.
 - **Linter:** `golangci-lint` with config at `.golangci.yml`.
 - **Tests:** stdlib `testing`. Determinism is required for sync, executor, and audit-log tests — inject time and randomness, never read the environment in test bodies (`overview.ENG.4`).
 - **Commit format:** Conventional Commits with ACID citations.
