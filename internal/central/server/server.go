@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,12 @@ import (
 	"github.com/asabla/rex/internal/core/sync/proto"
 )
 
+// hexDecodeString is a thin wrapper over encoding/hex so the
+// verifier surface stays self-contained.
+func hexDecodeString(s string) ([]byte, error) {
+	return hex.DecodeString(s)
+}
+
 // Options configure New.
 type Options struct {
 	// Keypair is the central node's signing keypair. Its
@@ -23,6 +30,13 @@ type Options struct {
 	// Store is the event store backing /sync/events. New creates
 	// an in-memory Store if nil.
 	Store *Store
+	// Keystore holds the public keys the server trusts for
+	// signature verification (sync.SEC.1). When nil or empty,
+	// verification is skipped — useful for dev/test. In production
+	// the operator passes `--keys <file>` to `rex-central serve`,
+	// which loads the keystore from a TOML file and supplies it
+	// here.
+	Keystore *Keystore
 }
 
 // Server bundles the central-node HTTP surface and the state it
@@ -32,6 +46,7 @@ type Server struct {
 	store    *Store
 	keypair  identity.Keypair
 	actor    identity.Actor
+	keystore *Keystore
 	mux      *http.ServeMux
 	stateRes proto.StateResponse
 }
@@ -57,11 +72,16 @@ func New(opts Options) (*Server, error) {
 	}
 
 	central := identity.Actor{Role: identity.RoleCentral, Fingerprint: kp.Fingerprint()}
+	keystore := opts.Keystore
+	if keystore == nil {
+		keystore = NewKeystore()
+	}
 	s := &Server{
-		store:   store,
-		keypair: kp,
-		actor:   central,
-		mux:     http.NewServeMux(),
+		store:    store,
+		keypair:  kp,
+		actor:    central,
+		keystore: keystore,
+		mux:      http.NewServeMux(),
 		stateRes: proto.StateResponse{
 			Fingerprint:     kp.Fingerprint().String(),
 			Actor:           central.String(),
@@ -84,6 +104,10 @@ func (s *Server) Actor() identity.Actor { return s.actor }
 // Store returns the underlying event store. Tests use this to
 // pre-seed records.
 func (s *Server) Store() *Store { return s.store }
+
+// Keystore returns the server's keystore for tests and admin
+// surfaces.
+func (s *Server) Keystore() *Keystore { return s.keystore }
 
 func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -119,6 +143,31 @@ func (s *Server) handleEventsPost(w http.ResponseWriter, r *http.Request) {
 	if err := json.Unmarshal(body, &req); err != nil {
 		writeError(w, http.StatusBadRequest, proto.ErrCodeBadRequest, "decode request: "+err.Error())
 		return
+	}
+
+	// Authentication first (sync.SEC.1): every event in the batch
+	// must be signed by a registered identity. Auth precedes any
+	// business-logic check so a divergence-conflict response never
+	// leaks state to an unauthorized client. When the keystore is
+	// empty we skip — that's the dev/test path with verification
+	// off.
+	if !s.keystore.Empty() {
+		for _, rec := range req.Events {
+			if err := s.verifyRecord(rec); err != nil {
+				if errors.Is(err, ErrUnknownIdentity) {
+					writeError(w, http.StatusUnauthorized, proto.ErrCodeUnauthorized,
+						"signed by unregistered identity")
+					return
+				}
+				if errors.Is(err, ErrInvalidSignature) {
+					writeError(w, http.StatusUnauthorized, proto.ErrCodeUnauthorized,
+						"signature does not verify")
+					return
+				}
+				writeError(w, http.StatusBadRequest, proto.ErrCodeBadRequest, err.Error())
+				return
+			}
+		}
 	}
 
 	// Conflict detection: the client's `since` must match our
@@ -163,6 +212,38 @@ func (s *Server) handleEventsPost(w http.ResponseWriter, r *http.Request) {
 	}
 	res.HeadID = s.store.Head()
 	writeJSON(w, http.StatusOK, res)
+}
+
+// verifyRecord checks rec's signature against the server's keystore.
+// Returns nil on success, ErrUnknownIdentity when the actor's
+// fingerprint is not registered, ErrInvalidSignature when the
+// signature is missing or does not verify, or another error for
+// malformed inputs (which surface as 400, not 401, because the
+// client made a structural mistake unrelated to authentication).
+func (s *Server) verifyRecord(rec eventlog.Record) error {
+	if rec.Actor == "" {
+		return fmt.Errorf("record has no actor")
+	}
+	actor, err := identity.ParseActor(rec.Actor)
+	if err != nil {
+		return fmt.Errorf("parse actor: %w", err)
+	}
+	if rec.Signature == "" {
+		// Missing signature is structurally indistinguishable
+		// from an invalid one — the client failed to authenticate
+		// the record. Surface as ErrInvalidSignature so the
+		// handler returns 401.
+		return fmt.Errorf("%w: record %q has no signature", ErrInvalidSignature, rec.ID)
+	}
+	canonical, err := eventlog.SigningBytes(rec)
+	if err != nil {
+		return err
+	}
+	sig, err := hexDecodeString(rec.Signature)
+	if err != nil {
+		return fmt.Errorf("%w: decode signature: %v", ErrInvalidSignature, err)
+	}
+	return s.keystore.Verify(actor.Fingerprint, canonical, sig)
 }
 
 // handleEventsGet implements sync.API.3 — stream events past a

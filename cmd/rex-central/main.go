@@ -56,6 +56,7 @@ func newServeCmd() *cobra.Command {
 	var (
 		addr            string
 		shutdownTimeout time.Duration
+		keysFile        string
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -64,11 +65,29 @@ func newServeCmd() *cobra.Command {
 127.0.0.1:8080). Honours SIGINT and SIGTERM with a graceful shutdown
 of up to --shutdown-timeout (default 15s) before forcing exit.
 
-V1 scope is the in-process minimum: in-memory event store, no auth,
-no orgs. Production deployment with Postgres/Docker is post-v0.
+When --keys <file> is set, the server loads an authorized-keys TOML
+file and verifies every pushed event's signature (sync.SEC.1).
+Records signed by unregistered fingerprints or with invalid
+signatures are rejected with 401. Without --keys, signature
+verification is skipped (dev/test path only).
+
+V1 scope is the in-process minimum: in-memory event store, no
+multi-tenancy, no orgs. Postgres/Docker production deployment is
+post-v0.
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := server.New(server.Options{})
+			opts := server.Options{}
+			if keysFile != "" {
+				ks, err := server.LoadKeystoreFile(keysFile)
+				if err != nil {
+					return err
+				}
+				opts.Keystore = ks
+				fmt.Fprintf(cmd.OutOrStdout(),
+					"loaded %d authorized key(s) from %s\n",
+					len(ks.Handles()), keysFile)
+			}
+			s, err := server.New(opts)
 			if err != nil {
 				return fmt.Errorf("build server: %w", err)
 			}
@@ -111,5 +130,6 @@ no orgs. Production deployment with Postgres/Docker is post-v0.
 	}
 	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:8080", "TCP address to listen on")
 	cmd.Flags().DurationVar(&shutdownTimeout, "shutdown-timeout", 15*time.Second, "max wait for graceful shutdown")
+	cmd.Flags().StringVar(&keysFile, "keys", "", "path to authorized-keys TOML file (signature verification off when empty)")
 	return cmd
 }
