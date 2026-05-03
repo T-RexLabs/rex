@@ -1,10 +1,13 @@
-.PHONY: all build test lint vet fmt tidy clean help
+.PHONY: help all build test test-race lint vet fmt tidy clean
 
 GO       ?= go
 BIN_DIR  ?= bin
 PKGS     := ./...
 
-all: lint test build
+# `make` with no target prints help; run `make all` for lint+test+build.
+.DEFAULT_GOAL := help
+
+all: lint test build ## Run lint, tests, and build
 
 build: ## Build all binaries into $(BIN_DIR)
 	@mkdir -p $(BIN_DIR)
@@ -33,4 +36,7 @@ clean: ## Remove build artifacts
 	rm -rf $(BIN_DIR) coverage.txt coverage.html
 
 help: ## Show this help
+	@echo "Usage: make <target>"
+	@echo
+	@echo "Targets:"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
