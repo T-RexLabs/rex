@@ -1,0 +1,116 @@
+spec_version: 1
+
+metadata:
+  id: tools
+  name: Connected tools
+  state: draft
+  created_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-03T00:00:00Z
+
+description: |
+  "Connected tools" in Rex covers two distinct primitives that share a name
+  but have different lifecycles and trust models:
+
+  - **MCP servers** — tools the harness uses during a run (filesystem, git,
+    web fetch, GitHub, Linear, etc.). The portal manages their lifecycle
+    and scoping; the harness invokes them via MCP at runtime.
+  - **App-level integrations** — services the workspace itself talks to
+    independent of any harness (incoming webhooks, Slack notifications,
+    GitHub PR sync). The portal acts on these directly.
+
+  V1 attaches MCP servers to harnesses via ACP `session/new`'s `mcpServers`
+  parameter — direct, no portal proxy at runtime. The portal-as-MCP-proxy
+  architecture (single audit chokepoint, central policy enforcement) is
+  deferred to post-v1; reliability comes first. The data model leaves
+  room for the proxy without rewrites.
+
+  Tool scoping is fine-grained from v1: a tool can be enabled for some
+  harnesses in a workspace and not others, scoped to a time window, scoped
+  to specific schedules. This is the same scope vocabulary RBAC uses.
+
+tasks:
+  - id: tool-data-model
+    description: "Define MCPServer and AppIntegration as two separate types in the data model with shared scoping fields"
+    state: todo
+    references: [MCP.1, APP.1, SCOPE.1]
+
+  - id: mcp-lifecycle
+    description: "Implement MCP server registration, credential storage, and lifecycle management (start/stop/status)"
+    state: todo
+    references: [MCP.2, MCP.3, MCP.4]
+
+  - id: mcp-attachment
+    description: "Implement MCP attachment via ACP `session/new`'s `mcpServers` parameter, applying the active scope to filter which servers attach to which run"
+    state: todo
+    references: [MCP.5, MCP.6]
+
+  - id: app-integrations
+    description: "Implement the app-integration framework with per-integration adapters for an initial set (GitHub, Slack, Linear, generic webhook)"
+    state: todo
+    references: [APP.2, APP.3, APP.4]
+
+  - id: scoping-engine
+    description: "Implement the scope evaluator shared with RBAC: per-harness, per-workspace, per-time-window, per-schedule"
+    state: todo
+    references: [SCOPE.2, SCOPE.3, SCOPE.4]
+
+components:
+
+  MCP:
+    name: MCP server primitive
+    requirements:
+      "1": "An MCP server in Rex is a registered, named, scoped reference to an MCP-protocol-speaking tool; the registration includes server type (stdio command, HTTP URL), credentials, and a scope expression"
+      "2": "MCP server registrations live in `.rex/tools/mcp-servers.yaml` (git-merged); credentials live separately in `~/.config/rex/secrets/<remote>/<workspace>/<server-name>.toml` (local-only, never synced)"
+      "3": "Adding an MCP server: `rex tools mcp add <name> --command <cmd>` for stdio servers; `rex tools mcp add <name> --url <url>` for HTTP servers"
+      "4": "Listing/showing/removing: `rex tools mcp list/show/remove`"
+      "5": "When a harness session starts, Rex resolves the active scope and passes the matching MCP server set to the harness via ACP `session/new`'s `mcpServers` parameter; the harness invokes the MCP servers directly during the run"
+      "6": "MCP tool calls during a run flow through ACP frames and are captured in the transcript; the audit log records the tool name and arguments but not the response payload (which may be large)"
+      "6-note": "When the portal-proxy attachment model ships post-v1, this requirement extends to capture full call/response auditing centrally"
+
+  APP:
+    name: App-level integration primitive
+    requirements:
+      "1": "An app integration is a registered service that the workspace itself communicates with — independent of any harness invocation"
+      "2": "Integrations have per-type adapters: GitHub (PR sync, status checks), Slack (notifications), Linear (issue sync), generic webhook (HMAC-verified incoming HTTP)"
+      "3": "Integrations may emit events that trigger workflows (a GitHub webhook firing a scheduled run; a Slack command opening a question session)"
+      "4": "Integration registrations live in `.rex/tools/integrations.yaml` (git-merged); credentials follow the same secret-storage rules as MCP servers"
+
+  SCOPE:
+    name: Tool scoping
+    requirements:
+      "1": "Scoping is expressed as a structured object with optional fields: `harnesses` (list), `work_types` (list), `schedules` (list), `time_window` (cron-like), `repos` (list)"
+      "2": "An empty scope means 'always available'; a scope with `harnesses: [claude-code]` means 'available only when claude-code is running'"
+      "3": "The scope evaluator is shared with the RBAC engine; the same expression evaluates correctly in both contexts"
+      "4": "Scope changes are git-merged events; the audit log captures the before/after scope on every change"
+
+  CLI:
+    name: Tool management CLI
+    requirements:
+      "1": "`rex tools list` shows all tools (MCP + app integrations) attached to the current workspace, with scope and status columns"
+      "2": "`rex tools mcp <subcommand>` and `rex tools integration <subcommand>` are the two subgroups"
+      "3": "`rex tools test <name>` runs a connectivity check (ping the MCP server / call the integration's health endpoint) and reports success/failure"
+
+constraints:
+
+  SEC:
+    description: Tool security invariants
+    requirements:
+      "1": "Tool credentials are local to the node where they were entered; only references (server name + URL/command) sync via git-merged content"
+      "2": "When a workspace is cloned to a new node, the new node sees the tool registrations but must re-enter credentials before tools can be used"
+      "3": "Failed tool authentication never includes credential content in error messages or audit entries"
+
+  SCOPE-CUT:
+    description: V1 non-goals for tools
+    requirements:
+      "1": "Portal-as-MCP-proxy attachment model is deferred to post-v1; v1 uses direct ACP `session/new` attachment"
+      "2": "No tool marketplace, no tool discovery beyond user-entered registrations"
+      "3": "No automatic credential rotation; users rotate credentials manually via `rex tools mcp rotate-credentials <name>`"
+
+extra:
+  owners: []
+  related_specs: [overview, identity-and-trust, execution, audit, sync]
+  notes: |
+    The post-v1 portal-proxy model becomes mandatory once tool-call audit
+    becomes a hard requirement. The data model already separates MCPServer
+    and AppIntegration into two types so that the proxy can be added without
+    a schema migration.

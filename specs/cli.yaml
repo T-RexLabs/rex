@@ -1,0 +1,186 @@
+spec_version: 1
+
+metadata:
+  id: cli
+  name: CLI surface
+  state: draft
+  created_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-03T00:00:00Z
+
+description: |
+  The CLI is Rex's primary interface for v1. The web UI exists from day
+  one but the CLI is the surface we polish first; the web UI is a
+  secondary view onto the same model.
+
+  The shape is verb-noun, deeply-nested, Git-inspired: `rex workspace
+  create`, `rex spec validate`, `rex run start`, `rex hooks list`. This
+  is verbose but predictable. Top-level shortcuts for common operations
+  (e.g., `rex sync` instead of the full form) are the only sweetener
+  in v1; broader aliasing waits for usage data.
+
+  Output formatting follows POSIX expectations: structured tabular
+  output by default, `--json` available for every read command,
+  `--quiet` suppresses non-essential output for scripting.
+
+tasks:
+  - id: cli-framework
+    description: "Choose and integrate a CLI framework (cobra recommended); set up the verb-noun command tree skeleton"
+    state: todo
+    references: [SHAPE.1, SHAPE.2]
+
+  - id: workspace-commands
+    description: "Implement workspace subcommands"
+    state: todo
+    references: [WS.1, WS.2, WS.3, WS.4, WS.5]
+
+  - id: spec-commands
+    description: "Implement spec subcommands"
+    state: todo
+    references: [SPEC.1, SPEC.2, SPEC.3, SPEC.4, SPEC.5]
+
+  - id: run-commands
+    description: "Implement run subcommands"
+    state: todo
+    references: [RUN.1, RUN.2, RUN.3, RUN.4, RUN.5]
+
+  - id: remote-commands
+    description: "Implement remote subcommands"
+    state: todo
+    references: [REMOTE.1, REMOTE.2, REMOTE.3]
+
+  - id: sync-commands
+    description: "Implement sync, push, pull, status as top-level shortcuts"
+    state: todo
+    references: [SYNC.1, SYNC.2, SYNC.3, STATUS.1]
+
+  - id: misc-commands
+    description: "Implement hooks, snapshot, log, search, tools subcommands"
+    state: todo
+    references: [HOOKS.1, SNAP.1, LOG.1, SEARCH.1, TOOLS.1]
+
+  - id: output-formatting
+    description: "Implement consistent table/JSON output, color, --quiet, --json across all read commands"
+    state: todo
+    references: [FMT.1, FMT.2, FMT.3]
+
+components:
+
+  SHAPE:
+    name: Overall CLI shape
+    requirements:
+      "1": "The CLI is verb-noun, deeply nested: `rex <noun> <verb> [args] [flags]`"
+      "2": "Top-level shortcuts exist only for the highest-frequency operations: `rex sync`, `rex push`, `rex pull`, `rex status`, `rex search`, `rex log`"
+      "3": "Every command supports `--help`; help text includes a one-line synopsis, a longer description, examples, and a list of related commands"
+
+  WS:
+    name: Workspace subcommands
+    requirements:
+      "1": "`rex workspace init [path]` — create a new workspace with `.rex/` at the given path (default: cwd)"
+      "2": "`rex workspace clone <remote-url> [path]` — clone an existing workspace from a remote"
+      "3": "`rex workspace list` — list locally-known workspaces from the registry"
+      "4": "`rex workspace show [<id>]` — show full workspace details"
+      "5": "`rex workspace archive/unarchive/delete <id>` — state transitions"
+      "6": "`rex workspace push [--remote <name>]` — first-time publish of a workspace to a remote"
+      "7": "`rex workspace reindex` — rebuild the search index from the event log"
+
+  SPEC:
+    name: Spec subcommands
+    requirements:
+      "1": "`rex spec create [--template <id>] <id>` — create a new spec from the workspace's default template (or named template)"
+      "2": "`rex spec list [--state <state>]` — list specs in the current workspace"
+      "3": "`rex spec show <id>` — show a spec's rendered content"
+      "4": "`rex spec validate [<id>...]` — validate one or more specs (default: all in workspace); exits non-zero on validation errors"
+      "5": "`rex spec edit <id>` — open the spec in `$EDITOR`"
+      "6": "`rex spec acid <ACID>` — resolve an ACID reference and show the underlying requirement"
+
+  RUN:
+    name: Run subcommands
+    requirements:
+      "1": "`rex run start [--spec <id>] [--harness <name>] [--prompt <text>] [--work-type <type>]` — initiate a run"
+      "2": "`rex run watch <run-id>` — stream events live; `--since-start` to replay from the beginning"
+      "3": "`rex run show <run-id>` — show full transcript and DAG status"
+      "4": "`rex run list [--workspace <id>] [--status <status>]` — list recent runs"
+      "5": "`rex run cancel <run-id>` — request cancellation"
+      "6": "`rex run signal <run-id> <signal-name>` — send an external signal (used by `wait` nodes)"
+      "7": "`rex run approve <run-id>` / `rex run deny <run-id>` — resolve a pending permission prompt"
+
+  REMOTE:
+    name: Remote subcommands
+    requirements:
+      "1": "`rex remote add <name> <url>` — register a remote and run the initial handshake"
+      "2": "`rex remote list` — list registered remotes with last-seen status"
+      "3": "`rex remote show <name>` — show remote details, fingerprint, protocol version, attached workspaces"
+      "4": "`rex remote remove <name>` — remove a remote registration"
+      "5": "`rex remote test <name>` — run a connectivity check"
+
+  SYNC:
+    name: Sync top-level shortcuts
+    requirements:
+      "1": "`rex sync` — run pull then push against the workspace's primary remote"
+      "2": "`rex push [--remote <name>]` — send local drafts to the named remote"
+      "3": "`rex pull [--remote <name>]` — fetch new server state and rebase local drafts"
+
+  STATUS:
+    name: Status command
+    requirements:
+      "1": "`rex status` — for the current workspace, show: state, draft count per remote, current run if any, hook count, last-sync time, attached repos, attached remotes"
+
+  HOOKS:
+    name: Hooks subcommands
+    requirements:
+      "1": "`rex hooks list` — list installed hooks (per-workspace + global) with executable status and timeouts; this is the only v1 hooks subcommand"
+
+  SNAP:
+    name: Snapshot subcommands
+    requirements:
+      "1": "`rex snapshot create/list/restore <id>` — manage local-only snapshots"
+
+  LOG:
+    name: Log subcommands
+    requirements:
+      "1": "`rex log tail [--n <count>] [--since <time>] [--type <event-type>] [--actor <handle>]` — display recent audit entries"
+      "2": "`rex log search <query>` — full-text search the audit log"
+
+  SEARCH:
+    name: Search command
+    requirements:
+      "1": "`rex search <query> [--workspace <id>] [--all-local] [--remote <name>] [--all-remotes]` — search across the configured scope"
+      "2": "`rex search saved list/run/remove` — manage saved searches"
+
+  TOOLS:
+    name: Tools subcommands
+    requirements:
+      "1": "`rex tools list` — list MCP servers and integrations attached to the workspace"
+      "2": "`rex tools mcp add/list/show/remove/test/rotate-credentials` — MCP server management"
+      "3": "`rex tools integration add/list/show/remove/test` — app integration management"
+
+  FMT:
+    name: Output formatting
+    requirements:
+      "1": "Read commands default to human-readable tabular output; `--json` switches to newline-delimited JSON"
+      "2": "Color output is enabled when stdout is a TTY and disabled otherwise; `--no-color` and `NO_COLOR=1` env var both disable"
+      "3": "`--quiet` suppresses progress indicators and non-essential output for scripting"
+
+constraints:
+
+  UX:
+    description: CLI UX invariants
+    requirements:
+      "1": "Every command produces output within 200ms for read paths against local-only data on a populated workspace"
+      "2": "Long-running operations always show progress (spinners, byte counters, event counts); never silent multi-second pauses"
+      "3": "Error messages identify the failed step, the root cause, and the recovery action; never just stack traces in user output"
+      "4": "Commands that modify state print a one-line confirmation including a stable identifier of what was changed"
+
+  COMPAT:
+    description: CLI compatibility invariants
+    requirements:
+      "1": "Within a major version, no command's argument shape or output JSON shape changes in a backwards-incompatible way"
+      "2": "Removed flags and commands first appear as deprecated for at least one minor release with a warning before removal"
+
+extra:
+  owners: []
+  related_specs: [overview, workspace, sync, execution, audit, search, tools, hooks, web-ui]
+  notes: |
+    The verb-noun shape was chosen over flat or aliased shapes because
+    discoverability beats brevity at this stage. Aliases will appear once
+    we see what people actually type.

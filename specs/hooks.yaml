@@ -1,0 +1,104 @@
+spec_version: 1
+
+metadata:
+  id: hooks
+  name: Event hooks
+  state: draft
+  created_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-03T00:00:00Z
+
+description: |
+  Hooks are Rex's "jack into the audit stream" capability. The design is
+  deliberately minimal and matches Git's hooks model: a hook is an
+  executable file in a known location that is invoked when an event is
+  committed. Same security posture as Git — hooks are user code, treated
+  as trusted, not sandboxed.
+
+  V1 ships post-event observer hooks only — fire-and-observe, after the
+  event has committed. No pre-* gating hooks (those would require
+  rolling back transactions on hook failure, which is a much larger
+  change). No plugin loaders. No custom CLI commands.
+
+tasks:
+  - id: hook-dispatcher
+    description: "Implement the post-event hook dispatcher: ~150 lines of Go that iterates the workspace and global hook directories, invokes each hook async, and captures stdout/stderr"
+    state: todo
+    references: [DISP.1, DISP.2, DISP.3, DISP.4]
+
+  - id: hook-event-payload
+    description: "Define and document the JSON event payload format hooks receive on stdin"
+    state: todo
+    references: [PAYLOAD.1, PAYLOAD.2]
+
+  - id: hook-cli
+    description: "Implement `rex hooks list` — minimum useful surface for v1"
+    state: todo
+    references: [CLI.1]
+
+components:
+
+  LOC:
+    name: Hook locations
+    requirements:
+      "1": "Per-workspace hooks live at `.rex/hooks/<event-name>` and apply only to that workspace"
+      "2": "Global hooks live at `~/.config/rex/hooks/<event-name>` and fire for every workspace on this machine"
+      "3": "Per-workspace hooks live in the git-merged region of the workspace's data model so collaborators share them"
+      "4": "Both per-workspace and global hooks may exist for the same event name; both fire (per-workspace first, then global)"
+
+  EXEC:
+    name: Hook execution
+    requirements:
+      "1": "A hook file must be executable (mode 0700 or 0750 minimum on POSIX) for the dispatcher to invoke it; non-executable files are skipped with a debug log entry"
+      "2": "The dispatcher invokes hooks asynchronously after the event has been committed to the event log; hook execution does not block the event-producing operation"
+      "3": "Hooks run in a worker pool (default: 4 workers) per node; the pool is bounded so a slow hook can't block the queue indefinitely"
+      "4": "stdout and stderr are captured to a hook log at `.rex/hook-log/<event-id>.<hook-name>.log`; non-zero exit codes are captured but do not fail anything else"
+
+  PAYLOAD:
+    name: Hook input payload
+    requirements:
+      "1": "A hook receives the event as a single JSON document on stdin; the JSON shape mirrors the event-log entry, including `id`, `type`, `version`, `timestamp`, `actor`, `workspace_id`, and `payload`"
+      "2": "Environment variables provide convenience access: `REX_EVENT_TYPE`, `REX_EVENT_ID`, `REX_WORKSPACE_ID`, `REX_WORKSPACE_PATH`, `REX_NODE_ROLE` (`local` or `central`)"
+
+  EVENTS:
+    name: Hookable event names
+    requirements:
+      "1": "Hook names match event types from the event log; e.g. `post-run-completed`, `post-spec-validate`, `post-spec-edit`, `post-permission-granted`, `post-sync-completed`"
+      "1.1": "The `post-` prefix in the hook name distinguishes from the (deferred) `pre-` gating hooks; v1 only ships `post-` hooks"
+      "2": "A wildcard hook named `post-any` fires for every event; intended for generic forwarders (e.g., emit-to-syslog hook)"
+
+  DISP:
+    name: Dispatcher behavior
+    requirements:
+      "1": "The dispatcher iterates the per-workspace hook directory first, then the global hook directory; hooks at the same name in both directories both fire (per-workspace first)"
+      "2": "Each hook is invoked with a fresh stdin/stdout/stderr; the dispatcher waits for the process to exit but does not surface the exit code anywhere except the hook log"
+      "3": "Hooks have a per-execution wall-clock timeout (default 30s, configurable per-hook via a sidecar `<event-name>.config.toml` file with a `timeout` key); on timeout the dispatcher SIGTERMs then SIGKILLs the process and logs the event"
+      "4": "The dispatcher itself never crashes Rex; any error in dispatcher logic is logged and the event flow continues"
+
+  CLI:
+    name: Hooks CLI surface
+    requirements:
+      "1": "`rex hooks list` shows all installed hooks in both per-workspace and global directories, with executable status and any configured timeouts; this is the only v1 hooks subcommand"
+      "1-note": "`rex hooks install/remove`, hook templates, and a web UI for hook management are post-v1"
+
+constraints:
+
+  SEC:
+    description: Hook security invariants
+    requirements:
+      "1": "Hooks are user code and inherit the user's privileges; Rex does not sandbox hook execution"
+      "2": "Hook input payloads must not include secrets (API keys, tokens, decrypted credentials); the event-payload schema is reviewed at every minor version to enforce this"
+      "3": "When a workspace is cloned, the per-workspace hooks are fetched as part of the git-merged content; the receiving user is responsible for inspecting them before running anything that triggers events (same trust posture as cloning a Git repo with `.git/hooks`)"
+
+  ENG:
+    description: Engineering invariants
+    requirements:
+      "1": "The hook dispatcher is bounded in line count; the v1 implementation target is under 200 lines of Go"
+      "2": "Hook log files are rotated by size (default 10MB per file, keep last 5)"
+
+extra:
+  owners: []
+  related_specs: [overview, audit, storage, execution, sync]
+  notes: |
+    The minimal v1 design intentionally pushes most "I want this when X
+    happens" use cases to user code rather than Rex. CLI helpers
+    (`rex hooks install`) and a web UI are post-v1.

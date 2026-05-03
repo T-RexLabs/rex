@@ -1,0 +1,153 @@
+spec_version: 1
+
+metadata:
+  id: storage
+  name: On-disk storage layout
+  state: draft
+  created_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-03T00:00:00Z
+
+description: |
+  Storage in Rex follows the Git pattern: a small global config + registry
+  at the user level, and a self-contained `.rex/` directory inside each
+  workspace wherever the user puts it. The registry is the only global
+  index of what workspaces exist on this machine; everything else lives
+  per-workspace.
+
+  Within a workspace, three sync categories live side by side: git-merged
+  text files (specs, settings, RBAC), an append-only event log + transcripts,
+  and a derived SQLite index that's never synced.
+
+  Snapshots are a v1 feature, distinct from the event log: they are
+  local-only derived state used to reduce log-replay cost on long-lived
+  workspaces.
+
+tasks:
+  - id: global-config-layout
+    description: "Implement creation and read/write of `~/.config/rex/` files"
+    state: todo
+    references: [GLOBAL.1, GLOBAL.2, GLOBAL.3]
+
+  - id: workspace-dir-layout
+    description: "Create the `.rex/` skeleton on workspace init and validate it on every command"
+    state: todo
+    references: [WS.1, WS.2, WS.3]
+
+  - id: event-log-storage
+    description: "Implement the append-only `events.log` writer with HLC timestamps and event versioning"
+    state: todo
+    references: [EVENTS.1, EVENTS.2, EVENTS.3, EVENTS.4]
+
+  - id: transcript-shards
+    description: "Implement transcript storage as per-run sharded files under `transcripts/<run-id>/`"
+    state: todo
+    references: [TRANS.1, TRANS.2]
+
+  - id: index-rebuild
+    description: "Implement `rex workspace reindex` for rebuilding the SQLite FTS5 index from the event log"
+    state: todo
+    references: [INDEX.1, INDEX.2, INDEX.3]
+
+  - id: snapshot-impl
+    description: "Implement snapshots — periodic, manual, and restore"
+    state: todo
+    references: [SNAP.1, SNAP.2, SNAP.3, SNAP.4]
+
+  - id: encryption-opt-in
+    description: "Implement opt-in per-tenant transcript encryption on the central node side"
+    state: todo
+    references: [ENC.1, ENC.2]
+
+components:
+
+  GLOBAL:
+    name: User-level config and registry
+    requirements:
+      "1": "User-level files live under `~/.config/rex/` on Linux; `~/Library/Application Support/rex/` on macOS; `%APPDATA%/rex/` on Windows"
+      "2": "`config.toml` holds defaults: active identity, default remote, log levels, hook search paths"
+      "3": "`identity/` holds ed25519 keypairs as `<handle>.key` (private) and `<handle>.pub` (public); private keys are mode 0600"
+      "4": "`registry.toml` is the only global index of workspaces on this machine; entries are added by `rex workspace init` and `rex workspace clone`"
+      "4.1": "Registry entries hold workspace ID, on-disk path, originating remote (if any), and last-seen-active timestamp"
+      "5": "`remotes.toml` holds named remote shortcuts (URL, alias, token reference) so users don't paste tokens repeatedly"
+      "6": "`hooks/<event-name>` is the global hook directory; hooks here fire for every workspace on this machine (see `hooks.yaml`)"
+
+  WS:
+    name: Per-workspace `.rex/` layout
+    requirements:
+      "1": "Every workspace has a `.rex/` directory at its root; this is the workspace's source of truth and is to Rex what `.git/` is to Git"
+      "2": "The layout is:"
+      "2.1": "`workspace.yaml` — workspace settings (git-merged)"
+      "2.2": "`specs/` — `<spec-id>.yaml` files (git-merged)"
+      "2.3": "`schedules/` — scheduled-job definitions (git-merged)"
+      "2.4": "`rbac.yaml` — workspace-level RBAC (git-merged); only meaningful when synced to a central node"
+      "2.5": "`templates/` — workspace-scoped spec templates (git-merged)"
+      "2.6": "`hooks/<event-name>` — per-workspace hooks (git-merged)"
+      "2.7": "`remotes.toml` — which remotes this workspace syncs to (git-merged)"
+      "2.8": "`events.log` — append-only event-sourced spine (event-sourced; replicated via sync)"
+      "2.9": "`transcripts/<run-id>/` — transcript shards (event-sourced)"
+      "2.10": "`snapshots/<snapshot-id>/` — local-only derived snapshots; never synced"
+      "2.11": "`index.sqlite` — FTS5 + structured tables (derived, never synced)"
+      "2.12": "`drafts/` — local-only events not yet pushed to any remote (event-sourced once committed)"
+      "3": "The git-merged subset of `.rex/` is what `rex workspace push` actually sends; the derived subset is rebuilt on the receiver"
+
+  EVENTS:
+    name: Event log on disk
+    requirements:
+      "1": "`events.log` is an append-only file of length-prefixed JSON records; one record per event"
+      "2": "Every event record has at minimum: `id` (HLC-derived), `timestamp` (HLC), `type`, `version`, `actor` (public-key fingerprint), `workspace_id`, `payload`"
+      "3": "Event IDs are monotonic per node; HLCs are used to merge events from different nodes into a total order with central as tiebreaker (see `sync.yaml`)"
+      "4": "Writers acquire an exclusive file lock for the duration of the append; readers never lock"
+      "5": "Schema versioning is enforced: readers skip events with unknown `type` and never error; readers refuse events with `version` higher than they understand for known types"
+
+  TRANS:
+    name: Transcripts on disk
+    requirements:
+      "1": "Each run has a directory `transcripts/<run-id>/` containing per-event JSON files in chronological order, named `<seq>-<event-type>.json`"
+      "2": "Transcripts are append-only; partial-run transcripts are valid (a crashed run leaves a partial transcript that is later marked aborted in the event log)"
+      "3": "Transcript content can be encrypted at rest on central nodes (see `ENC` below); local transcripts rely on disk-level encryption only"
+
+  INDEX:
+    name: Derived SQLite index
+    requirements:
+      "1": "`index.sqlite` holds FTS5 virtual tables and structured tables for fast queries; it is rebuilt deterministically from the event log + git-merged content"
+      "2": "`rex workspace reindex` drops and recreates the index from scratch"
+      "3": "The index is never transmitted; it is rebuilt on the receiver after a clone or sync"
+      "4": "Writes to the index happen as part of the same transaction that appends an event, so the index never lags behind the event log when running"
+
+  SNAP:
+    name: Snapshots
+    requirements:
+      "1": "A snapshot captures a coherent moment-in-time of a workspace's derived state — the index, summarized event-log state, current spec and settings content — for fast restore and replay-cost reduction"
+      "2": "Snapshots are local-only and never sync; central nodes take their own independent snapshots"
+      "3": "Snapshots are triggered by three mechanisms: every N events (default 10000), every T duration (default 24h), and manually via `rex snapshot create`"
+      "4": "`rex snapshot list` shows available snapshots; `rex snapshot restore <id>` restores the workspace's derived state from a snapshot, preserving the event log unchanged"
+      "5": "Snapshots are pruned on a configurable retention policy (default: keep last 7, keep monthly snapshots forever)"
+
+  ENC:
+    name: Encryption at rest
+    requirements:
+      "1": "Local SQLite, transcripts, and event log rely on disk-level encryption (FileVault, LUKS, BitLocker); Rex does not encrypt local files itself"
+      "2": "Central nodes support opt-in per-tenant transcript encryption: when enabled for an org, transcripts are encrypted with an org-specific key before being written; metadata (event log entries about transcripts) remains unencrypted"
+      "2.1": "Per-tenant encryption keys are managed by the org admin; key rotation is supported but re-encryption of historical content is a manual operation in v1"
+      "3": "Audit log entries are never encrypted (queryability requirement); they may contain references to encrypted transcripts but no content"
+
+  MIGRATE:
+    name: Schema migrations and backout
+    requirements:
+      "1": "SQL migrations are baked into the binary and run on startup; the binary refuses to start if migrations fail"
+      "2": "Before any migration runs, a backup of the SQLite file is taken to `.rex/migrations-backup/<timestamp>.sqlite`"
+      "3": "`rex restore --from <snapshot-or-backup>` allows reverting to a pre-migration state for the local case"
+      "4": "Central-node migrations follow the same pattern but additionally take a logical Postgres dump as a separate independent operation"
+
+constraints:
+
+  COMPAT:
+    description: Storage compatibility invariants
+    requirements:
+      "1": "All on-disk file formats are versioned at the file level (header byte, version field, or sidecar manifest); old binaries either read forward-compatibly or fail with a clear error"
+      "2": "Renaming, moving, or removing files under `.rex/` is forbidden in any minor version; only additive changes are allowed within a major version"
+      "3": "An empty `.rex/` cannot be confused with a non-Rex directory; `rex workspace status` distinguishes by the presence of `workspace.yaml`"
+
+extra:
+  owners: []
+  related_specs: [overview, workspace, sync, audit, central-node]

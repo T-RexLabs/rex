@@ -1,0 +1,151 @@
+spec_version: 1
+
+metadata:
+  id: spec-format
+  name: Rex spec YAML format
+  state: draft
+  created_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-03T00:00:00Z
+
+description: |
+  The YAML format used by every spec in a Rex workspace, including this one.
+  Specs play three simultaneous roles in Rex: a task list (the work to do),
+  a contract (the acceptance criteria), and a template (the structure other
+  specs can extend). The format must support all three without becoming a
+  kitchen sink, and must stay lean enough that 80% of users never customize it.
+
+  Inspired by acai's `feature.yaml`, but lighter: components grouping
+  requirements, stable numbered IDs (ACIDs), separate constraints block,
+  state markers — without adopting the one-spec-per-feature opinion or
+  excluding design content.
+
+tasks:
+  - id: define-go-types
+    description: Define the Go structs that mirror this schema, with `yaml` tags and validation tags
+    state: todo
+    references: [CORE.1, CORE.2, META.1, COMP.1, REQ.1]
+
+  - id: implement-validator
+    description: Implement `rex spec validate`, including required-field checks, ACID format checks, and template-extension validation
+    state: todo
+    references: [VAL.1, VAL.2, VAL.3, VAL.4]
+
+  - id: implement-templates
+    description: 'Implement workspace-level and org-level template extension; templates are themselves specs with `template: true` in extra'
+    state: todo
+    references: [TMPL.1, TMPL.2, TMPL.3]
+
+  - id: implement-acid-resolver
+    description: Implement an ACID resolver that validates references across specs in a workspace and reports dangling refs
+    state: todo
+    references: [REQ.3, ACID.1, ACID.2]
+
+  - id: write-three-real-specs
+    description: Write three real specs against this format before locking the v1 schema; revise the schema based on what's missing
+    state: todo
+    references: [CORE.1]
+
+components:
+
+  CORE:
+    name: Top-level document shape
+    requirements:
+      "1": 'A spec document is a YAML mapping with a top-level `spec_version` integer; v1 documents have `spec_version: 1`'
+      "2": The recognized top-level keys are `spec_version`, `metadata`, `description`, `tasks`, `components`, `constraints`, and `extra`; only `spec_version` and `metadata` are required
+      "3": Unknown top-level keys are a validation error in strict mode and a warning in lenient mode; this prevents typo'd extension keys from being silently dropped
+      "4": A spec is valid with just `spec_version`, `metadata.id`, `metadata.name`, and `metadata.state` set
+
+  META:
+    name: Metadata block
+    requirements:
+      "1": "`metadata.id` is a kebab-case slug, stable forever, used as the prefix in ACID references"
+      "1.1": Once published to a remote, a spec's `metadata.id` is immutable; renames create a new spec with `replaced_by` set on the old one
+      "2": "`metadata.name` is a human-readable title; no format constraints"
+      "3": "`metadata.state` is one of: draft, active, accepted, archived"
+      "3.1": "draft = author is still working on it; active = open for work; accepted = closed-as-shipped; archived = closed-as-abandoned-or-superseded"
+      "4": "`metadata.created_at` and `metadata.updated_at` are ISO-8601 timestamps; the validator updates `updated_at` on save"
+      "5": Metadata blocks may include workspace-template-defined required fields beyond the global ones; the validator runs the workspace template after the global v1 schema
+
+  DESC:
+    name: Description
+    requirements:
+      "1": "`description` is an optional free-form Markdown string; renderers may format it"
+
+  TASK:
+    name: Tasks block
+    requirements:
+      "1": "`tasks` is an optional list of task objects, each representing a unit of implementation work the spec embeds"
+      "2": Each task has an `id` (kebab-case, unique within the spec), a `description`, and a `state` (todo, in_progress, done, blocked)
+      "3": Tasks may have a `references` list of ACID strings indicating which requirements they fulfill
+      "4": Tasks may have an optional `assigned_to` user handle
+      "5": Tasks live alongside acceptance criteria in the same document because in Rex a spec is simultaneously a task list and a contract
+
+  COMP:
+    name: Components block
+    requirements:
+      "1": "`components` is an optional mapping from uppercase component IDs (e.g. AUTH, RUN) to component objects"
+      "2": A component object has a `name` and a `requirements` mapping
+      "3": Component IDs are immutable once published; renumbering or renaming forbidden
+
+  REQ:
+    name: Requirements within components
+    requirements:
+      "1": A `requirements` mapping has string keys (numeric IDs like `1`, `1.1`, `2-note`) and string values (the requirement text)
+      "1.1": Numeric keys must be quoted in YAML so they remain strings
+      "2": 'Requirement IDs are immutable; deletion is forbidden, retire via `deprecated: true`'
+      "3": 'A requirement may be replaced by another via `replaced_by: <ACID>`'
+      "4": A requirement value may be either a plain string or a mapping with `text`, `deprecated`, `replaced_by`, and `notes` keys
+
+  ACID:
+    name: Stable requirement references (ACIDs)
+    requirements:
+      "1": "An ACID has the form `<spec.id>.<COMPONENT>.<requirement-id>`, e.g. `auth-flow.AUTH.1.1`"
+      "2": ACIDs are stable across renames of surrounding text and are the canonical referenceability primitive across the system
+      "3": Tools, transcripts, commits, and audit entries may all cite ACIDs; the validator and search index both understand them
+
+  CONST:
+    name: Constraints block
+    requirements:
+      "1": "`constraints` is an optional mapping with the same shape as `components` but for cross-cutting invariants (engineering, security, performance)"
+      "2": Constraints are referenced via the same ACID format as requirements; component IDs in `constraints` and `components` must not collide
+
+  EXTRA:
+    name: Extra block
+    requirements:
+      "1": "`extra` is an optional mapping for project-defined fields"
+      "2": Common conventional keys include `owners` (list of handles), `related_specs` (list of spec IDs), and `template` (boolean marking a template spec)
+      "3": Workspace and org templates may declare additional required `extra` keys
+
+  TMPL:
+    name: Template extensibility
+    requirements:
+      "1": 'A workspace template is itself a spec with `extra.template: true` and `extra.applies_to` indicating its scope'
+      "2": Templates can pre-declare required `metadata` fields, required `components` keys, and required `extra` fields that all specs in the workspace must satisfy
+      "3": Validation runs in two passes — global v1 schema first, then the active workspace template
+      "4": 'A spec may declare `extra.template_id: <id>` to opt into a specific template; otherwise the workspace default template applies'
+
+  VAL:
+    name: Validation behavior (the `rex spec validate` contract)
+    requirements:
+      "1": Validation reports each error with the spec file, the YAML path, the error category, and a human-readable message
+      "2": Validation has strict and lenient modes; strict is the default for `rex spec validate`, lenient is the default for read paths that need to keep working under schema drift
+      "3": Validation includes ACID resolution — every cited ACID must point to an existing requirement in the workspace's known specs, or be flagged as dangling
+      "4": Validation is idempotent and side-effect-free; it never modifies the spec file
+      "5": Exit code is 0 on success, 1 on any error, 2 on internal validator failure
+
+constraints:
+
+  COMPAT:
+    description: Forward-compatibility invariants
+    requirements:
+      "1": v1 spec format is frozen once published — no removal of recognized keys, no semantic changes to existing fields
+      "2": 'Future spec format versions (`spec_version: 2`) require a separate parser; readers refuse to interpret a higher version than they were built against, with a clear error'
+      "3": Adding new optional top-level keys is a minor schema change requiring a parser revision; old parsers warn but continue when given a forward-compatible document
+
+extra:
+  owners: []
+  related_specs: [overview, workspace]
+  notes: |
+    This spec describes itself. The format defined here is the format
+    used by every other spec in this directory. Validating this file
+    against the format it defines is a useful smoke test.

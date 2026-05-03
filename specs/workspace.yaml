@@ -1,0 +1,119 @@
+spec_version: 1
+
+metadata:
+  id: workspace
+  name: Workspace model
+  state: draft
+  created_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-03T00:00:00Z
+
+description: |
+  A workspace is the unit of intent in Rex. It can hold zero, one, or many
+  Git repositories, plus specs, transcripts, scheduled work, hooks, and
+  connected tools. Zero-repo workspaces are first-class — research and
+  planning workspaces don't need code.
+
+  Multi-repo workspaces default to a monorepo-flavored layout: repos are
+  cloned as siblings under one workspace root and harnesses see all of
+  them by default. The workspace owns its working copies, the same way
+  a Git repo owns its `.git/` — the on-disk path is wherever the user
+  put it, like `git init` or `git clone`.
+
+  Within a workspace, work flows in five flavors (questions, non-spec
+  work, spec work, management, scheduled work) plus connected tools.
+  These are tags + permissions over one underlying interaction model,
+  not five different code paths.
+
+tasks:
+  - id: workspace-init-cli
+    description: "Implement `rex workspace init` and `rex workspace clone`, mirroring `git init` / `git clone`"
+    state: todo
+    references: [LIFE.1, LIFE.2, LIFE.3]
+
+  - id: workspace-yaml-schema
+    description: Define and validate `workspace.yaml`, the per-workspace settings file
+    state: todo
+    references: [SETTINGS.1, SETTINGS.2, SETTINGS.3]
+
+  - id: repo-attach-mechanics
+    description: Implement `rex repo add` (clone into workspace) and `rex repo link` (point at existing checkout)
+    state: todo
+    references: [REPO.1, REPO.2, REPO.3, REPO.4]
+
+  - id: work-tag-model
+    description: Implement the work-type tagging that distinguishes question/non-spec/spec/management/scheduled work
+    state: todo
+    references: [WORK.1, WORK.2, WORK.3]
+
+components:
+
+  LIFE:
+    name: Workspace lifecycle
+    requirements:
+      "1": "A workspace is created by `rex workspace init [path]` which creates `.rex/` in the given path (default: cwd)"
+      "2": "A workspace can be cloned from a remote by `rex workspace clone <remote-url> [path]`; this fetches the workspace metadata and registers it locally"
+      "3": "A workspace has three states: `active`, `archived`, `deleted`; transitions are recorded as events"
+      "3.1": Archive is reversible (`rex workspace unarchive`); delete is reversible only via snapshot restore
+      "4": Workspaces register themselves in `~/.config/rex/registry.toml` on init/clone so global commands can find them
+      "5": Multiple workspaces with the same `metadata.id` may coexist locally only if they originate from different remotes; `rex` disambiguates with the remote alias
+
+  STRUCT:
+    name: On-disk structure
+    requirements:
+      "1": "Every workspace has a `.rex/` directory at its root, structured as defined in `storage.yaml`"
+      "2": Files outside `.rex/` belong to the user (READMEs, repo checkouts, scratch dirs); Rex never deletes them
+      "3": "A workspace may contain attached repositories under any path the user chooses; the `workspace.yaml` records repo paths relative to the workspace root"
+
+  SETTINGS:
+    name: workspace.yaml
+    requirements:
+      "1": "`workspace.yaml` is a git-merged YAML file at `.rex/workspace.yaml` containing workspace settings"
+      "2": "Required keys: `id`, `name`, `created_at`, `state`"
+      "3": "Optional keys: `description`, `default_repo`, `repos` (list of attached repo definitions), `harness_defaults`, `default_template_id`, `multi_repo_mode` (one of `all`, `primary`)"
+      "4": "Edits to `workspace.yaml` are committed to the workspace event log; edits made offline are flagged as drafts until synced"
+
+  REPO:
+    name: Repository attachment
+    requirements:
+      "1": "A workspace may have zero, one, or many attached repositories; zero-repo workspaces are first-class"
+      "2": "`rex repo add <git-url> [path]` clones the repo into the workspace and registers it in `workspace.yaml`"
+      "3": "`rex repo link <existing-path>` registers an existing local checkout without cloning; useful when the user already has the repo elsewhere"
+      "4": "Detached repos: `rex repo remove <name>` unregisters but does not delete the working copy; `rex repo remove --purge` deletes the working copy as well"
+      "5": "When a harness is invoked, the multi-repo policy is resolved in this order: task-level override > spec-level override > workspace-level `multi_repo_mode` > default `all`"
+      "6": "v1 does not support per-harness worktrees; concurrent runs in a workspace are serialized (see `execution.yaml` constraint EXEC-CONC)"
+
+  WORK:
+    name: Work types within a workspace
+    requirements:
+      "1": "All work in a workspace is one underlying interaction model — a session with a harness — disambiguated by tags and permissions"
+      "2": "The five recognized work-type tags are `question`, `non_spec`, `spec`, `management`, `scheduled`; tags govern which RBAC rules apply"
+      "2.1": "`question` is a one-shot ask, no spec or repo modification expected"
+      "2.2": "`non_spec` is open-ended interaction (the typical Claude Code session) without a spec contract"
+      "2.3": "`spec` is work tied to a specific spec ID; the harness sees the spec content and the run is auditable against it"
+      "2.4": "`management` is workspace-administration work (settings changes, RBAC edits) — recorded but never modifies user code"
+      "2.5": "`scheduled` is any of the above triggered by cron/webhook/file-watch instead of a user command"
+      "3": "Tags are not mutually exclusive at storage but are mutually exclusive in the CLI surface; `rex run start` requires exactly one work-type tag"
+
+  REF:
+    name: Cross-spec referenceability
+    requirements:
+      "1": "A spec, a transcript, a comment, or a commit may cite an ACID; the workspace search index resolves ACIDs to their target requirement"
+      "2": "Dangling ACID references (target spec or requirement no longer exists) are flagged in `rex spec validate` output but do not block run start"
+
+constraints:
+
+  ENG:
+    description: Workspace-layer engineering invariants
+    requirements:
+      "1": "Workspace operations must be safe to run concurrently with active harness invocations; settings reads use a snapshot taken at the start of the operation"
+      "2": "Workspace state changes (active <-> archived) emit events that downstream readers (search index, central sync) consume idempotently"
+      "3": "The on-disk layout under `.rex/` is the source of truth; in-memory caches must be reconstructable from disk"
+
+extra:
+  owners: []
+  related_specs: [overview, storage, sync, execution, spec-format]
+  notes: |
+    The "specs are simultaneously a task list, a template, and a contract"
+    trichotomy is captured in the spec-format spec; this workspace spec
+    refers to specs as opaque entities and lets spec-format own the shape.
+    The deferred multi-repo worktree model has knock-on effects in execution.yaml.

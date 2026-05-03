@@ -1,0 +1,135 @@
+spec_version: 1
+
+metadata:
+  id: search
+  name: Search and discovery
+  state: draft
+  created_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-03T00:00:00Z
+
+description: |
+  Search in Rex is FTS-only in v1 — no embeddings, no semantic similarity.
+  This is a deliberate constraint: it keeps the local-first commitment
+  uncomplicated (no model bundled, no remote inference call), keeps the
+  index small, and keeps query behavior predictable.
+
+  Locally the index is SQLite FTS5; on central nodes it's Postgres FTS.
+  Indexes are derived per-node and never sync — each node rebuilds its
+  own from the event log + git-merged content.
+
+  Default search scope is the current workspace. Cross-workspace search
+  is opt-in (`--all-local`). Cross-remote search requires naming the
+  remote (`--remote <name>`) — remotes are never searched implicitly.
+  This makes it possible to build the web UI's scope picker on top of
+  the same model.
+
+tasks:
+  - id: index-schema
+    description: "Define the SQLite FTS5 + structured-table schema and the equivalent Postgres FTS schema"
+    state: todo
+    references: [SCHEMA.1, SCHEMA.2, SCHEMA.3]
+
+  - id: indexer-pipeline
+    description: "Implement the indexer that incrementally updates the index as events are committed"
+    state: todo
+    references: [PIPE.1, PIPE.2, PIPE.3]
+
+  - id: ignore-rules
+    description: "Implement gitignore-aware file traversal plus the per-workspace `.rexignore` overlay"
+    state: todo
+    references: [IGNORE.1, IGNORE.2, IGNORE.3]
+
+  - id: query-language
+    description: "Implement the query language: free-text + structured filters (workspace, harness, type, time, status)"
+    state: todo
+    references: [QUERY.1, QUERY.2, QUERY.3]
+
+  - id: scope-resolver
+    description: "Implement scope resolution for `--all-local` and `--remote <name>` flags"
+    state: todo
+    references: [SCOPE.1, SCOPE.2, SCOPE.3]
+
+  - id: cross-remote-search
+    description: "Implement cross-remote fan-out and result merging with BM25 normalization"
+    state: todo
+    references: [SCOPE.4, SCOPE.5]
+
+  - id: saved-searches
+    description: "Implement saved searches (one of v1's two extensibility surfaces)"
+    state: todo
+    references: [SAVED.1, SAVED.2]
+
+components:
+
+  SCHEMA:
+    name: Index schema
+    requirements:
+      "1": "FTS5 virtual tables exist for each searchable entity type: specs, transcripts, file_changes, comments, schedules, audit_entries, workspace_metadata, repo_files"
+      "2": "Each FTS table has companion structured tables holding filterable fields (workspace_id, harness, work_type, timestamp, run_status, etc.)"
+      "3": "ACID references are extracted at index time and stored in a join table so that searches can resolve `auth-flow.AUTH.1.1` to its requirement and surface usages elsewhere"
+      "4": "The Postgres-FTS schema mirrors the SQLite-FTS schema field-for-field; queries written against one work against the other modulo dialect"
+
+  PIPE:
+    name: Indexing pipeline
+    requirements:
+      "1": "The indexer subscribes to the event log; every committed event triggers an incremental index update in the same transaction as the event append"
+      "2": "Index updates for repo files are triggered by file-change events emitted by `rex run`'s file-watcher and by explicit `rex workspace reindex --files`"
+      "3": "Full reindex (`rex workspace reindex`) drops and rebuilds the index from scratch; expected to be fast enough for workspaces with up to 100k events on commodity hardware"
+
+  IGNORE:
+    name: File ignore rules
+    requirements:
+      "1": "Repo source-code indexing respects `.gitignore` rules by default; gitignored files and directories are not indexed"
+      "2": "A workspace-level `.rexignore` file (at the workspace root or under `.rex/`) layers additional exclusions on top of `.gitignore` — e.g., `node_modules/`, `target/`, `dist/`, build artifacts that may be tracked but shouldn't be indexed"
+      "3": "Ignore rules are applied uniformly to indexing and to harness-visible-file lists where applicable"
+      "4": "An `--include-ignored` flag on `rex search` is available for one-off searches that need to traverse ignored content; the default is to honor ignore rules"
+
+  QUERY:
+    name: Query language
+    requirements:
+      "1": "Free-text queries use FTS5/Postgres-FTS standard syntax (phrase, prefix, AND/OR/NOT)"
+      "2": "Structured filters are key:value pairs in the query, e.g. `auth harness:claude-code workspace:auth-flow time:>30d type:transcript`"
+      "3": "Recognized filter keys: `workspace`, `harness`, `type`, `work_type`, `time` (relative or absolute), `status`, `actor`, `tag`, `acid` (matches a specific ACID), `repo`"
+      "4": "Result ranking is BM25 within a single index; cross-index ranking is normalized per-workspace before merging (BM25 with per-workspace IDF normalization)"
+
+  SCOPE:
+    name: Search scope resolution
+    requirements:
+      "1": "Default scope when invoking `rex search` from inside a workspace is that workspace only"
+      "2": "Default scope when invoking `rex search` from outside any workspace is all locally-known workspaces"
+      "3": "`--workspace <id>` overrides scope to a specific local workspace; `--all-local` searches all locally-known workspaces"
+      "4": "`--remote <name>` searches a specific remote; the local node fans the query out via the remote's `/search` API and merges results"
+      "5": "Searches never include remotes implicitly; cross-remote searches are always explicit"
+      "5.1": "An `--all-remotes` flag exists for power users; it fans out to every attached remote in parallel"
+
+  RESULTS:
+    name: Result presentation
+    requirements:
+      "1": "Each result carries the entity type, the workspace ID, a snippet, the score, the timestamp, and a stable URI for citation"
+      "2": "Stable URIs follow the form `rex://workspace/<id>/<entity-type>/<entity-id>` (resolves locally) or `rex://<remote>/workspace/<id>/<entity-type>/<entity-id>` (cross-remote)"
+
+  SAVED:
+    name: Saved searches
+    requirements:
+      "1": "Users may save a search query under a name; saved searches live in `~/.config/rex/saved-searches.toml` (per-user) or `.rex/saved-searches.toml` (per-workspace, git-merged)"
+      "2": "`rex search saved list/run/remove` operates on saved searches; the web UI surfaces them in a sidebar"
+
+constraints:
+
+  PERF:
+    description: Performance invariants
+    requirements:
+      "1": "Local search queries must return interactive results — single-workspace queries on workspaces with up to 100k events should complete in under 200ms on commodity hardware"
+      "2": "Indexing must not block writes — index updates happen in the same transaction as event append but are bounded in size; large content is queued for background indexing"
+      "3": "Cross-remote searches must be cancellable; partial results are returned with a flag indicating which remotes timed out"
+
+  SCOPE-CUT:
+    description: Explicit v1 non-goals
+    requirements:
+      "1": "No embeddings, no semantic search, no vector store of any kind in v1"
+      "2": "No tree-sitter parsing or symbol-aware code search in v1; full-text repo search is good enough"
+      "3": "No real-time live-search-as-you-type across remotes; cross-remote searches submit on enter"
+
+extra:
+  owners: []
+  related_specs: [overview, storage, sync, workspace, web-ui, cli]

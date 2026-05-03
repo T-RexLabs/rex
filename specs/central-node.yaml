@@ -1,0 +1,136 @@
+spec_version: 1
+
+metadata:
+  id: central-node
+  name: Central node deployment
+  state: draft
+  created_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-03T00:00:00Z
+
+description: |
+  A central node is the same Go binary as the local node, plus a Postgres
+  adapter and a multi-tenant routing layer. It is deployed via Docker
+  Compose: one binary container, one Postgres container, optionally a
+  reverse proxy in front for TLS termination. No mandatory external
+  services beyond Postgres.
+
+  Central nodes are multi-tenant from day one: many orgs share one
+  deployment. Each org is a tenancy boundary — its workspaces, members,
+  RBAC, encryption keys, and audit log are scoped to it. Orgs do not see
+  each other's data.
+
+  Central-to-central federation does not exist in v1; central nodes are
+  isolated islands and the local node is the only thing that fans out
+  across them.
+
+tasks:
+  - id: docker-compose-base
+    description: "Author the v1 docker-compose.yml with the binary container, Postgres container, and configuration via env vars + mounted config file"
+    state: todo
+    references: [DEPLOY.1, DEPLOY.2, DEPLOY.3]
+
+  - id: postgres-schema
+    description: "Author the Postgres schema (mirroring the local SQLite schema where applicable, plus multi-tenancy scoping columns)"
+    state: todo
+    references: [DB.1, DB.2, DB.3]
+
+  - id: tenant-routing
+    description: "Implement the tenant-routing middleware that scopes every request to an org based on the authenticated identity's org membership"
+    state: todo
+    references: [TENANT.1, TENANT.2, TENANT.3]
+
+  - id: admin-bootstrap
+    description: "Implement the first-run admin bootstrap flow (initial org, initial admin identity)"
+    state: todo
+    references: [BOOT.1, BOOT.2]
+
+  - id: backups-and-restore
+    description: "Implement scheduled Postgres dumps and a `rex-central restore` flow"
+    state: todo
+    references: [BACKUP.1, BACKUP.2, BACKUP.3]
+
+components:
+
+  DEPLOY:
+    name: Docker Compose deployment
+    requirements:
+      "1": "v1 ships an official `docker-compose.yml` with three services: `rex-central` (the binary), `postgres` (data store), `caddy` (TLS reverse proxy, optional)"
+      "2": "Configuration is via environment variables + a mounted `central.toml` config file at `/etc/rex/central.toml`; the config file holds non-secret defaults, env vars hold secrets and per-deployment overrides"
+      "3": "The compose file uses named volumes for Postgres data and the central node's binary state (snapshots, hook logs); single-command setup via `docker compose up -d`"
+      "4": "A `docker-compose.dev.yml` overrides the base file for local development with hot-reload-friendly settings"
+      "5": "Single-binary deployment without Docker is also supported via `rex-central serve` for users who prefer to run on bare metal"
+
+  DB:
+    name: Postgres schema
+    requirements:
+      "1": "The Postgres schema mirrors the local SQLite schema field-for-field for the entities that exist in both; central-only entities (orgs, memberships, invites, central RBAC tables) extend the schema"
+      "2": "Every row in every multi-tenant table carries an `org_id` column; queries are scoped by `org_id` via the tenant-routing middleware before reaching the database, enforced by row-level security policies as a defense-in-depth"
+      "3": "The audit log uses a Postgres role with INSERT and SELECT only — no UPDATE, no DELETE — providing the structural append-only enforcement"
+      "4": "Postgres FTS (built-in) handles the search index; the schema mirrors the SQLite FTS5 schema where dialect allows"
+
+  TENANT:
+    name: Multi-tenancy
+    requirements:
+      "1": "Every API request resolves to exactly one org based on the authenticated identity's membership and either an explicit `X-Rex-Org` header or the workspace ID in the request path"
+      "2": "If an identity is a member of multiple orgs, the chosen org must be made explicit; the API never picks for the user"
+      "3": "Cross-org operations are forbidden at the API layer; an admin in org A cannot read or write data in org B even if they hold an admin role in both, except by switching contexts"
+      "4": "The tenant-routing middleware writes the resolved org ID into the request context once; downstream handlers read from the context, not from headers"
+
+  BOOT:
+    name: First-run bootstrap
+    requirements:
+      "1": "On first start with an empty database, the central node enters bootstrap mode: it generates a single one-time admin claim token printed to logs and persisted in the host filesystem at a known path"
+      "2": "The first user to redeem the token (via `rex remote add` flow with the bootstrap URL) becomes the founder admin; their public key is registered, the token is invalidated, and bootstrap mode exits"
+      "3": "Subsequent users join via invite from an existing admin; there is no other path to membership"
+
+  RBAC-SVR:
+    name: Server-side RBAC enforcement
+    requirements:
+      "1": "Every authenticated request is checked against the org's RBAC rules before any data access; the check covers the action, the target resource type, the target resource ID, and the request context"
+      "2": "RBAC denials return 403 with a non-leaking error message (no information about which resource exists or what action would have been allowed)"
+      "3": "RBAC rule changes are audited and take effect on the next request; existing in-flight requests complete under the prior rules"
+
+  BACKUP:
+    name: Backups and restore
+    requirements:
+      "1": "Central nodes run a scheduled `pg_dump` to a configured backup target (default: a host-mounted directory; pluggable to S3-compatible object stores) at a configurable cadence (default daily)"
+      "2": "Backups capture only Postgres data; transcript files on the binary's volume are backed up separately by the operator's standard tooling"
+      "3": "Restoration is documented as `docker compose down` + restore Postgres + `docker compose up`; `rex-central` supports a `restore --from <backup-path>` mode that validates the dump before applying"
+
+  HEALTH:
+    name: Health and observability
+    requirements:
+      "1": "The central node exposes `/health` (liveness), `/ready` (database reachable + migrations applied), and `/metrics` (Prometheus format) endpoints"
+      "2": "Metrics include sync-events-per-second, active-sessions, RBAC-deny-rate, audit-write-rate, and per-org row counts"
+      "3": "Structured JSON logs are written to stdout; one log line per significant operation; no logs contain secrets"
+
+  IDP-CENTRAL:
+    name: SSO/IdP bridging (deferred, but data model is here)
+    requirements:
+      "1": "The org table includes optional `idp_config` and `scim_config` fields; v1 ships these as null for every org and the bridging code paths are unimplemented"
+      "1-note": "When SSO ships post-v1, this is the attachment point — flagged as an open decision in the gap report"
+
+constraints:
+
+  ENG:
+    description: Central-node engineering invariants
+    requirements:
+      "1": "The central node binary must remain the same Go module as the local-node binary; a build flag selects which surfaces are compiled in"
+      "2": "The Postgres schema is migrated by the same in-binary migrator as the local SQLite schema; the migrator branches on driver type"
+      "3": "No additional runtime services beyond Postgres are required for v1 — no message queue, no cache, no separate worker fleet"
+
+  SEC:
+    description: Central-node security invariants
+    requirements:
+      "1": "All inbound HTTP is HTTPS; HTTP is supported only via reverse proxy doing TLS termination; the binary never accepts plaintext from the internet"
+      "2": "Database connections use TLS where the deployment supports it; in Docker Compose default, Postgres and the central binary share a private network"
+      "3": "Per-tenant transcript encryption (when enabled, see `storage.yaml`) uses keys held in a separate keys table with restricted access; key material is never logged"
+
+extra:
+  owners: []
+  related_specs: [overview, identity-and-trust, sync, audit, storage, search, web-ui]
+  notes: |
+    Central-side execution (running harnesses on the central node, not just
+    storing) is deferred to v1.5. The data model already records where each
+    run executed; the central UI surfaces and credential model are the
+    deferred work.

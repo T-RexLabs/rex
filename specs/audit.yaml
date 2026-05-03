@@ -1,0 +1,101 @@
+spec_version: 1
+
+metadata:
+  id: audit
+  name: Audit log
+  state: draft
+  created_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-03T00:00:00Z
+
+description: |
+  The audit log is the durable record of who did what and when, intended
+  to be the answer to security, compliance, and "wait, what happened?"
+  questions. It is append-only and immutable as a real, enforced invariant
+  — central nodes refuse to mutate audit rows, even from admin identities.
+
+  Retention is forever by default. A separate compaction knob may compact
+  *transcript content* older than a threshold to a hash + summary, but
+  audit metadata about transcripts is never compacted away.
+
+  The audit log is one of the entities in the event-sourced sync category;
+  it ships from local to central as part of normal sync. The central node
+  is the durable archive; locals may garbage-collect old audit entries
+  after they're confirmed durable on a remote.
+
+tasks:
+  - id: audit-event-types
+    description: "Enumerate and document every event type that becomes an audit entry"
+    state: todo
+    references: [TYPES.1, TYPES.2]
+
+  - id: audit-storage
+    description: "Implement the audit-log storage layer with structural append-only enforcement"
+    state: todo
+    references: [STORE.1, STORE.2, STORE.3]
+
+  - id: audit-query
+    description: "Implement audit-log queries (`rex log tail`, `rex log search`) and the structured-filter language"
+    state: todo
+    references: [QUERY.1, QUERY.2, QUERY.3]
+
+  - id: compaction-job
+    description: "Implement the transcript-compaction scheduled job for central nodes"
+    state: todo
+    references: [COMPACT.1, COMPACT.2, COMPACT.3]
+
+components:
+
+  TYPES:
+    name: What gets recorded
+    requirements:
+      "1": "Audit-recorded events include at minimum: every harness invocation start/end, every tool call (where Rex has visibility), every spec change, every permission grant/deny, every RBAC change, every remote attach/detach, every dispatch, every authentication success/failure, every token issuance/refresh/revocation, every sync push/pull, every workspace state change, every hook invocation result"
+      "2": "Each audit event carries: event ID (HLC), timestamp (HLC), event type, actor (public-key fingerprint), workspace ID (where applicable), org ID (central-only), target entity, before/after values for state changes, signature"
+
+  STORE:
+    name: Storage and immutability
+    requirements:
+      "1": "Audit-log entries are stored in the same `events.log` (local) or Postgres event table (central) as other event-sourced entities, but are flagged as audit-class"
+      "2": "The storage layer enforces append-only at the type level: there is no API path that mutates or deletes an audit entry; the only allowed operation is append"
+      "3": "On central nodes, the audit table is owned by a Postgres role distinct from the application role; the application role lacks UPDATE and DELETE permissions on it"
+      "4": "Tampering with the audit log requires direct database access and leaves a separately-detectable trace (HLC discontinuity)"
+
+  QUERY:
+    name: Audit log queries
+    requirements:
+      "1": "`rex log tail [--n <count>] [--since <time>] [--type <event-type>] [--actor <handle>] [--workspace <id>]` displays recent audit entries"
+      "2": "`rex log search <query>` runs an FTS query against the audit log (using the same query language as `rex search` with audit-only scope)"
+      "3": "Audit-log queries on central nodes respect RBAC: members see only what their role permits; org admins see everything in their org; nobody sees other orgs' audit logs"
+
+  COMPACT:
+    name: Compaction policy
+    requirements:
+      "1": "Audit metadata is never compacted; entries remain queryable forever by default"
+      "2": "Transcript content older than a configurable threshold (default 365 days, opt-in per org on central) may be compacted to a SHA-256 hash + AI-generated summary; audit entries about the transcript remain untouched"
+      "3": "Compaction is itself an audit event: a `transcript.compacted` entry records what was compacted, when, and by whose policy"
+      "4": "Once compacted, the original transcript content cannot be recovered; the compaction policy is opt-in per org with explicit confirmation"
+
+  RETAIN:
+    name: Local-side retention
+    requirements:
+      "1": "Local nodes may garbage-collect audit entries that have been confirmed durable on at least one remote, retaining only a configurable rolling window (default 90 days)"
+      "2": "Local GC is opt-in via `~/.config/rex/config.toml`; default is keep everything locally"
+      "3": "Garbage-collected entries remain queryable via `rex log tail --remote <name>` which transparently fans out to the remote"
+
+constraints:
+
+  SEC:
+    description: Audit-log security invariants
+    requirements:
+      "1": "Every audit entry is signed by its originating identity; central nodes verify signatures on receipt"
+      "2": "Audit entries are never encrypted (at-rest queryability requirement); they may reference encrypted transcripts but never embed transcript content"
+      "3": "Audit entry signatures cover the entire entry except its server-assigned ID; this binds the entry to its origin and prevents forgery"
+
+  COMPLIANCE:
+    description: Compliance posture
+    requirements:
+      "1": "The audit-log retention default (forever) is intentional and overrideable; orgs requiring time-bounded retention for legal reasons must explicitly configure compaction and central-side retention windows"
+      "2": "Audit-log queries that return entries from other users always include the originating actor; no anonymization in v1"
+
+extra:
+  owners: []
+  related_specs: [overview, identity-and-trust, sync, storage, central-node]

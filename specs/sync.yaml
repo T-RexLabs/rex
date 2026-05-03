@@ -1,0 +1,173 @@
+spec_version: 1
+
+metadata:
+  id: sync
+  name: Sync engine
+  state: draft
+  created_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-03T00:00:00Z
+
+description: |
+  Rex is eventually consistent, not real-time. The sync engine is the
+  spine that lets a local node coordinate with one or more central nodes
+  (and resync after offline periods) without losing the offline-first
+  guarantee.
+
+  The deliberate split: human-authored content (specs, settings, RBAC,
+  schedules, templates, tool configs, remote refs) syncs via Git-style
+  merge with auto-rebase. Streams of facts (transcripts, run records,
+  audit log, comments/annotations) sync as event-sourced append-only
+  logs. Derived state (search index, repo checkouts, caches) never
+  syncs and is rebuilt locally.
+
+  Central is authoritative on conflict: when a local diverges from
+  central, the local rebases. This is the simpler-to-argue-about model
+  for v1; it costs us a clear "draft vs committed" UX which we own.
+
+  Offline behavior is full local-first: every harness invocation, every
+  spec edit, every scheduled run executes without phoning home.
+
+tasks:
+  - id: sync-categorization
+    description: "Mark every persistent entity in the storage layer with its sync category at the type level"
+    state: todo
+    references: [CAT.1, CAT.2, CAT.3]
+
+  - id: hlc-clock
+    description: "Implement hybrid logical clocks for cross-node event ordering"
+    state: todo
+    references: [ORDER.1, ORDER.2, ORDER.3]
+
+  - id: sync-api-server
+    description: "Implement the central-node `/sync/...` endpoints (state, push, pull, conflict)"
+    state: todo
+    references: [API.1, API.2, API.3, API.4]
+
+  - id: sync-api-client
+    description: "Implement the local-node sync client: `rex push`, `rex pull`, `rex sync`"
+    state: todo
+    references: [CLIENT.1, CLIENT.2, CLIENT.3]
+
+  - id: rebase-engine
+    description: "Implement the auto-rebase logic for git-merged content; surface unresolvable conflicts to the user"
+    state: todo
+    references: [GIT.1, GIT.2, GIT.3, GIT.4]
+
+  - id: draft-state-ux
+    description: "Implement the draft-vs-committed split — drafts are local-only events not pushed; the CLI and UI surface this distinctly"
+    state: todo
+    references: [DRAFT.1, DRAFT.2, DRAFT.3]
+
+  - id: bootstrap-flow
+    description: "Implement `rex remote add <name> <url>` and the per-workspace clone flow"
+    state: todo
+    references: [BOOT.1, BOOT.2]
+
+components:
+
+  CAT:
+    name: Sync categories
+    requirements:
+      "1": "Every persistent entity belongs to exactly one of three sync categories: `git_merged`, `event_sourced`, `derived`"
+      "2": "The `git_merged` set is: workspace.yaml, specs/*, schedules/*, rbac.yaml, templates/*, hooks/*, tool configs, remote refs"
+      "3": "The `event_sourced` set is: events.log, transcripts/*, run records, audit log entries, comments/annotations"
+      "4": "The `derived` set is: index.sqlite, snapshots/*, repo checkouts, caches"
+      "5": "The category is enforced at the storage layer; the sync engine refuses to push entities in the wrong category and refuses to pull derived entities from a remote"
+
+  GIT:
+    name: Git-style merge for human-authored content
+    requirements:
+      "1": "Git-merged entities sync via three-way merge with the central node's HEAD as the merge base"
+      "2": "Auto-rebase is the default: when local and central have both changed an entity, local replays its changes on top of central"
+      "3": "Unresolvable conflicts surface as merge markers in the file and a `<file>.conflict` sidecar describing the conflict; `rex spec validate` and `rex run start` refuse to operate on conflicted entities"
+      "4": "Conflict resolution is a human action via `rex sync resolve <file>` after editing; resolution emits an event that propagates the chosen text"
+      "5": "Central is authoritative: when offline-period work conflicts with central state, the local user must rebase and may need to resolve; central never rebases on local"
+
+  EVENTS:
+    name: Event-sourced sync for streams of facts
+    requirements:
+      "1": "Event-sourced entities are append-only; their sync is log replication, not merge"
+      "2": "A push sends a contiguous batch of events with HLC-ordered IDs; the central node validates the batch, appends to its own log, and acknowledges with the new server-side HEAD"
+      "3": "Two nodes that have observed the same set of events arrive at the same total order via HLC tiebreaking on equal timestamps"
+      "4": "Audit-log events are special-cased: they are append-only at the storage level and the schema forbids modification; central nodes refuse audit-log mutations even if signed by an admin"
+
+  ORDER:
+    name: Event ordering with HLC
+    requirements:
+      "1": "Every event carries a hybrid logical clock timestamp: `(physical_ms, logical_counter, node_id)`"
+      "2": "On write, the clock advances to `max(local_physical, observed_physical) + tick`; the logical counter increments when the physical component is unchanged"
+      "3": "Events are ordered by `(physical_ms, logical_counter, node_id)` lexicographically; ties on the first two are broken by node ID with central nodes always sorting before local nodes"
+
+  API:
+    name: Central-node `/sync/...` HTTP API
+    requirements:
+      "1": "`GET /sync/state` returns the central node's current HEAD ID, its public key fingerprint, and the protocol version it speaks"
+      "2": "`POST /sync/events` accepts a batch of events from the client; the body is JSON with `since: <last-known-server-event-id>` and `events: [...]`; on success returns the new HEAD; on conflict returns 409 with the diverging tail"
+      "3": "`GET /sync/events?since=<id>` streams events the client hasn't seen, in HLC order, as Server-Sent Events"
+      "4": "`POST /sync/git`, `GET /sync/git/<entity-path>` mediate the git-merged content sync; the wire format is JSON-encoded {entity, base_revision, content, signature}"
+      "5": "Every endpoint requires a valid signed access token (see `identity-and-trust.yaml`); failed authentication returns 401"
+      "6": "All sync endpoints are idempotent under retry: a push of an event the server already has is a no-op (returns existing HEAD)"
+
+  CLIENT:
+    name: Local-node sync client
+    requirements:
+      "1": "`rex push [--remote <name>]` sends local drafts to the named remote; default is the workspace's primary remote"
+      "2": "`rex pull [--remote <name>]` fetches new server-side state and rebases local drafts onto it"
+      "3": "`rex sync` is shorthand for `pull` followed by `push`"
+      "4": "Sync operations write progress events that the UI streams via SSE; sync may be cancelled with Ctrl-C and resumed safely"
+      "5": "When multiple remotes are attached, sync runs serially against each unless `--parallel` is given; failures on one remote do not abort the others"
+
+  DRAFT:
+    name: Drafts vs committed state
+    requirements:
+      "1": "A draft is any change that has been written to the local node but not yet acknowledged by all of its remotes; drafts are stored under `.rex/drafts/` until the next successful push"
+      "2": "`rex status` shows the count of pending drafts per remote, plus any rebase-needed flags"
+      "3": "After a successful rebase, the local user's drafts are kept (now applied on top of central HEAD); the user is told what was rebased"
+      "4": "When a rebase rewrites local history (in the spec/RBAC/git-merged sense), the pre-rebase state is preserved as `<file>.pre-rebase-<timestamp>` for one week before being garbage-collected"
+
+  BOOT:
+    name: Bootstrap and remote attachment
+    requirements:
+      "1": "`rex remote add <name> <url>` registers a remote in `~/.config/rex/remotes.toml` and runs an initial handshake to fetch the server's public key fingerprint and protocol version"
+      "1.1": "After `remote add`, the user must approve the server's fingerprint (TOFU-with-confirmation) before any sync occurs"
+      "2": "A workspace is attached to a remote either at creation (`rex workspace clone <url>`) or later (`rex workspace push --remote <name>` for the first time)"
+
+  PROTO:
+    name: Protocol versioning and negotiation
+    requirements:
+      "1": "Every sync endpoint advertises a protocol version on first contact; versions are integers"
+      "2": "Local and central must agree on a common version; if no common version exists, the connection is refused with a clear error"
+      "3": "Within a major version, additive changes are forward-compatible; breaking changes require a major version bump"
+
+  COMPACT:
+    name: Compaction and retention (central)
+    requirements:
+      "1": "Audit-log entries are kept forever by default; no compaction"
+      "2": "Transcript content older than a configurable threshold (default 365 days) may be compacted to a hash + AI-generated summary; the audit metadata about the transcript is preserved"
+      "3": "Compaction is opt-in per org and runs as a scheduled background job; the operation is logged to the audit log"
+
+constraints:
+
+  ENG:
+    description: Sync engine engineering invariants
+    requirements:
+      "1": "Sync correctness is determined by deterministic tests with injected time and randomness; flaky sync tests are not tolerated"
+      "2": "The sync engine must handle network failure mid-batch gracefully: a partial batch is never persisted on the server, and the client retries with idempotent semantics"
+      "3": "Conflict response shapes are versioned and machine-readable; the CLI and web UI render them via shared code"
+
+  SEC:
+    description: Sync security invariants
+    requirements:
+      "1": "Every event pushed to a central node is signed by the originating identity; central nodes verify signatures before persisting"
+      "2": "An event signature covers the event ID, type, timestamp, payload, and originating workspace ID — sufficient to bind it to its origin"
+      "3": "An event whose signature does not verify is rejected with no other information; the rejection is logged in the central node's own audit log"
+
+extra:
+  owners: []
+  related_specs: [overview, storage, identity-and-trust, audit, execution, central-node]
+  notes: |
+    The "user did a week offline and central just rebased their history"
+    UX risk is real and partially mitigated by DRAFT.4 (one-week
+    pre-rebase preservation). The richer affordance for visualizing
+    draft-vs-committed state on the workspace overview page remains
+    open in the gap report and is owned by the web-ui spec.

@@ -1,0 +1,128 @@
+spec_version: 1
+
+metadata:
+  id: identity-and-trust
+  name: Identity, trust, and access control
+  state: draft
+  created_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-03T00:00:00Z
+
+description: |
+  Identity in Rex follows the Git/SSH spirit: each user has a portable
+  ed25519 keypair plus a human-readable handle. The keypair is the proof
+  of identity; the handle is for humans. Trust is per-remote — a remote
+  that doesn't recognize your public key won't talk to you.
+
+  Locally there are no organizations. Orgs only exist in the context
+  of a central node you've connected to, and a single human may belong
+  to multiple unrelated orgs across different central nodes.
+
+  RBAC is fine-grained from v1, including per-harness scoping, but ships
+  with sensible role defaults so creating a workspace is one click rather
+  than a permissions wizard.
+
+tasks:
+  - id: keypair-generation
+    description: Implement keypair generation, storage, and the abstract Signer interface (so passkeys/WebAuthn can be added later)
+    state: todo
+    references: [KEY.1, KEY.2, KEY.3]
+
+  - id: handshake-protocol
+    description: Implement the challenge-response handshake between local and central
+    state: todo
+    references: [AUTH.1, AUTH.2, AUTH.3]
+
+  - id: token-lifecycle
+    description: Implement short-lived access tokens, refresh tokens, and the server-side revocation list
+    state: todo
+    references: [TOKEN.1, TOKEN.2, TOKEN.3, TOKEN.4]
+
+  - id: rbac-engine
+    description: Implement the RBAC engine with role defaults and fine-grained scoping
+    state: todo
+    references: [RBAC.1, RBAC.2, RBAC.3, RBAC.4]
+
+  - id: org-model-central
+    description: Implement orgs as a central-only entity with membership, invites, and per-org tenancy
+    state: todo
+    references: [ORG.1, ORG.2, ORG.3, ORG.4]
+
+components:
+
+  KEY:
+    name: Keypair and signing
+    requirements:
+      "1": Identity is an ed25519 keypair plus a human-readable handle (e.g. `alice`); both are persisted under `~/.config/rex/identity/`
+      "2": The signing operation is exposed via an abstract Signer interface; the file-on-disk implementation is one of potentially several backends
+      "2.1": v1 ships only the file-on-disk Signer; the interface leaves room for passkey/WebAuthn/HSM-backed signers without changing the auth handshake
+      "3": Multiple identities per machine are supported; the active identity is selected via `~/.config/rex/config.toml` and overridable per-command via `--identity`
+      "4": Public-key fingerprints (SHA-256 of the public key, hex-encoded, 16-char prefix) are the canonical short reference for an identity in CLI output and audit logs
+      "5": Private keys are never transmitted, never logged, and never written outside `~/.config/rex/identity/`
+
+  AUTH:
+    name: Cross-node authentication handshake
+    requirements:
+      "1": A local node authenticates to a central node by signing a server-issued nonce with its ed25519 private key; the central node verifies against the registered public key
+      "1.1": The challenge is a random 32-byte value with a server-issued ID and an expiry of 60 seconds
+      "1.2": The signed payload includes the challenge bytes, the central node's hostname, and the requested scope; this binds the signature to a specific server and prevents cross-server replay
+      "2": Public keys are registered with a central node out-of-band — the user pastes a key (or `rex remote add` does it) and the central admin (or invite flow) approves
+      "3": 'The handshake fails closed: any signature failure, expired nonce, or unregistered key returns 401 with no other information'
+      "4": Every successful authentication writes an `auth.success` audit event; every failed attempt writes an `auth.failure` event
+      "5": No password-based authentication path exists in the codebase
+
+  TOKEN:
+    name: Token lifecycle
+    requirements:
+      "1": Successful authentication issues a short-lived access token (15 minute default) and a longer-lived refresh token (30 day default)
+      "2": Tokens are opaque random strings; the central node stores hashes, not the tokens themselves
+      "3": Refresh exchanges a refresh token for a new access token + new refresh token; the old refresh token is invalidated (rotation)
+      "4": A central node maintains a revocation list of token IDs; revocations are checked on every access token use; revocations propagate immediately within a single central node
+      "5": Token expiry, revocation, and refresh-rotation events are all written to the audit log
+
+  ORG:
+    name: Organizations (central-only)
+    requirements:
+      "1": Organizations are a first-class entity on central nodes only; the local instance has no concept of orgs
+      "2": An organization is a named tenancy boundary — its workspaces, members, RBAC rules, encryption keys, and audit log are scoped to it
+      "3": A central node may host many orgs (multi-tenant); orgs do not see each other's data
+      "4": A user (identified by public key fingerprint) may be a member of multiple orgs on the same central node, with different roles in each
+      "5": 'Org membership is granted via invite flow: an existing member with `org.admin` permission issues an invite link that the recipient redeems with their public key'
+      "6": Workspaces on a central node are owned by exactly one org
+
+  RBAC:
+    name: Role-based access control
+    requirements:
+      "1": The RBAC engine answers questions of the form "may identity I perform action A on resource R in org O at time T?"
+      "2": 'V1 ships three default roles per org: `admin` (everything), `member` (can create workspaces, run harnesses, edit specs), `viewer` (read-only)'
+      "3": Permissions are expressed as `<resource-type>.<action>` strings (e.g. `workspace.create`, `spec.edit`, `harness.invoke`)
+      "4": 'Fine-grained scoping is supported: a permission grant may carry constraints on which workspaces, which harnesses, which tools, and a time window'
+      "4.1": Time-window constraints are evaluated against the central node's clock
+      "4.2": Harness scoping allows e.g. "may invoke claude-code but not codex in workspace X"
+      "5": 'Local instances enforce a simplified policy: a workspace is either reachable to the active identity or not; finer-grained checks happen on the central node when work syncs'
+      "6": Every RBAC change (role assigned, permission granted, scope modified) writes an audit event with before/after values
+
+  IDP:
+    name: SSO and IdP bridging (central-only, deferred surface)
+    requirements:
+      "1": V1 ships native key-based identity only; SAML, OIDC, and SCIM bridges are deferred but the data model leaves room for them
+      "1-note": The deferred surfaces are flagged as open questions in the gap report — owners need to confirm SAML vs OIDC, and the IdP-pre-creates-user-vs-first-login policy
+      "2": When IdP bridging ships, an external identity must always be paired with at least one ed25519 public key; the IdP provides the human-attribute layer, the keypair provides the cryptographic identity
+
+constraints:
+
+  SEC:
+    description: Security invariants for identity and access
+    requirements:
+      "1": Public-key registration on a central node always requires an explicit approval step; auto-trust on first use is forbidden
+      "2": Token rotation must be enforced — reusing a refresh token after rotation revokes the entire token chain and writes a `auth.replay_attempt` audit event
+      "3": Central nodes must rate-limit authentication attempts per source IP and per public key, with exponential backoff on repeated failures
+      "4": All identity-related cryptographic operations use the platform's standard libraries (Go's `crypto/ed25519`, etc.); custom crypto is forbidden
+
+extra:
+  owners: []
+  related_specs: [overview, central-node, audit, sync]
+  notes: |
+    The "user belongs to multiple central nodes with different orgs" model
+    means the local instance must track per-remote identity preferences.
+    Default behavior: use the active machine identity; per-remote override
+    available in `~/.config/rex/remotes.toml`.

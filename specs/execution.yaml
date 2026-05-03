@@ -1,0 +1,161 @@
+spec_version: 1
+
+metadata:
+  id: execution
+  name: Execution engine (DAG + ACP)
+  state: draft
+  created_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-03T00:00:00Z
+
+description: |
+  Rex's execution engine is an embedded event-sourced DAG executor written
+  in Go (~2-3k lines target). The engine is a fold over the event log:
+  every node start, node complete, retry, approval, and failure is an event,
+  and the engine's state at any moment is derivable from replaying its
+  events. This unifies the workflow runner with the audit log — the same
+  data answers "what is happening" and "what happened."
+
+  Harnesses (Claude Code, Codex, OpenCode, etc.) are driven via ACP (Agent
+  Client Protocol — JSON-RPC over NDJSON, typically stdio). Each harness
+  invocation is a node in the DAG; the harness's own ACP frames stream
+  back as transcript events.
+
+  V1 ships local-only execution. Central-side execution is v1.5 — the
+  data model leaves room for it (every run records where it executed)
+  but the central UI surfaces and credential handoff are deferred.
+
+tasks:
+  - id: acp-client-layer
+    description: "Implement a pure-Go ACP client that opens harness sessions, streams events, and handles permission requests"
+    state: todo
+    references: [ACP.1, ACP.2, ACP.3, ACP.4, ACP.5]
+
+  - id: harness-adapter-registry
+    description: "Implement adapters for Claude Code, Codex, OpenCode, GitHub Copilot, Cursor — using their ACP wrappers where they exist"
+    state: todo
+    references: [ADAPT.1, ADAPT.2, ADAPT.3]
+
+  - id: dag-executor
+    description: "Implement the event-sourced DAG executor: node lifecycle, retries, approval gating, parallel/branch primitives"
+    state: todo
+    references: [DAG.1, DAG.2, DAG.3, DAG.4]
+
+  - id: dag-primitives
+    description: "Implement the v1 node types: harness_invocation, shell_exec, spec_validate, human_approval, branch, parallel, wait, indexing, scheduled_trigger"
+    state: todo
+    references: [PRIM.1, PRIM.2, PRIM.3, PRIM.4, PRIM.5, PRIM.6, PRIM.7, PRIM.8, PRIM.9]
+
+  - id: run-lifecycle-cli
+    description: "Implement `rex run start`, `rex run watch`, `rex run cancel`, `rex run show`, `rex run list`"
+    state: todo
+    references: [RUN.1, RUN.2, RUN.3, RUN.4, RUN.5]
+
+  - id: schedule-engine
+    description: "Implement scheduled work: cron triggers (local), webhook triggers (central), file-watch triggers (local)"
+    state: todo
+    references: [SCHED.1, SCHED.2, SCHED.3]
+
+  - id: permission-prompt-flow
+    description: "Implement the human-in-the-loop permission prompt: live prompt while watching, queueing/timeout policy when not"
+    state: todo
+    references: [PERM.1, PERM.2, PERM.3]
+
+components:
+
+  ACP:
+    name: ACP client layer
+    requirements:
+      "1": "Rex implements a pure-Go ACP client that drives harnesses over JSON-RPC NDJSON on stdio (default) or a local socket"
+      "2": "The client supports the ACP session lifecycle: `session/new`, streaming updates, `session/cancel`, model and mode switching"
+      "3": "Every ACP frame received from a harness is captured as an event in the run's transcript before any further processing"
+      "4": "`session/request_permission` from the harness becomes a Rex permission event; the engine pauses the run until resolved (see PERM)"
+      "5": "MCP servers may be passed via the `session/new` `mcpServers` parameter (direct attachment, no portal proxy in v1)"
+
+  ADAPT:
+    name: Per-harness adapters
+    requirements:
+      "1": "Each supported harness has an adapter that knows how to launch it as an ACP server, plus its quirks (env vars, model names, capability flags)"
+      "2": "V1 supported harnesses: Claude Code (via `@agentclientprotocol/claude-agent-acp`), Codex (via `codex-acp`), OpenCode (native ACP), GitHub Copilot (deferred — depends on protocol availability), Cursor (deferred)"
+      "3": "Adapters are registered in a central registry keyed by harness name; adding a new harness is one new file + one registry entry"
+      "4": "The adapter contract is small enough that adapters average under 200 lines"
+
+  DAG:
+    name: DAG executor core
+    requirements:
+      "1": "A run is a DAG of nodes; nodes have edges that may be conditional (depending on a previous node's output)"
+      "2": "The executor is event-sourced: every state change emits an event (`run.started`, `node.started`, `node.succeeded`, `node.failed`, `node.retried`, `permission.requested`, `permission.granted`, `permission.denied`, `run.completed`, `run.cancelled`, `run.aborted`)"
+      "3": "Replay of a run's events from start to current event reconstructs the engine's exact state — used for crash recovery and `rex run watch --since-start`"
+      "4": "The default failure policy is retry with linear backoff up to 3 attempts; configurable per-node and per-workflow"
+
+  PRIM:
+    name: DAG node primitives (v1)
+    requirements:
+      "1": "`harness_invocation` — opens an ACP session, sends a prompt, captures all frames; output is the final assistant message and a list of tool calls made"
+      "2": "`shell_exec` — runs a shell command in the workspace's working directory (resolved by multi-repo policy); output is exit code, stdout, stderr"
+      "3": "`spec_validate` — runs the spec validator against one or more spec files; output is the validation result"
+      "4": "`human_approval` — pauses the run until a user approves or denies via CLI/UI; output is the decision and the approver's identity"
+      "5": "`branch` — picks one of N edges based on a predicate over previous node outputs; predicates use a small expression language (path equality, exit-code check, regex match)"
+      "6": "`parallel` — fan-out to N children, then fan-in once all complete; configurable failure policy (any-failure, majority, all)"
+      "7": "`wait` — pauses for a duration or until an external signal (timer or `rex run signal <run-id> <name>`)"
+      "8": "`indexing` — refreshes the workspace's search index after content changes"
+      "9": "`scheduled_trigger` — the entrypoint for runs initiated by cron, webhook, or file-watch (see SCHED)"
+      "10": "Approval is a flag on any node (`requires_approval: true`), not exclusive to `human_approval`; this allows e.g. gating a `shell_exec` behind approval"
+
+  RUN:
+    name: Run lifecycle and CLI
+    requirements:
+      "1": "`rex run start [--spec <id>] [--harness <name>] [--prompt <text>]` initiates a run; the prompt and spec context are fed to the harness as the initial message"
+      "2": "`rex run watch <run-id>` streams events live via SSE; supports `--since-start` to replay from the beginning"
+      "3": "`rex run show <run-id>` displays the full transcript and DAG status, working offline"
+      "4": "`rex run list` shows recent runs with status, harness, spec, duration"
+      "5": "`rex run cancel <run-id>` requests cancellation; the engine sends `session/cancel` to the harness and waits up to 10s before forcing termination"
+
+  SCHED:
+    name: Scheduled work
+    requirements:
+      "1": "Three trigger mechanisms share a common `Trigger` interface: cron (local), webhook (central), file-watch (local)"
+      "1.1": "Cron triggers fire on the local node's clock; the cron expression is in standard 5-field format"
+      "1.2": "Webhook triggers expose a central-node endpoint with HMAC signature verification; only valid for workspaces synced to that central node"
+      "1.3": "File-watch triggers monitor paths under the workspace via the host OS's filesystem-event API"
+      "2": "Schedule definitions live in `.rex/schedules/<name>.yaml` (git-merged); each one points at a workflow YAML and may set environment overrides"
+      "3": "When a scheduled run fires, it executes through the same DAG executor as any other run; the originating trigger is recorded in the `run.started` event"
+
+  PERM:
+    name: Permission prompts
+    requirements:
+      "1": "When a harness requests permission via ACP `session/request_permission`, the engine pauses the affected node and emits a `permission.requested` event with the requested action"
+      "2": "If a user is actively watching the run via CLI or web UI, they are prompted live and may approve, deny, or set a remember-this-decision flag (scoped to the run)"
+      "3": "If no user is watching, the prompt queues; v1 default behavior is to wait indefinitely with a per-workspace overridable timeout (default: no timeout); after timeout, the default policy is deny-and-fail-the-node"
+      "3-note": "The not-watching case is flagged as an open question in the gap report; the wait-indefinitely default is conservative but may need revisiting once real-world usage data exists"
+
+constraints:
+
+  EXEC-SCOPE:
+    description: V1 execution scope boundary
+    requirements:
+      "1": "All harness invocations execute on the local node in v1; the data model records which node executed each run so central-side execution can be added without migration"
+      "2": "Per-run sandbox isolation in v1 is host-level only (no containers, no microVMs, no openshell); the architecture leaves a clean attachment point for sandboxing later"
+
+  EXEC-CONC:
+    description: V1 concurrency policy
+    requirements:
+      "1": "Within a workspace, harness runs are serialized: only one active harness invocation at a time; subsequent runs queue"
+      "2": "The data model permits per-run working-directory recording so worktree-aware concurrency is a future feature, not a rewrite"
+      "3": "Across workspaces, runs are concurrent without limit (a user can have one run going in workspace A while another runs in workspace B)"
+
+  EXEC-CRED:
+    description: Credential model
+    requirements:
+      "1": "Local runs use the local user's API keys for the harness's underlying model provider; keys are read from environment variables or a per-harness config file"
+      "2": "Central runs (deferred to v1.5) use per-workspace API keys held by the central node; no impersonation of user credentials"
+      "3": "API keys are never logged in the audit log; only the fact that an authenticated request was made"
+
+extra:
+  owners: []
+  related_specs: [overview, sync, storage, audit, tools, hooks, cli, web-ui]
+  notes: |
+    Build-vs-adopt for the workflow engine was decided in favor of build:
+    given Rex is already event-sourced, the executor is a fold over the
+    event log, which is a structurally cleaner solution than embedding
+    Temporal. If usage outgrows this — particularly around durable timers
+    and child workflows — Temporal becomes attractive again as a v2 swap.

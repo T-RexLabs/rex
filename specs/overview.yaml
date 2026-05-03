@@ -1,0 +1,108 @@
+spec_version: 1
+
+metadata:
+  id: overview
+  name: Rex v1 — system overview
+  state: draft
+  created_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-03T00:00:00Z
+
+description: |
+  Rex is a management portal for agentic coding harnesses (Claude Code, Codex,
+  OpenCode, GitHub Copilot, Cursor, etc.). It is a decentralized application:
+  local-first nodes that can connect to one or more independent central nodes
+  for shared auditability, search, and dispatch.
+
+  A workspace is a container of intent — it can hold zero, one, or many
+  repositories, plus specs, transcripts, scheduled work, hooks, and connected
+  tools. Work happens in five flavors (questions, non-spec interactions, spec
+  work, management, scheduled work), all sharing one underlying interaction
+  model and disambiguated by tags + permissions.
+
+  This spec is the umbrella. It captures system-wide invariants and the v1
+  scope. Each numbered domain has its own sibling spec under `specs/`.
+
+tasks:
+  - id: bootstrap-repo
+    description: Create the Go module, repo layout, top-level CLI scaffold, and CI pipeline
+    state: todo
+    references: [SYS.1, SYS.2]
+
+  - id: shared-core-package
+    description: Establish the shared core package structure used by both local and central binaries
+    state: todo
+    references: [SYS.1, SYS.3]
+
+components:
+
+  SYS:
+    name: System-wide invariants
+    requirements:
+      "1": Local and central are built from one Go module; differences live behind build tags or a thin shell, never in core logic
+      "2": Every persisted piece of state has a known sync category — git-merged, event-sourced, or per-node-derived — and the category is enforced at the storage layer
+      "3": Every event written anywhere has a `type` and a `version` field; readers skip unknown types rather than erroring
+      "4": Schema evolution is additive only — no field removal, no semantic changes to existing fields, ever
+      "5": The system is eventually consistent, not real-time; SSE is used for live UX updates, not for correctness
+      "6": The local node continues to function fully when no remote is reachable; remote dependence is a UX degradation, never a correctness one
+      "7": Central nodes are isolated islands from each other; only local nodes fan out across multiple remotes
+      "8": Every user-facing surface (CLI, web UI, API) is built on the same core read/write paths — no surface has privileged backdoors
+
+  NAME:
+    name: Naming and identity
+    requirements:
+      "1": The product is named Rex; the binary, CLI command, and metadata directory all reflect this
+      "1.1": The CLI command is `rex`
+      "1.2": The on-disk per-workspace metadata directory is `.rex/`
+      "1.3": The per-workspace settings file is `workspace.yaml` (not `rex.yaml` — the file describes the workspace, not the tool)
+      "1.4": The user-level config directory is `~/.config/rex/` on Linux, with platform-equivalent locations elsewhere
+
+  SCOPE:
+    name: V1 scope boundary
+    requirements:
+      "1": V1 ships local-only execution; central-side execution is explicitly v1.5
+      "2": V1 ships verb-noun deeply-nested CLI as the primary interface; web UIs are secondary but must exist on day one
+      "3": V1 ships two web UIs — local (simplified, no org features) and central (full) — sharing components where possible
+      "4": V1 extensibility is limited to spec templates and saved searches; plugins, custom DAG node types, custom CLI commands, and pre-event gating hooks are deferred
+      "5": V1 has no sandboxing for harness invocations beyond what the host OS provides; container/microVM/openshell isolation is deferred
+      "6": V1 has no central-to-central federation
+      "7": V1 has no embeddings or semantic search; FTS only
+
+constraints:
+
+  ENG:
+    description: Engineering invariants applied across the whole codebase
+    requirements:
+      "1": No external runtime services beyond SQLite (local) / Postgres (central); workflow engine, search, and event log are all in-process
+      "2": The Go module has no transitive dependencies that themselves require cgo unless absolutely necessary; the binary should be statically linkable on Linux
+      "3": Every public API surface (REST endpoints, CLI commands, hook event payloads) is versioned independently and negotiates on connect
+      "4": Tests for sync, execution, and audit-log code paths are deterministic; time and randomness are injected, not pulled from the environment
+
+  SEC:
+    description: Security invariants
+    requirements:
+      "1": Secrets and tokens never leave the node where they were created; only references sync
+      "2": The audit log is append-only at the storage layer — the schema and access path forbid mutation and deletion of audit rows
+      "3": All cross-node communication uses HTTPS; no plaintext fallback exists in the codebase
+      "4": User identity is proven by signing a server-issued challenge with the user's ed25519 private key; no password-based auth path exists
+
+extra:
+  owners: []
+  related_specs:
+    - spec-format
+    - identity-and-trust
+    - workspace
+    - storage
+    - sync
+    - execution
+    - search
+    - tools
+    - hooks
+    - audit
+    - central-node
+    - cli
+    - web-ui
+  notes: |
+    The name Rex was chosen for QWERTY-left-hand typeability and a clean
+    three-letter CLI. There is a namespace collision with the Perl-based
+    Rex DevOps framework (rexify.org); not blocking but worth a domain
+    and GitHub org grab before any public announcement.

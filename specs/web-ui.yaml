@@ -1,0 +1,143 @@
+spec_version: 1
+
+metadata:
+  id: web-ui
+  name: Web UIs (local + central)
+  state: draft
+  created_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-03T00:00:00Z
+
+description: |
+  Rex ships two web UIs from day one: a local UI served by the local
+  binary, and a central UI served by central nodes. They share components
+  where possible. The local UI is a strict subset of the central UI —
+  no org management, no member/role admin, no SSO/IdP surfaces.
+
+  The technology is htmx + server-rendered HTML, with `hx-ext="sse"` for
+  the streaming bits (run progress, transcript live updates) and regular
+  htmx swaps for everything else. There is no SPA framework. Both UIs
+  talk to the same REST/SSE backend that the CLI talks to — no surface
+  has privileged backdoors.
+
+  The CLI is the polish-first surface for v1. The web UI must be
+  functional on day one but it is a secondary view onto the same model;
+  visual polish is allowed to lag the CLI.
+
+tasks:
+  - id: server-side-html
+    description: "Set up the Go HTML template engine, base layout, and the htmx + SSE wiring"
+    state: todo
+    references: [STACK.1, STACK.2, STACK.3]
+
+  - id: shared-component-lib
+    description: "Build the small set of shared components used in both UIs (cards, tables, run-transcript, ACID badge, draft indicator)"
+    state: todo
+    references: [SHARED.1, SHARED.2]
+
+  - id: local-ui-routes
+    description: "Implement the local UI route set: workspaces, specs, runs, audit, remotes, settings"
+    state: todo
+    references: [LOCAL.1, LOCAL.2, LOCAL.3, LOCAL.4, LOCAL.5, LOCAL.6]
+
+  - id: central-ui-routes
+    description: "Implement the central UI route set: everything in local + organization, members, RBAC, IdP/SSO (placeholder), encryption keys"
+    state: todo
+    references: [CENTRAL.1, CENTRAL.2, CENTRAL.3, CENTRAL.4]
+
+  - id: live-run-watching
+    description: "Implement the live-run-watching SSE endpoint and the corresponding HTML view that streams transcript and permission prompts"
+    state: todo
+    references: [LIVE.1, LIVE.2, LIVE.3]
+
+  - id: search-ui
+    description: "Implement the search UI with the scope picker (current workspace / all local / specific remote) and saved searches"
+    state: todo
+    references: [SEARCH.1, SEARCH.2, SEARCH.3]
+
+components:
+
+  STACK:
+    name: Technology stack
+    requirements:
+      "1": "Server-rendered HTML produced by Go's `html/template` (or a thin wrapper); no SPA framework"
+      "2": "htmx for partial swaps and form interactions; `hx-ext=\"sse\"` for live-streaming run transcripts and run status changes"
+      "3": "CSS is hand-written and lives alongside the templates; no preprocessor; targets evergreen browsers only"
+      "4": "Both UIs share a small JS layer for keyboard shortcuts, copy-to-clipboard, and the timer-based draft-indicator refresh"
+
+  SHARED:
+    name: Shared components
+    requirements:
+      "1": "A set of shared partial templates is used by both local and central UIs: workspace card, spec table row, run table row, audit log row, ACID badge (click-to-copy), draft indicator, scope picker"
+      "2": "Templates render identically in both UIs unless they explicitly opt into central-only or local-only branches"
+
+  LOCAL:
+    name: Local UI route set
+    requirements:
+      "1": "Routes: `/`, `/workspaces`, `/workspaces/<id>`, `/workspaces/<id>/specs`, `/workspaces/<id>/specs/<spec-id>`, `/workspaces/<id>/runs`, `/workspaces/<id>/runs/<run-id>` (live), `/workspaces/<id>/audit`, `/workspaces/<id>/remotes`, `/workspaces/<id>/settings`"
+      "2": "Authentication is local-machine: the binary listens on localhost only by default, and the user is implicitly the owner of the machine identity; remote-network exposure requires opt-in config"
+      "3": "Workspace overview page shows: workspace state, draft counts, recent runs, attached remotes, quick-action buttons (start run, validate specs, sync now)"
+      "4": "Spec detail view has tabs: rendered (markdown), YAML source, tasks, history; ACID badges are click-to-copy"
+      "5": "Run detail view streams transcript live via SSE during an active run; supports inline approve/deny for permission prompts"
+      "6": "Settings is a single-page form covering identity selection, default remote, log levels, hook search paths"
+
+  CENTRAL:
+    name: Central UI additional surfaces
+    requirements:
+      "1": "Everything in the local UI route set, plus an Organization section: `/orgs/<id>` (overview), `/orgs/<id>/members`, `/orgs/<id>/roles`, `/orgs/<id>/idp` (placeholder pre-IdP-shipping), `/orgs/<id>/encryption-keys`"
+      "2": "Org-scoped pages show a 'CENTRAL ONLY' banner indicator on shared layout headers when accessed in a context that has them gated; this gate is also reflected in the local UI's nav (those routes don't exist locally)"
+      "3": "Members view supports invite issuance, role changes, and removal; every action runs through RBAC and writes audit entries"
+      "4": "Encryption keys view is the surface for opt-in per-tenant transcript encryption (storage.yaml ENC.2)"
+
+  LIVE:
+    name: Live run watching
+    requirements:
+      "1": "An SSE endpoint at `/workspaces/<id>/runs/<run-id>/stream` emits run events as they happen; events include node lifecycle, transcript chunks, and permission prompts"
+      "2": "The run detail page subscribes via `hx-ext=\"sse\"` and renders incoming chunks; the page works correctly when first opened mid-run (all prior events are replayed before new ones)"
+      "3": "Permission prompts render as inline cards with approve/deny buttons; click triggers a POST to `/workspaces/<id>/runs/<run-id>/permission` that resolves the prompt"
+
+  SEARCH:
+    name: Search UI
+    requirements:
+      "1": "A search input with a scope picker is present in the global header; the picker offers: current workspace, all local workspaces, each attached remote, all remotes"
+      "2": "Result presentation uses BM25-flavored snippet highlighting; clicking a result opens the underlying entity (spec, run, audit entry)"
+      "3": "Saved searches appear in a sidebar; one click runs them and updates the URL so the result is shareable"
+
+  DRAFT-VIZ:
+    name: Draft-vs-committed visualization
+    requirements:
+      "1": "Every page that shows entities subject to sync displays a draft-vs-committed indicator; for workspaces with multiple remotes, separate indicators per remote"
+      "2": "The workspace overview shows a richer affordance — a strip showing local timeline, central timeline, and the rebase relationship between them"
+      "2-note": "The exact richer-affordance design is flagged as an open question in the gap report; the v1 implementation may ship as a Git-log-flavored ASCII strip with the design left as room to iterate"
+
+constraints:
+
+  PERF:
+    description: Web UI performance invariants
+    requirements:
+      "1": "Server-rendered page time-to-first-byte is under 100ms for cached templates against local-only data"
+      "2": "SSE reconnection on transient network failure is automatic; the page never silently freezes when the connection drops"
+      "3": "No JS bundle exceeds 50KB minified (htmx + the small custom layer)"
+
+  ACCESS:
+    description: Accessibility and compatibility invariants
+    requirements:
+      "1": "All interactive elements are keyboard-navigable; focus order matches visual order"
+      "2": "Color is not the sole carrier of information for state indicators; icons or text labels accompany color"
+      "3": "The UI degrades gracefully on JS-disabled browsers — read paths fully work, write paths show a clear notice"
+
+  SCOPE-CUT:
+    description: V1 web UI non-goals
+    requirements:
+      "1": "No central-side execution UI in v1 (matches `execution.yaml` EXEC-SCOPE)"
+      "2": "No scheduled-jobs management view in v1 — schedule files are edited via CLI/text editor"
+      "3": "No plugin management UI in v1"
+      "4": "No web UI for hook management in v1; `rex hooks list` is the only surface"
+      "5": "No per-tool/per-time-window RBAC scoping UI in v1; the data model supports it but the UI ships in a later milestone"
+
+extra:
+  owners: []
+  related_specs: [overview, cli, execution, search, audit, central-node, sync]
+  notes: |
+    The "permission prompt while no user is watching" UX (run continues
+    paused, eventual timeout) is owned by execution.yaml PERM.3 — the web
+    UI just renders the resulting state.
