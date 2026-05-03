@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/asabla/rex/internal/local/remotes"
 	syncclient "github.com/asabla/rex/internal/local/sync"
 )
 
@@ -22,8 +23,9 @@ func newSyncCmd() *cobra.Command {
 		Long: `Push local events past the watermark, then pull anything new from
 the central node, advancing the per-remote watermark on success.
 
-Until storage.global-config-layout lands, ` + "`--url`" + ` is required;
-` + "`--remote`" + ` names the watermark file under .rex/drafts/<remote>.toml.`,
+` + "`--remote <name>`" + ` looks up the URL from
+~/.config/rex/remotes.toml (registered via ` + "`rex remote add`" + `).
+` + "`--url`" + ` overrides any registry lookup.`,
 		RunE: runSyncFn,
 	}
 	addSyncFlags(cmd)
@@ -60,22 +62,37 @@ on success.`,
 // Centralizing here keeps the three commands' surface identical.
 func addSyncFlags(cmd *cobra.Command) {
 	cmd.Flags().String("workspace", "", "workspace root (default: walk up from cwd)")
-	cmd.Flags().String("remote", "primary", "watermark name under .rex/drafts/<remote>.toml")
-	cmd.Flags().String("url", "", "central node URL (required until rex remote add lands)")
+	cmd.Flags().String("remote", "primary", "registered remote name (also names the watermark file)")
+	cmd.Flags().String("url", "", "central node URL (overrides registry lookup)")
+	cmd.Flags().String(remotesPathFlag, "", "override registry path (default: platform user-config dir)")
 }
 
 // resolveSyncContext consolidates the workspace/url/remote resolution
-// every sync-style command needs. Returns the absolute workspace
-// root, the events.log path, the URL, and the remote name; or an
-// error if --url is missing or no workspace is reachable.
+// every sync-style command needs. The URL comes from --url first, then
+// from the named remote in ~/.config/rex/remotes.toml; an error is
+// returned if neither path produces a URL.
 func resolveSyncContext(cmd *cobra.Command) (root, logPath, url, remote string, err error) {
 	url, _ = cmd.Flags().GetString("url")
-	if url == "" {
-		return "", "", "", "", errors.New("--url is required (rex remote add lands later)")
-	}
 	remote, _ = cmd.Flags().GetString("remote")
 	if remote == "" {
 		return "", "", "", "", errors.New("--remote name is required")
+	}
+	if url == "" {
+		path, perr := registryPath(cmd)
+		if perr != nil {
+			return "", "", "", "", perr
+		}
+		reg, lerr := remotes.Load(path)
+		if lerr != nil {
+			return "", "", "", "", lerr
+		}
+		r, ok := reg.Get(remote)
+		if !ok {
+			return "", "", "", "", fmt.Errorf(
+				"remote %q not registered; pass --url <url> or run `rex remote add %s <url>`",
+				remote, remote)
+		}
+		url = r.URL
 	}
 	wsFlag, _ := cmd.Flags().GetString("workspace")
 	root, err = workspaceRootFor(wsFlag)
