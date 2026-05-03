@@ -14,7 +14,9 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/asabla/rex/internal/core/audit"
 	"github.com/asabla/rex/internal/core/specfmt"
+	"github.com/asabla/rex/internal/core/storage/eventlog"
 )
 
 // newWorkspaceCmd returns the `rex workspace` parent and wires its
@@ -108,11 +110,12 @@ mean it.`,
 				}
 			}
 
+			createdAt := time.Now().UTC().Format(time.RFC3339)
 			settings := workspaceSettings{
 				ID:        id,
 				Name:      name,
 				State:     "active",
-				CreatedAt: time.Now().UTC().Format(time.RFC3339),
+				CreatedAt: createdAt,
 			}
 			body, err := yaml.Marshal(settings)
 			if err != nil {
@@ -121,6 +124,29 @@ mean it.`,
 			settingsPath := filepath.Join(rexDir, "workspace.yaml")
 			if err := os.WriteFile(settingsPath, body, 0o644); err != nil {
 				return fmt.Errorf("write %s: %w", settingsPath, err)
+			}
+
+			// First persistent audit entry: the workspace exists.
+			// We open the events.log writer directly here rather
+			// than through newWorkspaceWriter (which reads back
+			// workspace.yaml) — the file we just wrote is the
+			// reality we want to record.
+			writer, err := eventlog.OpenWriter(eventlog.WriterConfig{
+				Path:        eventLogPath(abs),
+				WorkspaceID: id,
+			})
+			if err != nil {
+				return fmt.Errorf("open events.log: %w", err)
+			}
+			defer writer.Close()
+			appender := audit.NewAppender(writer)
+			if _, err := appender.Append(audit.EventTypeWorkspaceCreated, audit.WorkspaceCreatedEvent{
+				WorkspaceID: id,
+				Name:        name,
+				Path:        abs,
+				CreatedAt:   createdAt,
+			}); err != nil {
+				return fmt.Errorf("emit workspace.created: %w", err)
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Initialized rex workspace %q at %s\n", id, abs)

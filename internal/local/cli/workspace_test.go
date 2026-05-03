@@ -2,12 +2,17 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/asabla/rex/internal/core/audit"
+	"github.com/asabla/rex/internal/core/storage/eventlog"
 )
 
 func TestWorkspaceInitCreatesSkeleton(t *testing.T) {
@@ -152,6 +157,51 @@ func TestWorkspaceShowFailsWhenAbsent(t *testing.T) {
 	_, err := executeCommand(t, "workspace", "show", dir)
 	if err == nil {
 		t.Fatal("expected error when no workspace exists")
+	}
+}
+
+func TestWorkspaceInitEmitsWorkspaceCreatedAuditEvent(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "demo", "--name", "Demo Workspace"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	r, err := eventlog.OpenReader(filepath.Join(dir, ".rex", "events.log"))
+	if err != nil {
+		t.Fatalf("open events.log: %v", err)
+	}
+	defer r.Close()
+
+	rec, err := r.Next()
+	if err != nil {
+		t.Fatalf("read record: %v", err)
+	}
+	if rec.Type != audit.EventTypeWorkspaceCreated {
+		t.Fatalf("event type: got %q want %q", rec.Type, audit.EventTypeWorkspaceCreated)
+	}
+	if rec.WorkspaceID != "demo" {
+		t.Fatalf("workspace id on record: got %q", rec.WorkspaceID)
+	}
+
+	var body audit.WorkspaceCreatedEvent
+	if err := json.Unmarshal(rec.Payload, &body); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if body.WorkspaceID != "demo" || body.Name != "Demo Workspace" {
+		t.Fatalf("payload fields: %+v", body)
+	}
+	if body.Path == "" || !strings.HasSuffix(body.Path, dir) {
+		t.Fatalf("payload path: %q (want suffix %q)", body.Path, dir)
+	}
+	if body.CreatedAt == "" {
+		t.Fatal("payload created_at empty")
+	}
+
+	// One and only one event from init.
+	if _, err := r.Next(); !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF after one record, got %v", err)
 	}
 }
 
