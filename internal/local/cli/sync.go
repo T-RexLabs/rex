@@ -111,7 +111,10 @@ func runPushFn(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	c := syncclient.NewClient(url)
+	c, err := newAuthedClient(cmd, url)
+	if err != nil {
+		return err
+	}
 	res, err := c.PushOnly(cmd.Context(), syncclient.RunArgs{
 		WorkspaceRoot: root, Remote: remote, EventsLogPath: logPath,
 	})
@@ -142,7 +145,10 @@ func runPullFn(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	c := syncclient.NewClient(url)
+	c, err := newAuthedClient(cmd, url)
+	if err != nil {
+		return err
+	}
 	pulled, err := c.PullOnly(cmd.Context(), syncclient.RunArgs{
 		WorkspaceRoot: root, Remote: remote, EventsLogPath: logPath,
 	})
@@ -169,7 +175,10 @@ func runSyncFn(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	c := syncclient.NewClient(url)
+	c, err := newAuthedClient(cmd, url)
+	if err != nil {
+		return err
+	}
 	res, err := c.Sync(cmd.Context(), root, remote, logPath)
 	if err != nil {
 		return formatSyncError(err)
@@ -200,4 +209,16 @@ func formatSyncError(err error) error {
 			ce.ServerHead, len(ce.DivergingTail))
 	}
 	return err
+}
+
+// newAuthedClient builds a sync client with the local default
+// signer attached. The signer is what the client uses to handshake
+// with servers that require auth; servers without --keys ignore
+// the credential.
+func newAuthedClient(cmd *cobra.Command, url string) (*syncclient.Client, error) {
+	signer, err := loadOrCreateDefaultSigner(cmd)
+	if err != nil {
+		return nil, err
+	}
+	return syncclient.NewClient(url).WithSigner(signer), nil
 }

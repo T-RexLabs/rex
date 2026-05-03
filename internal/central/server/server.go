@@ -47,6 +47,7 @@ type Server struct {
 	keypair  identity.Keypair
 	actor    identity.Actor
 	keystore *Keystore
+	auth     *authState
 	mux      *http.ServeMux
 	stateRes proto.StateResponse
 }
@@ -81,6 +82,7 @@ func New(opts Options) (*Server, error) {
 		keypair:  kp,
 		actor:    central,
 		keystore: keystore,
+		auth:     newAuthState(),
 		mux:      http.NewServeMux(),
 		stateRes: proto.StateResponse{
 			Fingerprint:     kp.Fingerprint().String(),
@@ -90,6 +92,8 @@ func New(opts Options) (*Server, error) {
 	}
 	s.mux.HandleFunc("/sync/state", s.handleState)
 	s.mux.HandleFunc("/sync/events", s.handleEvents)
+	s.mux.HandleFunc(authChallengePath, s.handleAuthChallenge)
+	s.mux.HandleFunc(authVerifyPath, s.handleAuthVerify)
 	return s, nil
 }
 
@@ -120,6 +124,16 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
+	// Auth gate: when the keystore is configured, every /sync/events
+	// request requires a Bearer token issued via the handshake
+	// (sync.API.5). When unset, the server runs in dev mode and
+	// passes the token check.
+	if !s.keystore.Empty() {
+		if _, err := s.requireToken(r); err != nil {
+			writeError(w, http.StatusUnauthorized, proto.ErrCodeUnauthorized, err.Error())
+			return
+		}
+	}
 	switch r.Method {
 	case http.MethodGet:
 		s.handleEventsGet(w, r)

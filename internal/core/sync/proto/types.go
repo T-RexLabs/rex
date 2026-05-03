@@ -2,6 +2,7 @@ package proto
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/asabla/rex/internal/core/storage/eventlog"
 )
@@ -96,3 +97,52 @@ const (
 	ErrCodeServerError     = "server_error"
 	ErrCodeNonContiguous   = "non_contiguous_batch"
 )
+
+// AuthSigningVersion tags the canonical signing-input format the
+// challenge-response handshake uses. Bump alongside semantic
+// changes to ChallengeSigningInput.
+const AuthSigningVersion = "rex-auth-v1"
+
+// AuthChallengeResponse is the body of POST /auth/challenge
+// (identity-and-trust.AUTH.1, AUTH.1.1).
+type AuthChallengeResponse struct {
+	ChallengeID string    `json:"challenge_id"`
+	Nonce       string    `json:"nonce"` // hex-encoded 32 random bytes
+	// Hostname is the central node's hostname as it sees itself
+	// (the request's Host header). Bound into the signing input
+	// to prevent cross-server replay (AUTH.1.2).
+	Hostname  string    `json:"hostname"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// AuthVerifyRequest is the body of POST /auth/verify.
+type AuthVerifyRequest struct {
+	ChallengeID string `json:"challenge_id"`
+	// Fingerprint identifies the client's keypair so the server
+	// looks up the matching public key in its keystore.
+	Fingerprint string `json:"fingerprint"`
+	// Scope is the requested capability scope (currently just
+	// "sync"). Bound into the signing input so a token issued for
+	// one scope is not silently usable for another later.
+	Scope string `json:"scope"`
+	// Signature is the hex-encoded ed25519 signature over
+	// json.Marshal(ChallengeSigningInput{...}).
+	Signature string `json:"signature"`
+}
+
+// AuthVerifyResponse is the success body of POST /auth/verify.
+type AuthVerifyResponse struct {
+	AccessToken string    `json:"access_token"`
+	ExpiresAt   time.Time `json:"expires_at"`
+}
+
+// ChallengeSigningInput is the canonical struct the client signs
+// and the server reconstructs to verify. Field order is locked by
+// Go's JSON encoder (struct definition order); changes here require
+// bumping AuthSigningVersion.
+type ChallengeSigningInput struct {
+	Version  string `json:"version"`
+	Nonce    string `json:"nonce"`
+	Hostname string `json:"hostname"`
+	Scope    string `json:"scope"`
+}

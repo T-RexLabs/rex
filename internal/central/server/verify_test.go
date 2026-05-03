@@ -59,25 +59,59 @@ func mkSignedRecord(t *testing.T, id string, priv ed25519.PrivateKey) eventlog.R
 	return rec
 }
 
-func postPush(t *testing.T, hs *httptest.Server, body proto.PushRequest) (*http.Response, []byte) {
+func postPush(t *testing.T, hs *httptest.Server, body proto.PushRequest, opts ...pushOpt) (*http.Response, []byte) {
 	t.Helper()
 	raw, _ := json.Marshal(body)
-	resp, err := http.Post(hs.URL+"/sync/events", "application/json", bytes.NewReader(raw))
+	req, err := http.NewRequest(http.MethodPost, hs.URL+"/sync/events", bytes.NewReader(raw))
 	if err != nil {
-		t.Fatalf("POST: %v", err)
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for _, opt := range opts {
+		opt(req)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
 	}
 	respBody, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	return resp, respBody
 }
 
+type pushOpt func(*http.Request)
+
+func withBearer(token string) pushOpt {
+	return func(req *http.Request) {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+}
+
+// issueTestToken bypasses the HTTP handshake and mints a token
+// directly via the auth state. Lets signature-verification tests
+// run without re-implementing the challenge-response dance.
+func issueTestToken(t *testing.T, srv *Server, priv ed25519.PrivateKey) string {
+	t.Helper()
+	pub := priv.Public().(ed25519.PublicKey)
+	fp, err := identity.FingerprintOf(pub)
+	if err != nil {
+		t.Fatalf("FingerprintOf: %v", err)
+	}
+	tok, err := srv.auth.issueToken(fp, "sync")
+	if err != nil {
+		t.Fatalf("issueToken: %v", err)
+	}
+	return tok.value
+}
+
 func TestPushAcceptsSignedRecord(t *testing.T) {
 	t.Parallel()
 
-	_, hs, privs := newSignedTestServer(t, "alice")
+	srv, hs, privs := newSignedTestServer(t, "alice")
 	rec := mkSignedRecord(t, "ev-1", privs["alice"])
+	token := issueTestToken(t, srv, privs["alice"])
 
-	resp, body := postPush(t, hs, proto.PushRequest{Since: "", Events: []eventlog.Record{rec}})
+	resp, body := postPush(t, hs, proto.PushRequest{Since: "", Events: []eventlog.Record{rec}}, withBearer(token))
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: %d body: %s", resp.StatusCode, body)
 	}
@@ -86,12 +120,15 @@ func TestPushAcceptsSignedRecord(t *testing.T) {
 func TestPushRejectsUnregisteredFingerprint(t *testing.T) {
 	t.Parallel()
 
-	_, hs, _ := newSignedTestServer(t, "alice")
+	srv, hs, privs := newSignedTestServer(t, "alice")
 	// bob's keypair is not registered.
 	_, bobPriv, _ := ed25519.GenerateKey(rand.Reader)
 	rec := mkSignedRecord(t, "ev-1", bobPriv)
+	// Use alice's token (registered) so the gate lets us through;
+	// the per-event signature check is what we want to test.
+	token := issueTestToken(t, srv, privs["alice"])
 
-	resp, body := postPush(t, hs, proto.PushRequest{Since: "", Events: []eventlog.Record{rec}})
+	resp, body := postPush(t, hs, proto.PushRequest{Since: "", Events: []eventlog.Record{rec}}, withBearer(token))
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status: %d body: %s", resp.StatusCode, body)
 	}
@@ -100,12 +137,13 @@ func TestPushRejectsUnregisteredFingerprint(t *testing.T) {
 func TestPushRejectsTamperedRecord(t *testing.T) {
 	t.Parallel()
 
-	_, hs, privs := newSignedTestServer(t, "alice")
+	srv, hs, privs := newSignedTestServer(t, "alice")
 	rec := mkSignedRecord(t, "ev-1", privs["alice"])
 	// tamper after signing
 	rec.Payload = json.RawMessage(`{"changed":true}`)
+	token := issueTestToken(t, srv, privs["alice"])
 
-	resp, body := postPush(t, hs, proto.PushRequest{Since: "", Events: []eventlog.Record{rec}})
+	resp, body := postPush(t, hs, proto.PushRequest{Since: "", Events: []eventlog.Record{rec}}, withBearer(token))
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status: %d body: %s", resp.StatusCode, body)
 	}
@@ -114,11 +152,12 @@ func TestPushRejectsTamperedRecord(t *testing.T) {
 func TestPushRejectsRecordWithoutSignature(t *testing.T) {
 	t.Parallel()
 
-	_, hs, privs := newSignedTestServer(t, "alice")
+	srv, hs, privs := newSignedTestServer(t, "alice")
 	rec := mkSignedRecord(t, "ev-1", privs["alice"])
 	rec.Signature = ""
+	token := issueTestToken(t, srv, privs["alice"])
 
-	resp, body := postPush(t, hs, proto.PushRequest{Since: "", Events: []eventlog.Record{rec}})
+	resp, body := postPush(t, hs, proto.PushRequest{Since: "", Events: []eventlog.Record{rec}}, withBearer(token))
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status: %d body: %s", resp.StatusCode, body)
 	}
@@ -149,20 +188,21 @@ func TestPushSkipsVerificationWhenKeystoreEmpty(t *testing.T) {
 func TestPushOneBadRecordRejectsWholeBatch(t *testing.T) {
 	t.Parallel()
 
-	_, hs, privs := newSignedTestServer(t, "alice")
+	srv, hs, privs := newSignedTestServer(t, "alice")
 	good := mkSignedRecord(t, "ev-1", privs["alice"])
 	bad := mkSignedRecord(t, "ev-2", privs["alice"])
 	bad.Signature = "deadbeef"
+	token := issueTestToken(t, srv, privs["alice"])
 
 	resp, body := postPush(t, hs, proto.PushRequest{
 		Since:  "",
 		Events: []eventlog.Record{good, bad},
-	})
+	}, withBearer(token))
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status: %d body: %s", resp.StatusCode, body)
 	}
-	// Atomicity: nothing was accepted.
-	srv, _, _ := newSignedTestServer(t, "alice")
+	// Atomicity: nothing was accepted (same server we authorized
+	// against).
 	if srv.Store().Len() != 0 {
 		t.Fatalf("partial batch leaked through: len=%d", srv.Store().Len())
 	}

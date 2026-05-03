@@ -4,14 +4,17 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/asabla/rex/internal/core/identity"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
 	"github.com/asabla/rex/internal/core/sync/proto"
 )
@@ -20,6 +23,12 @@ import (
 type Client struct {
 	baseURL string
 	hc      *http.Client
+
+	signer identity.Signer
+
+	tokenMu     sync.Mutex
+	accessToken string
+	tokenExpiry time.Time
 }
 
 // NewClient returns a Client targeting baseURL (e.g.
@@ -39,6 +48,151 @@ func (c *Client) WithHTTPClient(hc *http.Client) *Client {
 		c.hc = hc
 	}
 	return c
+}
+
+// WithSigner attaches a Signer the client uses to handshake against
+// servers that require auth. When the signer is nil (default), the
+// client never attempts a handshake and any 401 from the server
+// surfaces as an error.
+func (c *Client) WithSigner(s identity.Signer) *Client {
+	c.signer = s
+	return c
+}
+
+// authorize attaches the current access token to a request when
+// available. Callers run handshake() first if no token is present
+// and the server requires auth.
+func (c *Client) authorize(req *http.Request) {
+	c.tokenMu.Lock()
+	defer c.tokenMu.Unlock()
+	if c.accessToken != "" && time.Now().Before(c.tokenExpiry) {
+		req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	}
+}
+
+// handshake runs the challenge-response flow with the server. The
+// returned access token is stored on the client and attached to
+// subsequent requests via authorize.
+func (c *Client) handshake(ctx context.Context) error {
+	if c.signer == nil {
+		return errors.New("sync: server requires auth but client has no Signer (call WithSigner)")
+	}
+	// 1. Fetch challenge.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/auth/challenge", http.NoBody)
+	if err != nil {
+		return err
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return fmt.Errorf("sync: POST /auth/challenge: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return decodeError(resp)
+	}
+	var ch proto.AuthChallengeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ch); err != nil {
+		return fmt.Errorf("sync: decode challenge: %w", err)
+	}
+	// 2. Sign canonical input.
+	canonical, err := json.Marshal(proto.ChallengeSigningInput{
+		Version:  proto.AuthSigningVersion,
+		Nonce:    ch.Nonce,
+		Hostname: ch.Hostname,
+		Scope:    "sync",
+	})
+	if err != nil {
+		return fmt.Errorf("sync: marshal signing input: %w", err)
+	}
+	sig, err := c.signer.Sign(ctx, canonical)
+	if err != nil {
+		return fmt.Errorf("sync: sign challenge: %w", err)
+	}
+	// 3. POST verify.
+	verifyBody, err := json.Marshal(proto.AuthVerifyRequest{
+		ChallengeID: ch.ChallengeID,
+		Fingerprint: c.signer.Fingerprint().String(),
+		Scope:       "sync",
+		Signature:   hex.EncodeToString(sig),
+	})
+	if err != nil {
+		return fmt.Errorf("sync: marshal verify: %w", err)
+	}
+	vReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/auth/verify",
+		bytes.NewReader(verifyBody))
+	if err != nil {
+		return err
+	}
+	vReq.Header.Set("Content-Type", "application/json")
+	vResp, err := c.hc.Do(vReq)
+	if err != nil {
+		return fmt.Errorf("sync: POST /auth/verify: %w", err)
+	}
+	defer vResp.Body.Close()
+	if vResp.StatusCode != http.StatusOK {
+		return decodeError(vResp)
+	}
+	var verifyRes proto.AuthVerifyResponse
+	if err := json.NewDecoder(vResp.Body).Decode(&verifyRes); err != nil {
+		return fmt.Errorf("sync: decode verify: %w", err)
+	}
+	c.tokenMu.Lock()
+	c.accessToken = verifyRes.AccessToken
+	c.tokenExpiry = verifyRes.ExpiresAt
+	c.tokenMu.Unlock()
+	return nil
+}
+
+// doAuthorized issues req. If the server returns 401 and the
+// client has a Signer, it runs a handshake and retries once.
+// Mutating-body callers (Push) must reuse a fresh body on retry,
+// so they pass a bodyFactory that returns one io.Reader per
+// invocation.
+func (c *Client) doAuthorized(ctx context.Context, method, url string, bodyFactory func() (io.Reader, error)) (*http.Response, error) {
+	build := func() (*http.Request, error) {
+		var body io.Reader
+		if bodyFactory != nil {
+			b, err := bodyFactory()
+			if err != nil {
+				return nil, err
+			}
+			body = b
+		}
+		req, err := http.NewRequestWithContext(ctx, method, url, body)
+		if err != nil {
+			return nil, err
+		}
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		req.Header.Set("Accept", "text/event-stream")
+		c.authorize(req)
+		return req, nil
+	}
+
+	req, err := build()
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusUnauthorized || c.signer == nil {
+		return resp, nil
+	}
+	// Drain the 401 body so the connection is reusable.
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	if err := c.handshake(ctx); err != nil {
+		return nil, err
+	}
+	retry, err := build()
+	if err != nil {
+		return nil, err
+	}
+	return c.hc.Do(retry)
 }
 
 // State fetches the central node's current state (head, fingerprint,
@@ -93,18 +247,17 @@ func IsConflict(err error) bool {
 
 // Push sends events past since to the server. Returns a typed
 // PushResult on 200, *ConflictError on 409, or a generic error on
-// other failure paths.
+// other failure paths. When the client has a Signer attached and
+// the server returns 401, a handshake fires and the request is
+// retried once.
 func (c *Client) Push(ctx context.Context, since string, events []eventlog.Record) (PushResult, error) {
 	body, err := json.Marshal(proto.PushRequest{Since: since, Events: events})
 	if err != nil {
 		return PushResult{}, fmt.Errorf("sync: marshal push: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/sync/events", bytes.NewReader(body))
-	if err != nil {
-		return PushResult{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.hc.Do(req)
+	resp, err := c.doAuthorized(ctx, http.MethodPost, c.baseURL+"/sync/events", func() (io.Reader, error) {
+		return bytes.NewReader(body), nil
+	})
 	if err != nil {
 		return PushResult{}, fmt.Errorf("sync: POST /sync/events: %w", err)
 	}
@@ -131,17 +284,13 @@ func (c *Client) Push(ctx context.Context, since string, events []eventlog.Recor
 // Pull streams events past since into the supplied callback in
 // arrival order. The callback must return quickly; long work should
 // happen after Pull returns. Returns the number of records observed.
+// Auto-retries once on 401 when the client has a Signer attached.
 func (c *Client) Pull(ctx context.Context, since string, fn func(eventlog.Record) error) (int, error) {
 	q := ""
 	if since != "" {
 		q = "?since=" + since
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/sync/events"+q, nil)
-	if err != nil {
-		return 0, err
-	}
-	req.Header.Set("Accept", "text/event-stream")
-	resp, err := c.hc.Do(req)
+	resp, err := c.doAuthorized(ctx, http.MethodGet, c.baseURL+"/sync/events"+q, nil)
 	if err != nil {
 		return 0, fmt.Errorf("sync: GET /sync/events: %w", err)
 	}
