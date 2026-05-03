@@ -5,7 +5,7 @@ metadata:
   name: On-disk storage layout
   state: draft
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-03T01:00:00Z
 
 description: |
   Storage in Rex follows the Git pattern: a small global config + registry
@@ -87,7 +87,7 @@ components:
       "2.9": "`transcripts/<run-id>/` — transcript shards (event-sourced)"
       "2.10": "`snapshots/<snapshot-id>/` — local-only derived snapshots; never synced"
       "2.11": "`index.sqlite` — FTS5 + structured tables (derived, never synced)"
-      "2.12": "`drafts/` — local-only events not yet pushed to any remote (event-sourced once committed)"
+      "2.12": "`drafts/<remote>.toml` — per-remote watermark files (local-only, never synced); each file records the highest event-id from `events.log` that the named remote has acknowledged (`last_acked_event_id`) plus the timestamp of that acknowledgement. Events in `events.log` past that id are drafts for that remote per `sync.DRAFT.1`. The canonical event store remains `events.log`; this directory holds bookkeeping only"
       "3": "The git-merged subset of `.rex/` is what `rex workspace push` actually sends; the derived subset is rebuilt on the receiver"
 
   EVENTS:

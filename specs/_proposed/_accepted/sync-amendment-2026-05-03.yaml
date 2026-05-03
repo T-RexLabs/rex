@@ -1,7 +1,10 @@
 # Proposed amendment to specs/sync.yaml.
 #
-# Status:    proposed
+# Status:    accepted
 # Date:      2026-05-03
+# Folded:    2026-05-03 — applied to specs/sync.yaml; updated_at bumped
+#            to 2026-05-03T01:00:00Z. Companion storage amendment landed
+#            in the same commit. Kept under _accepted/ for traceability.
 # Surfaced by:
 #   - Pre-implementation review of sync.yaml against the storage layer
 #     already shipped in internal/core/storage/eventlog.
@@ -18,7 +21,7 @@
 
 amendment_for: sync
 amendment_date: 2026-05-03
-state: proposed
+state: accepted
 
 summary: |
   Two corrections needed before any sync code lands:

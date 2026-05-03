@@ -1,7 +1,9 @@
 # Proposed amendment to specs/storage.yaml.
 #
-# Status:    proposed
+# Status:    accepted
 # Date:      2026-05-03
+# Folded:    2026-05-03 — applied to specs/storage.yaml; updated_at bumped
+#            to 2026-05-03T01:00:00Z. Kept under _accepted/ for traceability.
 # Surfaced by:
 #   - Pre-implementation review of sync.yaml against the storage layer
 #     already shipped in internal/core/storage/eventlog.
@@ -16,7 +18,7 @@
 
 amendment_for: storage
 amendment_date: 2026-05-03
-state: proposed
+state: accepted
 
 summary: |
   Aligns storage.WS.2.12 with the sync amendment that reframes drafts

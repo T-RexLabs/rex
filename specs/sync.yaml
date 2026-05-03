@@ -5,7 +5,7 @@ metadata:
   name: Sync engine
   state: draft
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-03T01:00:00Z
 
 description: |
   Rex is eventually consistent, not real-time. The sync engine is the
@@ -94,9 +94,9 @@ components:
   ORDER:
     name: Event ordering with HLC
     requirements:
-      "1": "Every event carries a hybrid logical clock timestamp: `(physical_ms, logical_counter, node_id)`"
+      "1": "Every event carries a hybrid logical clock timestamp `(physical_ms, logical_counter)` plus the originating identity in the event record's `actor` field (storage.EVENTS.2); the pair (HLC, actor) is the cross-node ordering key"
       "2": "On write, the clock advances to `max(local_physical, observed_physical) + tick`; the logical counter increments when the physical component is unchanged"
-      "3": "Events are ordered by `(physical_ms, logical_counter, node_id)` lexicographically; ties on the first two are broken by node ID with central nodes always sorting before local nodes"
+      "3": "Events are ordered by `(physical_ms, logical_counter, actor)` lexicographically. Central actors are formed with the literal prefix `c-` and local actors with the prefix `l-`, so lexicographic comparison of the actor field places central nodes ahead of local nodes on a tie. Concrete actor format (the suffix after the prefix) is owned by `identity-and-trust.yaml`"
 
   API:
     name: Central-node `/sync/...` HTTP API
@@ -120,7 +120,7 @@ components:
   DRAFT:
     name: Drafts vs committed state
     requirements:
-      "1": "A draft is any change that has been written to the local node but not yet acknowledged by all of its remotes; drafts are stored under `.rex/drafts/` until the next successful push"
+      "1": "A draft is any event-sourced change written to the local node but not yet acknowledged by a given remote. \"Draft\" is a per-remote concept: an event pushed to one remote may still be a draft for another. Drafts are not a separate event store — the canonical store is `.rex/events.log`. Per-remote watermark files at `.rex/drafts/<remote>.toml` record the highest event id each remote has acknowledged; events past that id are drafts for that remote. See storage.WS.2.12 for the on-disk shape"
       "2": "`rex status` shows the count of pending drafts per remote, plus any rebase-needed flags"
       "3": "After a successful rebase, the local user's drafts are kept (now applied on top of central HEAD); the user is told what was rebased"
       "4": "When a rebase rewrites local history (in the spec/RBAC/git-merged sense), the pre-rebase state is preserved as `<file>.pre-rebase-<timestamp>` for one week before being garbage-collected"
