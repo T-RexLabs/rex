@@ -22,6 +22,11 @@ type Document struct {
 	Constraints map[string]Constraint `yaml:"constraints,omitempty"`
 	Extra       map[string]any        `yaml:"extra,omitempty"`
 
+	// Path is populated by ParseFile and surfaced in cross-spec
+	// validation issues (Issue.File). Leave empty when constructing
+	// a Document programmatically.
+	Path string `yaml:"-"`
+
 	// rawTopKeys retains the names of top-level keys actually present
 	// on the wire. Lets the validator detect unknown top-level keys
 	// per spec-format.CORE.3 even though the struct decoder silently
@@ -157,13 +162,19 @@ func Parse(r io.Reader) (*Document, error) {
 	return parseBytes(body)
 }
 
-// ParseFile decodes one Document from a path on disk.
+// ParseFile decodes one Document from a path on disk and stamps the
+// path onto Document.Path so cross-spec validation can surface it.
 func ParseFile(path string) (*Document, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("specfmt: read %s: %w", path, err)
 	}
-	return parseBytes(body)
+	doc, err := parseBytes(body)
+	if err != nil {
+		return nil, err
+	}
+	doc.Path = path
+	return doc, nil
 }
 
 func parseBytes(body []byte) (*Document, error) {
