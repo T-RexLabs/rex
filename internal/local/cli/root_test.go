@@ -62,15 +62,15 @@ func TestNewRootCmdSubstitutesEmptyVersion(t *testing.T) {
 	}
 }
 
-func TestStatusPlaceholder(t *testing.T) {
+func TestStatusHelpListsFlags(t *testing.T) {
 	t.Parallel()
 
-	out, err := executeCommand(t, "status")
+	out, err := executeCommand(t, "status", "--help")
 	if err != nil {
-		t.Fatalf("status: %v", err)
+		t.Fatalf("status --help: %v", err)
 	}
-	if !strings.Contains(out, "not yet implemented") {
-		t.Fatalf("status placeholder unexpected: %q", out)
+	if !strings.Contains(out, "--workspace") {
+		t.Fatalf("status help missing --workspace flag: %s", out)
 	}
 }
 
