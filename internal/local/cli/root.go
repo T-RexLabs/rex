@@ -66,6 +66,7 @@ for each command group.`,
 	root.AddCommand(newPushCmd())
 	root.AddCommand(newPullCmd())
 	root.AddCommand(newRemoteCmd())
+	root.AddCommand(newIdentityCmd())
 
 	return root
 }
