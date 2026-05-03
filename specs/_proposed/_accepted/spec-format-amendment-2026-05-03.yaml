@@ -1,7 +1,9 @@
 # Proposed amendment to specs/spec-format.yaml.
 #
-# Status:    proposed
+# Status:    accepted
 # Date:      2026-05-03
+# Folded:    2026-05-03 — applied to specs/spec-format.yaml; updated_at bumped
+#            to 2026-05-03T01:00:00Z. Kept under _accepted/ for traceability.
 # Surfaced by:
 #   - Audit of specs/overview.yaml against spec-format.yaml
 #   - Audit of specs/storage.yaml against spec-format.yaml
@@ -19,7 +21,7 @@
 
 amendment_for: spec-format
 amendment_date: 2026-05-03
-state: proposed
+state: accepted
 
 summary: |
   Three schema gaps were found by auditing three real specs (overview,

@@ -5,7 +5,7 @@ metadata:
   name: Rex spec YAML format
   state: draft
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-03T01:00:00Z
 
 description: |
   The YAML format used by every spec in a Rex workspace, including this one.
@@ -77,6 +77,7 @@ components:
       "1": "`tasks` is an optional list of task objects, each representing a unit of implementation work the spec embeds"
       "2": Each task has an `id` (kebab-case, unique within the spec), a `description`, and a `state` (todo, in_progress, done, blocked)
       "3": Tasks may have a `references` list of ACID strings indicating which requirements they fulfill
+      "3.1": References inside `tasks[].references` may use either fully-qualified ACIDs or the short form defined in `spec-format.ACID.1.1`; mixing the two forms in the same list is permitted
       "4": Tasks may have an optional `assigned_to` user handle
       "5": Tasks live alongside acceptance criteria in the same document because in Rex a spec is simultaneously a task list and a contract
 
@@ -84,6 +85,7 @@ components:
     name: Components block
     requirements:
       "1": "`components` is an optional mapping from uppercase component IDs (e.g. AUTH, RUN) to component objects"
+      "1.1": "Component IDs use uppercase ASCII letters, optionally joined by hyphens (e.g. `AUTH`, `RUN`, `EXEC-SCOPE`); no lowercase letters, digits, or other characters are permitted in a component ID; the same rule applies to constraint group IDs"
       "2": A component object has a `name` and a `requirements` mapping
       "3": Component IDs are immutable once published; renumbering or renaming forbidden
 
@@ -100,6 +102,7 @@ components:
     name: Stable requirement references (ACIDs)
     requirements:
       "1": "An ACID has the form `<spec.id>.<COMPONENT>.<requirement-id>`, e.g. `auth-flow.AUTH.1.1`"
+      "1.1": "Within the body of a spec, references to that spec's own requirements MAY omit the `<spec.id>.` prefix and use the short form `<COMPONENT>.<requirement-id>`; the validator resolves the prefix from the enclosing `metadata.id`. Cross-spec references MUST use the fully-qualified form."
       "2": ACIDs are stable across renames of surrounding text and are the canonical referenceability primitive across the system
       "3": Tools, transcripts, commits, and audit entries may all cite ACIDs; the validator and search index both understand them
 
@@ -108,12 +111,13 @@ components:
     requirements:
       "1": "`constraints` is an optional mapping with the same shape as `components` but for cross-cutting invariants (engineering, security, performance)"
       "2": Constraints are referenced via the same ACID format as requirements; component IDs in `constraints` and `components` must not collide
+      "3": Each constraint object has a `description` field (a free-form string explaining the rule's scope) and a `requirements` mapping. The outer shape mirrors a component object except that constraint objects use `description` where component objects use `name`; both fields are required by their respective objects, and Markdown is permitted in both
 
   EXTRA:
     name: Extra block
     requirements:
       "1": "`extra` is an optional mapping for project-defined fields"
-      "2": Common conventional keys include `owners` (list of handles), `related_specs` (list of spec IDs), and `template` (boolean marking a template spec)
+      "2": Common conventional keys include `owners` (list of handles), `related_specs` (list of spec IDs), `notes` (free-form Markdown string for trailing prose), and `template` (boolean marking a template spec)
       "3": Workspace and org templates may declare additional required `extra` keys
 
   TMPL:
