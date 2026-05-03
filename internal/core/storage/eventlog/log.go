@@ -18,6 +18,7 @@ package eventlog
 import (
 	"bufio"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,6 +38,12 @@ const MaxRecordSize = 16 * 1024 * 1024
 // payload that does not parse as JSON.
 var ErrCorruptRecord = errors.New("eventlog: corrupt record")
 
+// SignFunc takes the canonical signing-input bytes (the Record minus
+// its Signature field, JSON-encoded — see SigningBytes) and returns
+// the raw signature bytes. The Writer hex-encodes the result into
+// Record.Signature on append.
+type SignFunc func(canonical []byte) ([]byte, error)
+
 // WriterConfig describes the workspace and identity context a Writer
 // stamps onto every Record it appends.
 type WriterConfig struct {
@@ -53,6 +60,12 @@ type WriterConfig struct {
 	// Clock is the HLC source. If nil, a fresh wall-clock-backed
 	// Clock is created.
 	Clock *Clock
+	// Sign is optional. When set, every Append computes
+	// SigningBytes(rec), invokes Sign, and stores the resulting
+	// signature on the record. When nil, records are written
+	// unsigned (the bootstrap-friendly path until identity is
+	// configured).
+	Sign SignFunc
 }
 
 // Writer appends records to events.log. A Writer is safe for concurrent
@@ -118,6 +131,17 @@ func (w *Writer) Append(eventType string, version uint32, payload json.RawMessag
 		Actor:       w.cfg.Actor,
 		WorkspaceID: w.cfg.WorkspaceID,
 		Payload:     payload,
+	}
+	if w.cfg.Sign != nil {
+		signing, sErr := SigningBytes(rec)
+		if sErr != nil {
+			return Record{}, sErr
+		}
+		sig, sErr := w.cfg.Sign(signing)
+		if sErr != nil {
+			return Record{}, fmt.Errorf("eventlog: sign record: %w", sErr)
+		}
+		rec.Signature = hex.EncodeToString(sig)
 	}
 	body, marshalErr := json.Marshal(rec)
 	if marshalErr != nil {

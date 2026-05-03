@@ -15,9 +15,36 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/asabla/rex/internal/core/audit"
+	"github.com/asabla/rex/internal/core/identity"
 	"github.com/asabla/rex/internal/core/specfmt"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
 )
+
+// envIdentityDir is the environment variable callers can set to
+// override the platform-default identity store path. Tests use this
+// for session-wide isolation; production users normally pass
+// --identity-dir or rely on the platform default.
+const envIdentityDir = "REX_IDENTITY_DIR"
+
+// loadOrCreateDefaultSigner returns a Signer over the user's default
+// identity, generating a fresh keypair on first call. Resolution
+// order: --identity-dir flag, REX_IDENTITY_DIR env var, platform
+// user-config-dir.
+func loadOrCreateDefaultSigner(cmd *cobra.Command) (identity.Signer, error) {
+	dir, _ := cmd.Flags().GetString("identity-dir")
+	if dir == "" {
+		dir = os.Getenv(envIdentityDir)
+	}
+	if dir == "" {
+		def, err := identity.DefaultStoreDir()
+		if err != nil {
+			return nil, err
+		}
+		dir = def
+	}
+	store := identity.NewStore(dir)
+	return identity.EnsureDefaultStoreSigner(store)
+}
 
 // newWorkspaceCmd returns the `rex workspace` parent and wires its
 // leaves.
@@ -126,6 +153,13 @@ mean it.`,
 				return fmt.Errorf("write %s: %w", settingsPath, err)
 			}
 
+			// Default identity: auto-create on first init so the
+			// workspace.created event can be signed.
+			signer, err := loadOrCreateDefaultSigner(cmd)
+			if err != nil {
+				return err
+			}
+
 			// First persistent audit entry: the workspace exists.
 			// We open the events.log writer directly here rather
 			// than through newWorkspaceWriter (which reads back
@@ -134,6 +168,8 @@ mean it.`,
 			writer, err := eventlog.OpenWriter(eventlog.WriterConfig{
 				Path:        eventLogPath(abs),
 				WorkspaceID: id,
+				Actor:       signer.Actor().String(),
+				Sign:        identity.SignFunc(signer),
 			})
 			if err != nil {
 				return fmt.Errorf("open events.log: %w", err)
@@ -145,17 +181,20 @@ mean it.`,
 				Name:        name,
 				Path:        abs,
 				CreatedAt:   createdAt,
+				CreatedBy:   signer.Actor().String(),
 			}); err != nil {
 				return fmt.Errorf("emit workspace.created: %w", err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Initialized rex workspace %q at %s\n", id, abs)
+			fmt.Fprintf(cmd.OutOrStdout(), "Initialized rex workspace %q at %s (signed as %s)\n",
+				id, abs, signer.Actor())
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&idFlag, "id", "", "workspace id (default: kebab-cased basename of path)")
 	cmd.Flags().StringVar(&nameFlag, "name", "", "human-readable workspace name (default: basename of path)")
 	cmd.Flags().Bool("force", false, "overwrite an existing .rex/ directory at the target")
+	cmd.Flags().String("identity-dir", "", "override identity store path (default: platform user-config dir/rex/identity/)")
 	return cmd
 }
 
