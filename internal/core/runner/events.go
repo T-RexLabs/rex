@@ -1,0 +1,190 @@
+package runner
+
+import (
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/asabla/rex/internal/core/event"
+)
+
+// Event type names. These are the strings that land in
+// eventlog.Record.Type and the keys callers register decoders against.
+// They match execution.DAG.2 verbatim.
+const (
+	EventTypeRunStarted          = "run.started"
+	EventTypeRunCompleted        = "run.completed"
+	EventTypeRunCancelled        = "run.cancelled"
+	EventTypeRunAborted          = "run.aborted"
+	EventTypeNodeStarted         = "node.started"
+	EventTypeNodeSucceeded       = "node.succeeded"
+	EventTypeNodeFailed          = "node.failed"
+	EventTypeNodeRetried         = "node.retried"
+	EventTypePermissionRequested = "permission.requested"
+	EventTypePermissionGranted   = "permission.granted"
+	EventTypePermissionDenied    = "permission.denied"
+)
+
+// EventVersion is the schema version the runner currently emits. Bump
+// only on a semantically incompatible change to an existing event
+// shape; new fields must be additive (overview.SYS.4).
+const EventVersion uint32 = 1
+
+// RunStartedEvent fires when the Executor begins a Run.
+type RunStartedEvent struct {
+	RunID     string    `json:"run_id"`
+	StartedAt time.Time `json:"started_at"`
+}
+
+// RunCompletedEvent fires once every reachable Node has succeeded.
+type RunCompletedEvent struct {
+	RunID       string    `json:"run_id"`
+	CompletedAt time.Time `json:"completed_at"`
+}
+
+// RunCancelledEvent fires when the Executor honours a cancellation
+// request from the caller (typically `rex run cancel`).
+type RunCancelledEvent struct {
+	RunID       string    `json:"run_id"`
+	CancelledAt time.Time `json:"cancelled_at"`
+	Reason      string    `json:"reason,omitempty"`
+}
+
+// RunAbortedEvent fires when the engine cannot continue — a Node
+// exhausted retries, a primitive returned a non-retriable error, or an
+// engine-internal error tripped.
+type RunAbortedEvent struct {
+	RunID     string    `json:"run_id"`
+	AbortedAt time.Time `json:"aborted_at"`
+	NodeID    NodeID    `json:"node_id,omitempty"`
+	Reason    string    `json:"reason"`
+}
+
+// NodeStartedEvent fires on every attempt of a Node, including retries
+// (a retried Node emits NodeRetried first then NodeStarted again).
+type NodeStartedEvent struct {
+	RunID     string    `json:"run_id"`
+	NodeID    NodeID    `json:"node_id"`
+	Attempt   int       `json:"attempt"`
+	StartedAt time.Time `json:"started_at"`
+}
+
+// NodeSucceededEvent fires when a Node's primitive returns nil error.
+// Output is the primitive's structured output, stored verbatim so
+// downstream Nodes (and human watchers) can read it.
+type NodeSucceededEvent struct {
+	RunID       string          `json:"run_id"`
+	NodeID      NodeID          `json:"node_id"`
+	Attempt     int             `json:"attempt"`
+	CompletedAt time.Time       `json:"completed_at"`
+	Output      json.RawMessage `json:"output,omitempty"`
+}
+
+// NodeFailedEvent fires when a Node's primitive returns a non-nil
+// error. The Executor decides whether to retry based on Attempt vs the
+// effective RetryPolicy; this event is emitted regardless.
+type NodeFailedEvent struct {
+	RunID    string    `json:"run_id"`
+	NodeID   NodeID    `json:"node_id"`
+	Attempt  int       `json:"attempt"`
+	FailedAt time.Time `json:"failed_at"`
+	Error    string    `json:"error"`
+}
+
+// NodeRetriedEvent fires immediately before a retry attempt. It is
+// distinct from NodeStarted so a watcher can show "retrying in 2s" UX.
+type NodeRetriedEvent struct {
+	RunID      string        `json:"run_id"`
+	NodeID     NodeID        `json:"node_id"`
+	NextAttempt int          `json:"next_attempt"`
+	BackoffFor time.Duration `json:"backoff_for"`
+}
+
+// PermissionRequestedEvent fires when a primitive (typically
+// harness_invocation receiving a session/request_permission) needs
+// human authorization to proceed.
+type PermissionRequestedEvent struct {
+	RunID       string          `json:"run_id"`
+	NodeID      NodeID          `json:"node_id"`
+	RequestID   string          `json:"request_id"`
+	Tool        string          `json:"tool"`
+	Args        json.RawMessage `json:"args,omitempty"`
+	Reason      string          `json:"reason,omitempty"`
+	RequestedAt time.Time       `json:"requested_at"`
+}
+
+// PermissionGrantedEvent fires when a permission request is approved.
+type PermissionGrantedEvent struct {
+	RunID      string    `json:"run_id"`
+	NodeID     NodeID    `json:"node_id"`
+	RequestID  string    `json:"request_id"`
+	Approver   string    `json:"approver,omitempty"`
+	GrantedAt  time.Time `json:"granted_at"`
+	Note       string    `json:"note,omitempty"`
+}
+
+// PermissionDeniedEvent fires when a permission request is denied.
+type PermissionDeniedEvent struct {
+	RunID     string    `json:"run_id"`
+	NodeID    NodeID    `json:"node_id"`
+	RequestID string    `json:"request_id"`
+	Approver  string    `json:"approver,omitempty"`
+	DeniedAt  time.Time `json:"denied_at"`
+	Reason    string    `json:"reason,omitempty"`
+}
+
+// RegisterEvents adds decoders for every runner event type to r so
+// readers (replay, watchers) can decode runner events without each
+// reader rebuilding its own table.
+func RegisterEvents(r *event.Registry) {
+	r.Register(EventTypeRunStarted, EventVersion, decodeAs[RunStartedEvent])
+	r.Register(EventTypeRunCompleted, EventVersion, decodeAs[RunCompletedEvent])
+	r.Register(EventTypeRunCancelled, EventVersion, decodeAs[RunCancelledEvent])
+	r.Register(EventTypeRunAborted, EventVersion, decodeAs[RunAbortedEvent])
+	r.Register(EventTypeNodeStarted, EventVersion, decodeAs[NodeStartedEvent])
+	r.Register(EventTypeNodeSucceeded, EventVersion, decodeAs[NodeSucceededEvent])
+	r.Register(EventTypeNodeFailed, EventVersion, decodeAs[NodeFailedEvent])
+	r.Register(EventTypeNodeRetried, EventVersion, decodeAs[NodeRetriedEvent])
+	r.Register(EventTypePermissionRequested, EventVersion, decodeAs[PermissionRequestedEvent])
+	r.Register(EventTypePermissionGranted, EventVersion, decodeAs[PermissionGrantedEvent])
+	r.Register(EventTypePermissionDenied, EventVersion, decodeAs[PermissionDeniedEvent])
+}
+
+func decodeAs[T any](_ uint32, payload []byte) (any, error) {
+	var v T
+	if err := json.Unmarshal(payload, &v); err != nil {
+		return nil, fmt.Errorf("runner: decode %T: %w", v, err)
+	}
+	return v, nil
+}
+
+// classifyEvent returns the (type, version) Rex should stamp on the
+// envelope when this runner event lands in events.log. Returns an
+// error for an unrecognized event value.
+func classifyEvent(evt any) (string, uint32, error) {
+	switch evt.(type) {
+	case RunStartedEvent:
+		return EventTypeRunStarted, EventVersion, nil
+	case RunCompletedEvent:
+		return EventTypeRunCompleted, EventVersion, nil
+	case RunCancelledEvent:
+		return EventTypeRunCancelled, EventVersion, nil
+	case RunAbortedEvent:
+		return EventTypeRunAborted, EventVersion, nil
+	case NodeStartedEvent:
+		return EventTypeNodeStarted, EventVersion, nil
+	case NodeSucceededEvent:
+		return EventTypeNodeSucceeded, EventVersion, nil
+	case NodeFailedEvent:
+		return EventTypeNodeFailed, EventVersion, nil
+	case NodeRetriedEvent:
+		return EventTypeNodeRetried, EventVersion, nil
+	case PermissionRequestedEvent:
+		return EventTypePermissionRequested, EventVersion, nil
+	case PermissionGrantedEvent:
+		return EventTypePermissionGranted, EventVersion, nil
+	case PermissionDeniedEvent:
+		return EventTypePermissionDenied, EventVersion, nil
+	}
+	return "", 0, fmt.Errorf("runner: unknown event type %T", evt)
+}
