@@ -1,0 +1,22 @@
+# Build artifacts
+/bin/
+/dist/
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local config not checked in
+/.rex/
+*.local.yaml
+
+# Local env files
+.env
+.env.local
