@@ -41,3 +41,39 @@ func (s *Server) handleSpecDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	s.render(w, r, "spec_detail.tmpl", data)
 }
+
+// handleRunsList renders /runs.
+func (s *Server) handleRunsList(w http.ResponseWriter, r *http.Request) {
+	data, err := loadRunsList(s.opts)
+	if err != nil {
+		http.Error(w, "web: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.render(w, r, "runs_list.tmpl", data)
+}
+
+// handleRunDetail renders /runs/<id>.
+func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	data, ok, err := loadRunDetail(s.opts, id)
+	if err != nil {
+		http.Error(w, "web: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	s.render(w, r, "run_detail.tmpl", data)
+}
+
+// handleRunStream is the SSE endpoint used by the run detail page
+// (web-ui.LIVE.1, .1-note).
+func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	s.streamRunEvents(w, r, id)
+}

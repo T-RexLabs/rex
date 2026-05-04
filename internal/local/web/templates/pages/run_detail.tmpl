@@ -1,0 +1,44 @@
+{{define "title"}}rex — run {{.RunID}}{{end}}
+
+{{define "content"}}
+<section class="overview">
+  <h1>run <code>{{.RunID}}</code></h1>
+  <dl class="kv">
+    <dt>status</dt><dd><span class="pill pill-{{.Status}}">{{.Status}}</span></dd>
+    <dt>events</dt><dd>{{len .Events}}</dd>
+  </dl>
+</section>
+
+<section class="card"
+         hx-ext="sse"
+         sse-connect="/runs/{{.RunID}}/stream"
+         sse-swap="run-event"
+         hx-target="#run-events tbody"
+         hx-swap="beforeend">
+  <h2>events <span class="muted">(live)</span></h2>
+  <table class="table" id="run-events">
+    <thead>
+      <tr><th>id</th><th>timestamp</th><th>type</th><th>payload</th></tr>
+    </thead>
+    <tbody>
+      {{range .Events}}
+      <tr>
+        <td><code>{{.ID}}</code></td>
+        <td>{{.Timestamp}}</td>
+        <td><code>{{.Type}}</code></td>
+        <td><code>{{.Snippet}}</code></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <p class="muted small">
+    live updates require htmx + htmx-ext-sse to be the real bytes;
+    skeleton ships placeholder JS — drop the upstream files into
+    <code>internal/local/web/static/</code> to enable the streaming
+    swap.
+  </p>
+</section>
+
+<script src="/static/htmx.min.js" defer></script>
+<script src="/static/htmx-ext-sse.js" defer></script>
+{{end}}

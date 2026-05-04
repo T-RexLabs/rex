@@ -75,6 +75,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /{$}", s.handleHome)
 	s.mux.HandleFunc("GET /specs", s.handleSpecsList)
 	s.mux.HandleFunc("GET /specs/{id}", s.handleSpecDetail)
+	s.mux.HandleFunc("GET /runs", s.handleRunsList)
+	s.mux.HandleFunc("GET /runs/{id}", s.handleRunDetail)
+	s.mux.HandleFunc("GET /runs/{id}/stream", s.handleRunStream)
 }
 
 // loadPages reads base.tmpl + every templates/pages/*.tmpl and
