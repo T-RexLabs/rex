@@ -1,0 +1,41 @@
+# Proposed amendment to specs/central-node.yaml.
+#
+# Status:    accepted
+# Folded:    2026-05-04 — two state flips applied to specs/central-node.yaml.
+# Date:      2026-05-04
+# Surfaced by:
+#   - Two tasks shipped after the 2026-05-04 amendment but the
+#     spec still lists them as `state: todo`. Closing the drift.
+#
+# Tiny follow-up to the previous central-node amendment (folded
+# in commit ea7deb3). Just two state flips:
+#
+#   health-endpoints     todo -> done   (commit ea7deb3)
+#   structured-logging   todo -> done   (commit 80bbc1f)
+#
+# Both tasks were shipped with full HEALTH.* coverage minus the
+# org-scoped metric subset that depends on TENANT.* (already
+# documented in HEALTH."2-note" in the prior amendment).
+
+target: central-node
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: health-endpoints
+    from: todo
+    to: done
+
+  - kind: update-task-state
+    task_id: structured-logging
+    from: todo
+    to: done
+
+# Folding instructions (when accepted):
+#
+#   1. Flip the two task states in specs/central-node.yaml.
+#   2. Bump metadata.updated_at to 2026-05-04 (already at that
+#      date from the prior amendment; no-op if so).
+#   3. Move this file to specs/_proposed/_accepted/.
+#   4. Run `go run ./cmd/rex spec validate specs/*.yaml` and
+#      confirm 0 errors / 0 warnings.

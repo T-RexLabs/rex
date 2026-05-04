@@ -52,12 +52,12 @@ tasks:
 
   - id: health-endpoints
     description: "Implement /health, /ready, and /metrics (Prometheus format) plus the org-independent metric subset"
-    state: todo
+    state: done
     references: [HEALTH.1, HEALTH.2]
 
   - id: structured-logging
     description: "Migrate the central-node binary to structured JSON logs on stdout; one log line per significant operation; redact secrets at the logger boundary"
-    state: todo
+    state: done
     references: [HEALTH.3]
 
 components:
