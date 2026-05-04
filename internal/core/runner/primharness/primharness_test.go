@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/asabla/rex/internal/core/acp"
 	"github.com/asabla/rex/internal/core/runner"
+	"github.com/asabla/rex/internal/core/runner/adapter"
 )
 
 // TestMain doubles as a mock ACP harness when invoked with the
@@ -140,6 +142,74 @@ func TestHarnessInvocationRequiresCommand(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "command") {
 		t.Fatalf("err: got %v want command-required error", err)
 	}
+}
+
+func TestHarnessInvocationRejectsHarnessAndCommandTogether(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		Harness: "claude-code",
+		Command: []string{os.Args[0]},
+		Prompt:  "x",
+	}
+	_, err := runPrim(t, cfg, Options{})
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("err: got %v want mutually-exclusive error", err)
+	}
+}
+
+func TestHarnessInvocationLooksUpAdapterByName(t *testing.T) {
+	t.Parallel()
+
+	// Use a per-test registry so we don't depend on whichever
+	// adapters happen to be globally registered.
+	reg := adapter.NewRegistry()
+	if err := reg.Register(testEchoAdapter{}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	cfg := Config{
+		Harness: "test-echo",
+		Prompt:  "hi",
+	}
+	out, err := runPrim(t, cfg, Options{
+		WorkspaceID: "ws-test",
+		Adapters:    reg,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if out.SessionID != "mock-1" {
+		t.Fatalf("session: got %q", out.SessionID)
+	}
+}
+
+func TestHarnessInvocationUnknownAdapterErrors(t *testing.T) {
+	t.Parallel()
+
+	reg := adapter.NewRegistry()
+	cfg := Config{Harness: "no-such-thing", Prompt: "x"}
+	_, err := runPrim(t, cfg, Options{Adapters: reg})
+	if err == nil || !strings.Contains(err.Error(), "no adapter registered") {
+		t.Fatalf("err: got %v want no-adapter error", err)
+	}
+}
+
+// testEchoAdapter wraps the same TestMain echo subprocess trick so
+// the registry path drives the same mock harness as the Command path.
+type testEchoAdapter struct{}
+
+func (testEchoAdapter) Name() string { return "test-echo" }
+func (testEchoAdapter) Capabilities() adapter.Capabilities {
+	return adapter.Capabilities{SupportsMCP: true}
+}
+func (testEchoAdapter) Spawn(opts adapter.SpawnOptions) (*exec.Cmd, error) {
+	cmd := exec.CommandContext(opts.Ctx, os.Args[0])
+	cmd.Env = append(os.Environ(), "REX_TEST_HARNESS_MODE=echo")
+	if opts.Dir != "" {
+		cmd.Dir = opts.Dir
+	}
+	return cmd, nil
 }
 
 func TestHarnessInvocationRequiresPrompt(t *testing.T) {

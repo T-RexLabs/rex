@@ -5,6 +5,11 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	// Side-effect import: registers every bundled harness adapter
+	// (execution.ADAPT.*) into adapter.Default() before any CLI
+	// command runs.
+	_ "github.com/asabla/rex/internal/core/runner/adapter/all"
 )
 
 // DefaultVersion is the version string used when the binary did not

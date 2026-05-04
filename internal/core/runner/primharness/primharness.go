@@ -24,6 +24,7 @@ import (
 
 	"github.com/asabla/rex/internal/core/acp"
 	"github.com/asabla/rex/internal/core/runner"
+	"github.com/asabla/rex/internal/core/runner/adapter"
 )
 
 // PrimitiveType is the canonical Node.Type string.
@@ -31,10 +32,16 @@ const PrimitiveType = "harness_invocation"
 
 // Config is the JSON shape stored in Node.Config.
 type Config struct {
-	// Command is the argv used to launch the harness as an ACP
-	// server on stdio. The full implementation will resolve this via
-	// the harness adapter registry; for now it is supplied directly.
-	Command []string `json:"command"`
+	// Harness names a registered adapter (execution.ADAPT.*); when
+	// set, primharness looks the adapter up via the registry and
+	// asks it to build the *exec.Cmd. Mutually exclusive with
+	// Command — supplying both is a configuration error.
+	Harness string `json:"harness,omitempty"`
+	// Command is the literal argv used to launch the harness as an
+	// ACP server on stdio. Used when no adapter exists for the
+	// harness yet (development) or when the caller needs to drive
+	// a custom binary outside the registry.
+	Command []string `json:"command,omitempty"`
 	// Dir overrides the working directory of the harness.
 	Dir string `json:"dir,omitempty"`
 	// Env adds (or overrides) environment entries.
@@ -71,6 +78,11 @@ type Options struct {
 	WorkspaceID  string
 	OnFrame      acp.FrameObserver
 	OnPermission acp.PermissionHandler
+
+	// Adapters is the registry consulted when Config.Harness is set.
+	// Nil means "use adapter.Default()", which is what production
+	// callers want; tests pass a custom registry to stay isolated.
+	Adapters *adapter.Registry
 }
 
 // New returns a Primitive bound to opts.
@@ -87,8 +99,11 @@ func run(ctx context.Context, opts Options, in runner.PrimitiveInput) (runner.Pr
 			return runner.PrimitiveOutput{}, fmt.Errorf("primharness: decode config: %w", err)
 		}
 	}
-	if len(cfg.Command) == 0 {
-		return runner.PrimitiveOutput{}, errors.New("primharness: command is required")
+	if cfg.Harness != "" && len(cfg.Command) > 0 {
+		return runner.PrimitiveOutput{}, errors.New("primharness: harness and command are mutually exclusive")
+	}
+	if cfg.Harness == "" && len(cfg.Command) == 0 {
+		return runner.PrimitiveOutput{}, errors.New("primharness: harness or command is required")
 	}
 	if cfg.Prompt == "" {
 		return runner.PrimitiveOutput{}, errors.New("primharness: prompt is required")
@@ -101,12 +116,9 @@ func run(ctx context.Context, opts Options, in runner.PrimitiveInput) (runner.Pr
 		defer cancel()
 	}
 
-	cmd := exec.CommandContext(cmdCtx, cfg.Command[0], cfg.Command[1:]...)
-	if cfg.Dir != "" {
-		cmd.Dir = cfg.Dir
-	}
-	if len(cfg.Env) > 0 {
-		cmd.Env = mergedEnv(cfg.Env)
+	cmd, err := buildCmd(cmdCtx, opts, cfg)
+	if err != nil {
+		return runner.PrimitiveOutput{}, err
 	}
 
 	stdin, err := cmd.StdinPipe()
@@ -218,4 +230,39 @@ func run(ctx context.Context, opts Options, in runner.PrimitiveInput) (runner.Pr
 
 func drainStderr(r io.Reader) {
 	_, _ = io.Copy(io.Discard, r)
+}
+
+// buildCmd resolves cfg.Harness to a registered adapter and asks it
+// to build the *exec.Cmd, or falls back to spawning cfg.Command
+// directly when no harness name is given.
+func buildCmd(ctx context.Context, opts Options, cfg Config) (*exec.Cmd, error) {
+	if cfg.Harness != "" {
+		reg := opts.Adapters
+		if reg == nil {
+			reg = adapter.Default()
+		}
+		a, ok := reg.Lookup(cfg.Harness)
+		if !ok {
+			return nil, fmt.Errorf("primharness: no adapter registered for harness %q", cfg.Harness)
+		}
+		cmd, err := a.Spawn(adapter.SpawnOptions{
+			Ctx:   ctx,
+			Dir:   cfg.Dir,
+			Env:   cfg.Env,
+			Model: cfg.Model,
+			Mode:  cfg.Mode,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("primharness: %s spawn: %w", cfg.Harness, err)
+		}
+		return cmd, nil
+	}
+	cmd := exec.CommandContext(ctx, cfg.Command[0], cfg.Command[1:]...)
+	if cfg.Dir != "" {
+		cmd.Dir = cfg.Dir
+	}
+	if len(cfg.Env) > 0 {
+		cmd.Env = mergedEnv(cfg.Env)
+	}
+	return cmd, nil
 }
