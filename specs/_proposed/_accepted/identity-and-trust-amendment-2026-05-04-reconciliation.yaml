@@ -1,0 +1,25 @@
+# Spec-bookkeeping reconciliation pass — identity-and-trust.
+#
+# Status: proposed (folded in same commit).
+#
+# token-lifecycle and rbac-engine are PARTIAL/TODO and stay
+# todo. token-lifecycle has access tokens but no refresh
+# rotation or revocation list; rbac-engine has org membership
+# gating but no role/permission engine. org-model-central is
+# already done (folded earlier this session).
+
+target: identity-and-trust
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: keypair-generation
+    from: todo
+    to: done
+    proof: "internal/core/identity/{keypair.go,signer.go,store.go} — ed25519 generation, Fingerprint, Signer interface, file-on-disk store under ~/.config/rex/identity/"
+
+  - kind: update-task-state
+    task_id: handshake-protocol
+    from: todo
+    to: done
+    proof: "internal/central/server/auth.go (challenge issue + verify + 60s expiry); routes /auth/challenge + /auth/verify; internal/local/sync/auth_test.go exercises round-trip"

@@ -1,0 +1,30 @@
+# Spec-bookkeeping reconciliation pass — sync.
+#
+# Status: proposed (folded in same commit).
+#
+# sync-categorization is PARTIAL (categories documented in doc
+# strings + directory layout, but no typed enum or runtime
+# enforcement at the storage layer). sync-api-server is
+# PARTIAL (state/events/conflict ship; /sync/git endpoints for
+# rebase do not). rebase-engine is TODO with explicit "not yet
+# implemented" errors in cli/sync.go and web/sync.go.
+# draft-state-ux is PARTIAL (watermarks ship; pre-rebase
+# preservation depends on rebase-engine). bootstrap-flow is
+# PARTIAL (`rex remote add` + bootstrap ship; `rex workspace
+# clone` does not).
+
+target: sync
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: hlc-clock
+    from: todo
+    to: done
+    proof: "internal/core/storage/eventlog/hlc.go:Clock — max(local,observed)+tick with logical counter on tie; ordering key (physical_ms, logical_counter, actor) used in proto/types.go and central store"
+
+  - kind: update-task-state
+    task_id: sync-api-client
+    from: todo
+    to: done
+    proof: "internal/local/sync/client.go (state, push with retries, pull SSE scan); internal/local/cli/sync.go (newSyncCmd/newPushCmd/newPullCmd)"

@@ -25,12 +25,12 @@ description: |
 tasks:
   - id: bootstrap-repo
     description: Create the Go module, repo layout, top-level CLI scaffold, and CI pipeline
-    state: todo
+    state: done
     references: [SYS.1, SYS.2]
 
   - id: shared-core-package
     description: Establish the shared core package structure used by both local and central binaries
-    state: todo
+    state: done
     references: [SYS.1, SYS.3]
 
 components:

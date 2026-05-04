@@ -24,12 +24,12 @@ description: |
 tasks:
   - id: keypair-generation
     description: Implement keypair generation, storage, and the abstract Signer interface (so passkeys/WebAuthn can be added later)
-    state: todo
+    state: done
     references: [KEY.1, KEY.2, KEY.3]
 
   - id: handshake-protocol
     description: Implement the challenge-response handshake between local and central
-    state: todo
+    state: done
     references: [AUTH.1, AUTH.2, AUTH.3]
 
   - id: token-lifecycle

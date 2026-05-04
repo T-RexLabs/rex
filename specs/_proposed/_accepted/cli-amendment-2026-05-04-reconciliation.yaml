@@ -1,0 +1,34 @@
+# Spec-bookkeeping reconciliation pass — cli.
+#
+# Status: proposed (folded in same commit).
+#
+# Tasks staying todo because PARTIAL:
+#   - workspace-commands (missing clone/archive/delete/push)
+#   - spec-commands (missing `rex spec edit`)
+#   - run-commands (missing watch/cancel/signal/approve/deny)
+#   - misc-commands (missing `rex tools` subtree, `rex log
+#     search`, `rex search saved`)
+#   - output-formatting (--quiet not consistently wired,
+#     no central color/--no-color helper)
+
+target: cli
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: cli-framework
+    from: todo
+    to: done
+    proof: "internal/local/cli/root.go:NewRootCmd uses cobra; verb-noun command tree built via AddCommand"
+
+  - kind: update-task-state
+    task_id: remote-commands
+    from: todo
+    to: done
+    proof: "internal/local/cli/remote.go: add, list, show, remove, test, bootstrap"
+
+  - kind: update-task-state
+    task_id: sync-commands
+    from: todo
+    to: done
+    proof: "internal/local/cli/sync.go (sync, push, pull) + status.go (status)"

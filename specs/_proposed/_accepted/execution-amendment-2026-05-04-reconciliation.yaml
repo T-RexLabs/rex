@@ -1,0 +1,21 @@
+# Spec-bookkeeping reconciliation pass — execution.
+#
+# Status: proposed (folded in same commit).
+#
+# dag-executor is PARTIAL (no approval gating in executor, no
+# parallel/branch fan-out scheduling). dag-primitives is
+# PARTIAL (only 3 of 9 PRIM.* node types: shell, spec_validate,
+# harness_invocation). run-lifecycle-cli is PARTIAL (no watch,
+# no cancel). permission-prompt-flow is PARTIAL (web UI prompt
+# ships, CLI prompt + queue/timeout policy do not).
+# harness-adapter-registry and schedule-engine remain TODO.
+
+target: execution
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: acp-client-layer
+    from: todo
+    to: done
+    proof: "internal/core/acp/{client.go,session.go,framing.go,jsonrpc.go} — NDJSON wire, NewSession, SessionRequestPermission handling"

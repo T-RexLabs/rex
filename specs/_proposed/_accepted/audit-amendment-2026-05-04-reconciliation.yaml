@@ -1,0 +1,25 @@
+# Spec-bookkeeping reconciliation pass — audit.
+#
+# Status: proposed (folded in same commit).
+#
+# audit-event-types is PARTIAL (only runner + workspace events
+# are registered as audit-class); audit-query is PARTIAL
+# (`rex log tail` ships, `rex log search` does not). Both stay
+# todo. compaction-job is central-only transcript compaction
+# and is deferred per overview.SCOPE.* — flag with a note but
+# keep state: todo since the spec-format validator only
+# accepts todo/in_progress/done/blocked.
+
+target: audit
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: audit-storage
+    from: todo
+    to: done
+    proof: "internal/core/audit/appender.go:Appender.Append (rejects non-audit-class via ErrNotAuditEvent); eventlog.Writer enforces append-only at the file level"
+
+  - kind: add-task-note
+    task_id: compaction-job
+    note: "Deferred to v1.5 alongside central-side execution per overview.SCOPE.1; v1 ships local-only audit and there is nothing to compact yet. Stays todo so the punch list keeps it visible."

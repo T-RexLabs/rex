@@ -1,0 +1,25 @@
+# Spec-bookkeeping reconciliation pass — hooks.
+#
+# Status: proposed (folded in same commit).
+
+target: hooks
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: hook-dispatcher
+    from: todo
+    to: done
+    proof: "internal/core/hooks/dispatcher.go:Dispatcher (per-workspace + global dirs, async, worker pool, timeout with SIGTERM->SIGKILL, capture to .rex/hook-log)"
+
+  - kind: update-task-state
+    task_id: hook-event-payload
+    from: todo
+    to: done
+    proof: "dispatcher.go sets REX_EVENT_TYPE/REX_EVENT_ID/REX_WORKSPACE_ID/REX_NODE_ROLE; full record JSON streamed on stdin"
+
+  - kind: update-task-state
+    task_id: hook-cli
+    from: todo
+    to: done
+    proof: "internal/local/cli/hooks.go:newHooksListCmd"

@@ -1,0 +1,37 @@
+# Spec-bookkeeping reconciliation pass — spec-format.
+#
+# Status: proposed (folded in same commit).
+
+target: spec-format
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: define-go-types
+    from: todo
+    to: done
+    proof: "internal/core/specfmt/types.go (Document/Metadata/Component/Requirement/Task with yaml tags)"
+
+  - kind: update-task-state
+    task_id: implement-validator
+    from: todo
+    to: done
+    proof: "internal/core/specfmt/validate.go:Validate, wired via internal/local/cli/spec.go:newSpecValidateCmd; CI runs it on every push"
+
+  - kind: update-task-state
+    task_id: implement-templates
+    from: todo
+    to: done
+    proof: "internal/core/specfmt/template.go (IsTemplate, ResolveTemplate, ExtraTemplate*); validate.go runs the template-resolution pass"
+
+  - kind: update-task-state
+    task_id: implement-acid-resolver
+    from: todo
+    to: done
+    proof: "internal/core/specfmt/acid.go:ParseACIDRef + resolver.go:Workspace.Resolve; dangling refs surface in validate output"
+
+  - kind: update-task-state
+    task_id: write-three-real-specs
+    from: todo
+    to: done
+    proof: "14 specs in specs/ all pass `go run ./cmd/rex spec validate specs/*.yaml` with 0 errors / 0 warnings"

@@ -26,7 +26,7 @@ description: |
 tasks:
   - id: server-side-html
     description: "Set up the Go HTML template engine, base layout, and the htmx + SSE wiring"
-    state: todo
+    state: done
     references: [STACK.1, STACK.2, STACK.3]
 
   - id: shared-component-lib
@@ -46,7 +46,7 @@ tasks:
 
   - id: live-run-watching
     description: "Implement the live-run-watching SSE endpoint and the corresponding HTML view that streams transcript and permission prompts"
-    state: todo
+    state: done
     references: [LIVE.1, LIVE.2, LIVE.3]
 
   - id: search-ui

@@ -30,7 +30,7 @@ tasks:
 
   - id: audit-storage
     description: "Implement the audit-log storage layer with structural append-only enforcement"
-    state: todo
+    state: done
     references: [STORE.1, STORE.2, STORE.3]
 
   - id: audit-query
@@ -41,6 +41,7 @@ tasks:
   - id: compaction-job
     description: "Implement the transcript-compaction scheduled job for central nodes"
     state: todo
+    note: "Deferred to v1.5 alongside central-side execution per overview.SCOPE.1; v1 ships local-only audit and there is nothing to compact yet."
     references: [COMPACT.1, COMPACT.2, COMPACT.3]
 
 components:

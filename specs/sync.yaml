@@ -35,7 +35,7 @@ tasks:
 
   - id: hlc-clock
     description: "Implement hybrid logical clocks for cross-node event ordering"
-    state: todo
+    state: done
     references: [ORDER.1, ORDER.2, ORDER.3]
 
   - id: sync-api-server
@@ -45,7 +45,7 @@ tasks:
 
   - id: sync-api-client
     description: "Implement the local-node sync client: `rex push`, `rex pull`, `rex sync`"
-    state: todo
+    state: done
     references: [CLIENT.1, CLIENT.2, CLIENT.3]
 
   - id: rebase-engine

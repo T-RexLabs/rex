@@ -22,27 +22,27 @@ description: |
 tasks:
   - id: define-go-types
     description: Define the Go structs that mirror this schema, with `yaml` tags and validation tags
-    state: todo
+    state: done
     references: [CORE.1, CORE.2, META.1, COMP.1, REQ.1]
 
   - id: implement-validator
     description: Implement `rex spec validate`, including required-field checks, ACID format checks, and template-extension validation
-    state: todo
+    state: done
     references: [VAL.1, VAL.2, VAL.3, VAL.4]
 
   - id: implement-templates
     description: 'Implement workspace-level and org-level template extension; templates are themselves specs with `template: true` in extra'
-    state: todo
+    state: done
     references: [TMPL.1, TMPL.2, TMPL.3]
 
   - id: implement-acid-resolver
     description: Implement an ACID resolver that validates references across specs in a workspace and reports dangling refs
-    state: todo
+    state: done
     references: [REQ.3, ACID.1, ACID.2]
 
   - id: write-three-real-specs
     description: Write three real specs against this format before locking the v1 schema; revise the schema based on what's missing
-    state: todo
+    state: done
     references: [CORE.1]
 
 components:

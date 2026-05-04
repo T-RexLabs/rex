@@ -25,7 +25,7 @@ description: |
 tasks:
   - id: cli-framework
     description: "Choose and integrate a CLI framework (cobra recommended); set up the verb-noun command tree skeleton"
-    state: todo
+    state: done
     references: [SHAPE.1, SHAPE.2]
 
   - id: workspace-commands
@@ -45,12 +45,12 @@ tasks:
 
   - id: remote-commands
     description: "Implement remote subcommands"
-    state: todo
+    state: done
     references: [REMOTE.1, REMOTE.2, REMOTE.3]
 
   - id: sync-commands
     description: "Implement sync, push, pull, status as top-level shortcuts"
-    state: todo
+    state: done
     references: [SYNC.1, SYNC.2, SYNC.3, STATUS.1]
 
   - id: misc-commands

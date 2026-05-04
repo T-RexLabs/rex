@@ -1,0 +1,44 @@
+# Spec-bookkeeping reconciliation pass — storage.
+#
+# Status: proposed (folded in same commit).
+#
+# global-config-layout is PARTIAL (identity dir, remotes.toml,
+# global hooks dir all exist; missing ~/.config/rex/config.toml
+# and the cross-workspace registry.toml). transcript-shards is
+# TODO (runner records ACP frames inline as runner events but
+# does not shard to transcripts/<run-id>/). encryption-opt-in
+# is OUT-OF-SCOPE (central-tenant encryption keys are deferred
+# per overview.SCOPE.*); flagged with a note, kept todo.
+
+target: storage
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: workspace-dir-layout
+    from: todo
+    to: done
+    proof: "internal/local/cli/workspace.go:initSubdirs creates specs/ schedules/ templates/ hooks/ inside .rex/; workspace.yaml seeded; events.log/index.sqlite created lazily by their owners"
+
+  - kind: update-task-state
+    task_id: event-log-storage
+    from: todo
+    to: done
+    proof: "internal/core/storage/eventlog/log.go:Writer (length-prefixed JSON, exclusive file lock, HLC timestamps); record.go fields; event.go enforces version skipping"
+
+  - kind: update-task-state
+    task_id: index-rebuild
+    from: todo
+    to: done
+    proof: "internal/core/search/index.go:Rebuild + internal/local/cli/workspace.go:newWorkspaceReindexCmd"
+
+  - kind: update-task-state
+    task_id: snapshot-impl
+    from: todo
+    to: done
+    proof: "internal/core/snapshot/snapshot.go:Create + Restore + List; internal/local/cli/snapshot.go (create/list/restore); manifest.go documents captured components"
+    note: "SNAP.3 periodic + every-N-events triggers (cron) NOT yet implemented; only manual `rex snapshot create` works. Schedule trigger lands with execution.schedule-engine."
+
+  - kind: add-task-note
+    task_id: encryption-opt-in
+    note: "Deferred to v1.5 — per-tenant transcript encryption requires central-side execution + an encryption-keys data model that aren't in v1 (overview.SCOPE.1, web-ui.CENTRAL.4 placeholder). Stays todo so the punch list tracks it."

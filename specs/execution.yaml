@@ -27,7 +27,7 @@ description: |
 tasks:
   - id: acp-client-layer
     description: "Implement a pure-Go ACP client that opens harness sessions, streams events, and handles permission requests"
-    state: todo
+    state: done
     references: [ACP.1, ACP.2, ACP.3, ACP.4, ACP.5]
 
   - id: harness-adapter-registry

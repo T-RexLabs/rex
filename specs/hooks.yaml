@@ -22,17 +22,17 @@ description: |
 tasks:
   - id: hook-dispatcher
     description: "Implement the post-event hook dispatcher: ~150 lines of Go that iterates the workspace and global hook directories, invokes each hook async, and captures stdout/stderr"
-    state: todo
+    state: done
     references: [DISP.1, DISP.2, DISP.3, DISP.4]
 
   - id: hook-event-payload
     description: "Define and document the JSON event payload format hooks receive on stdin"
-    state: todo
+    state: done
     references: [PAYLOAD.1, PAYLOAD.2]
 
   - id: hook-cli
     description: "Implement `rex hooks list` — minimum useful surface for v1"
-    state: todo
+    state: done
     references: [CLI.1]
 
 components:

@@ -30,12 +30,12 @@ tasks:
 
   - id: workspace-dir-layout
     description: "Create the `.rex/` skeleton on workspace init and validate it on every command"
-    state: todo
+    state: done
     references: [WS.1, WS.2, WS.3]
 
   - id: event-log-storage
     description: "Implement the append-only `events.log` writer with HLC timestamps and event versioning"
-    state: todo
+    state: done
     references: [EVENTS.1, EVENTS.2, EVENTS.3, EVENTS.4]
 
   - id: transcript-shards
@@ -45,17 +45,19 @@ tasks:
 
   - id: index-rebuild
     description: "Implement `rex workspace reindex` for rebuilding the SQLite FTS5 index from the event log"
-    state: todo
+    state: done
     references: [INDEX.1, INDEX.2, INDEX.3]
 
   - id: snapshot-impl
     description: "Implement snapshots — periodic, manual, and restore"
-    state: todo
+    state: done
+    note: "Manual `rex snapshot create/list/restore` ships; SNAP.3 periodic + every-N-events triggers (cron-style) NOT yet implemented and will land alongside execution.schedule-engine."
     references: [SNAP.1, SNAP.2, SNAP.3, SNAP.4]
 
   - id: encryption-opt-in
     description: "Implement opt-in per-tenant transcript encryption on the central node side"
     state: todo
+    note: "Deferred to v1.5 — per-tenant transcript encryption requires central-side execution + an encryption-keys data model that aren't in v1 (overview.SCOPE.1, web-ui.CENTRAL.4 placeholder)."
     references: [ENC.1, ENC.2]
 
 components:

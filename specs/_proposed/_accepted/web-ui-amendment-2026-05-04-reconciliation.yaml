@@ -1,0 +1,27 @@
+# Spec-bookkeeping reconciliation pass — web-ui.
+#
+# Status: proposed (folded in same commit).
+#
+# shared-component-lib is PARTIAL (page templates + partials
+# ship for local UI; ACID badge component + central-UI
+# variants don't exist). local-ui-routes is PARTIAL (/, /specs,
+# /runs, /audit, /remotes ship; /workspaces and /settings do
+# not). central-ui-routes is TODO (no central web binary or
+# templates). search-ui is PARTIAL (search page ships, scope
+# picker + saved-searches sidebar do not).
+
+target: web-ui
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: server-side-html
+    from: todo
+    to: done
+    proof: "internal/local/web/server.go (mux + html/template setup); templates/ + static/ via embed.FS; static/htmx-ext-sse.js shim"
+
+  - kind: update-task-state
+    task_id: live-run-watching
+    from: todo
+    to: done
+    proof: "internal/local/web/runs.go SSE endpoint replays events.log + tails per run_id (LIVE.1 file-tail mechanism); permission.go inline approve/deny (LIVE.3)"

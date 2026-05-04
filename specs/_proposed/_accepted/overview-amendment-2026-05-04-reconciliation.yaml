@@ -1,0 +1,27 @@
+# Spec-bookkeeping reconciliation pass — overview.
+#
+# Status:    proposed (folded in same commit per the in-commit
+#                    convention used since central-node-amendment-
+#                    2026-05-04-backups-done).
+# Surfaced by:
+#   - Stale task states in specs/*.yaml don't reflect what
+#     actually shipped per CLAUDE.md and the code in internal/.
+#     This pass flips the demonstrably-shipped tasks to done
+#     across every spec; the verdicts come from a per-task
+#     code-citation audit run on 2026-05-04.
+
+target: overview
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: bootstrap-repo
+    from: todo
+    to: done
+    proof: "cmd/rex/main.go, cmd/rex-central/main.go, .github/workflows/ci.yml, Makefile, go.mod (module github.com/asabla/rex)"
+
+  - kind: update-task-state
+    task_id: shared-core-package
+    from: todo
+    to: done
+    proof: "internal/core/{acp,audit,hooks,identity,runner,search,snapshot,specfmt,storage,sync} shared by both binaries"
