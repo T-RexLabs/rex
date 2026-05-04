@@ -496,3 +496,119 @@ func TestSyncPostUnknownRemoteRendersError(t *testing.T) {
 		t.Errorf("expected unknown-remote banner: %s", body[:minInt(len(body), 1500)])
 	}
 }
+
+func TestRunDetailRendersPermissionPromptForm(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t, "ws-perm-form")
+	seedRunEvents(t, root, "perm-run")
+	seedPermissionRequest(t, root, "perm-run", "req-1", "fs.write", "write to ~/.zshrc")
+	hs := newTestServer(t, root)
+
+	resp, err := http.Get(hs.URL + "/runs/perm-run")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := readBody(t, resp)
+	for _, want := range []string{
+		"awaiting decision",
+		`name="request_id" value="req-1"`,
+		`name="decision" value="grant"`,
+		`name="decision" value="deny"`,
+		"event-permission",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in run-detail with pending permission:\n%s", want, body[:minInt(len(body), 3000)])
+		}
+	}
+}
+
+func TestRunDetailRendersResolvedPermission(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t, "ws-perm-resolved")
+	seedRunEvents(t, root, "perm-run-2")
+	seedPermissionRequest(t, root, "perm-run-2", "req-x", "fs.write", "")
+	seedPermissionGrant(t, root, "perm-run-2", "req-x", "operator", "approved")
+	hs := newTestServer(t, root)
+
+	resp, err := http.Get(hs.URL + "/runs/perm-run-2")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := readBody(t, resp)
+	for _, want := range []string{
+		`pill-ok`,
+		"granted",
+		"operator",
+		"permission-resolution",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in resolved-permission view:\n%s", want, body[:minInt(len(body), 3000)])
+		}
+	}
+	if strings.Contains(body, `name="decision"`) {
+		t.Errorf("should not render approve/deny buttons after resolution")
+	}
+}
+
+func TestRunPermissionPostWritesGrantEvent(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t, "ws-perm-post")
+	seedRunEvents(t, root, "perm-run-3")
+	seedPermissionRequest(t, root, "perm-run-3", "req-y", "fs.write", "")
+	hs := newTestServer(t, root)
+
+	form := "request_id=req-y&decision=grant&note=ok+to+proceed"
+	req, _ := http.NewRequest(http.MethodPost,
+		hs.URL+"/runs/perm-run-3/permission",
+		strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status: %d (expected 303)", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Location"); !strings.HasPrefix(got, "/runs/perm-run-3#") {
+		t.Errorf("Location: %q", got)
+	}
+
+	// On the run-detail page the granted resolution should now render.
+	resp2, err := http.Get(hs.URL + "/runs/perm-run-3")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := readBody(t, resp2)
+	if !strings.Contains(body, "permission-resolution") || !strings.Contains(body, "granted") {
+		t.Errorf("expected resolved permission card after POST: %s", body[:minInt(len(body), 3000)])
+	}
+}
+
+func TestRunPermissionPostRejectsDoubleResolve(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t, "ws-perm-double")
+	seedRunEvents(t, root, "perm-run-4")
+	seedPermissionRequest(t, root, "perm-run-4", "req-z", "fs.write", "")
+	seedPermissionGrant(t, root, "perm-run-4", "req-z", "operator", "first")
+	hs := newTestServer(t, root)
+
+	form := "request_id=req-z&decision=deny&note=second+attempt"
+	req, _ := http.NewRequest(http.MethodPost,
+		hs.URL+"/runs/perm-run-4/permission",
+		strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status: %d (expected 409)", resp.StatusCode)
+	}
+}

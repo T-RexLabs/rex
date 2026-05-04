@@ -964,6 +964,64 @@ textarea.editor {
 .event-body { margin-top: 0; }
 
 /* ============================================================
+ * 19a. Permission cards (web-ui.LIVE.3)
+ *
+ * Renders inside an .event whose decoded type is
+ * permission.requested. Two visual states:
+ *   - unresolved: a form with note input + approve/deny buttons
+ *   - resolved:   a quiet "decision · approver · time" status row
+ *
+ * The whole event card grows a left accent bar (warn for
+ * unresolved, state-color for resolved) so a long timeline
+ * scans for outstanding decisions visually without the user
+ * having to read every payload.
+ * ============================================================ */
+
+.event-permission {
+  border-left: 3px solid var(--state-warn);
+  padding-left: var(--sp-3);
+  margin-left: -3px;
+}
+.event-permission:has(.permission-granted) { border-left-color: var(--state-ok); }
+.event-permission:has(.permission-denied)  { border-left-color: var(--state-error); }
+
+.permission-form {
+  margin-top: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.permission-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.permission-row .field-input { flex: 1; min-width: 200px; }
+.permission-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.permission-resolution {
+  margin-top: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.permission-meta { margin-left: auto; }
+
+/* ============================================================
  * 20. Run identifier heading (run-detail page)
  *
  * A run-id is a 22+ char HLC. Render it in mono at h2 size so

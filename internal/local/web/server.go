@@ -88,6 +88,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /runs/start", s.handleRunStart)
 	s.mux.HandleFunc("GET /runs/{id}", s.handleRunDetail)
 	s.mux.HandleFunc("GET /runs/{id}/stream", s.handleRunStream)
+	s.mux.HandleFunc("POST /runs/{id}/permission", s.handleRunPermission)
 	s.mux.HandleFunc("GET /audit", s.handleAudit)
 	s.mux.HandleFunc("GET /remotes", s.handleRemotes)
 	s.mux.HandleFunc("GET /search", s.handleSearch)

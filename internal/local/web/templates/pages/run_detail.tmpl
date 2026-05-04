@@ -23,13 +23,48 @@
   </div>
   <div class="timeline" id="run-events">
     {{range .Events}}
-    <article class="event">
+    <article class="event{{if .Permission}} event-permission{{end}}"{{if .Permission}} id="{{.Permission.RequestID}}"{{end}}>
       <header class="event-head">
         <span class="event-type" data-type="{{.Type}}"><code>{{.Type}}</code></span>
         <time class="event-time">{{.Timestamp}}</time>
         <span class="event-id"><code>{{.ID}}</code></span>
       </header>
       <pre class="event-body chroma"><code class="language-json">{{.Payload}}</code></pre>
+      {{with .Permission}}
+        {{if .Resolved}}
+          <div class="permission-resolution permission-{{.Decision}}">
+            <span class="permission-label">
+              <span class="pill pill-{{if eq .Decision "granted"}}ok{{else}}error{{end}}"><i class="dot"></i>{{.Decision}}</span>
+              <span class="muted small">request <code>{{.RequestID}}</code></span>
+            </span>
+            <span class="permission-meta muted small">
+              {{if .Resolver}}by <code>{{.Resolver}}</code> · {{end}}<time>{{.ResolvedAt}}</time>
+              {{if .Note}} · {{.Note}}{{end}}
+            </span>
+          </div>
+        {{else}}
+          <form class="permission-form" method="post" action="/runs/{{$.RunID}}/permission">
+            <input type="hidden" name="request_id" value="{{.RequestID}}">
+            <div class="permission-row">
+              <span class="permission-label">
+                <span class="pill pill-warn"><i class="dot"></i>awaiting decision</span>
+                <span class="muted small">{{if .Tool}}<code>{{.Tool}}</code> · {{end}}request <code>{{.RequestID}}</code></span>
+              </span>
+            </div>
+            {{if .Reason}}
+              <p class="muted small">{{.Reason}}</p>
+            {{end}}
+            <div class="permission-row">
+              <input class="field-input"
+                     type="text"
+                     name="note"
+                     placeholder="optional note for the audit log">
+              <button class="btn btn-primary" type="submit" name="decision" value="grant">approve</button>
+              <button class="btn" type="submit" name="decision" value="deny">deny</button>
+            </div>
+          </form>
+        {{end}}
+      {{end}}
     </article>
     {{end}}
   </div>

@@ -12,6 +12,48 @@ import (
 	"github.com/asabla/rex/internal/core/storage/eventlog"
 )
 
+// seedPermissionRequest writes a synthetic permission.requested
+// event so tests can drive the LIVE.3 UI without a real harness
+// adapter wired up. The reason field maps to PermissionRequestedEvent.Reason.
+func seedPermissionRequest(t *testing.T, root, runID, requestID, tool, reason string) {
+	t.Helper()
+	w, err := eventlog.OpenWriter(eventlog.WriterConfig{
+		Path:        filepath.Join(root, ".rex", "events.log"),
+		WorkspaceID: "test-ws",
+	})
+	if err != nil {
+		t.Fatalf("OpenWriter: %v", err)
+	}
+	defer w.Close()
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	payload := `{"run_id":"` + runID + `","node_id":"shell","request_id":"` + requestID +
+		`","tool":"` + tool + `","reason":"` + reason + `","requested_at":"` + now + `"}`
+	if _, err := w.Append("permission.requested", 1, json.RawMessage(payload)); err != nil {
+		t.Fatalf("Append permission.requested: %v", err)
+	}
+}
+
+// seedPermissionGrant writes a synthetic permission.granted event
+// matching a previously-seeded permission.requested. Used to test
+// the resolved-state rendering.
+func seedPermissionGrant(t *testing.T, root, runID, requestID, approver, note string) {
+	t.Helper()
+	w, err := eventlog.OpenWriter(eventlog.WriterConfig{
+		Path:        filepath.Join(root, ".rex", "events.log"),
+		WorkspaceID: "test-ws",
+	})
+	if err != nil {
+		t.Fatalf("OpenWriter: %v", err)
+	}
+	defer w.Close()
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	payload := `{"run_id":"` + runID + `","node_id":"shell","request_id":"` + requestID +
+		`","approver":"` + approver + `","granted_at":"` + now + `","note":"` + note + `"}`
+	if _, err := w.Append("permission.granted", 1, json.RawMessage(payload)); err != nil {
+		t.Fatalf("Append permission.granted: %v", err)
+	}
+}
+
 // seedRunEvents writes a synthetic run.* event sequence to
 // .rex/events.log via the eventlog.Writer. Use it to populate a
 // run's history without invoking the runner end-to-end.

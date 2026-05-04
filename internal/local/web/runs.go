@@ -25,16 +25,35 @@ const ssePollInterval = 100 * time.Millisecond
 // runEventRow flattens an eventlog.Record into a render-friendly
 // shape for the run detail page. Payload is pre-formatted JSON
 // HTML (chroma-highlighted on the server) so the template can
-// drop it into a <pre> without further escaping. PayloadRaw is the
-// pretty-printed source string used by the JS-disabled fallback —
-// when JS is off the highlighted version still works (it's class
-// based + server rendered) but the fallback is kept for SSE wire
-// emission where we send pretty text only.
+// drop it into a <pre> without further escaping.
+//
+// Permission is populated for permission.requested events only,
+// so the template can render an inline approve/deny card next
+// to the event payload (web-ui.LIVE.3). When the same run also
+// emits a matching permission.granted or permission.denied
+// event, Permission.Resolved is true and the buttons render as
+// a quiet "resolved by X at Y" status row instead.
 type runEventRow struct {
-	ID        string
-	Timestamp string
-	Type      string
-	Payload   template.HTML
+	ID         string
+	Timestamp  string
+	Type       string
+	Payload    template.HTML
+	Permission *permissionView
+}
+
+// permissionView is the per-row shape behind LIVE.3's permission
+// prompt. The request fields come from the permission.requested
+// payload; the resolution fields are filled in only after a
+// matching .granted / .denied event has landed.
+type permissionView struct {
+	RequestID  string
+	Tool       string
+	Reason     string
+	Resolved   bool
+	Decision   string // "granted" | "denied"
+	Resolver   string
+	Note       string
+	ResolvedAt string
 }
 
 // newRunEventRow builds a runEventRow with chroma-highlighted JSON
@@ -111,6 +130,17 @@ func loadRunDetail(opts Options, runID string, hl *Highlighter) (runDetailData, 
 	reg := event.NewRegistry()
 	runner.RegisterEvents(reg)
 
+	// First pass: collect rows + permission resolutions keyed
+	// by request_id. Doing this in two passes keeps the
+	// decoration logic simple and matches the way the run
+	// timeline reads chronologically.
+	type rowDecode struct {
+		row     runEventRow
+		decoded any // typed runner.* payload
+	}
+	var collected []rowDecode
+	resolutions := map[string]*permissionView{}
+
 	for {
 		rec, err := r.Next()
 		if errors.Is(err, io.EOF) {
@@ -119,10 +149,36 @@ func loadRunDetail(opts Options, runID string, hl *Highlighter) (runDetailData, 
 		if err != nil {
 			return d, false, err
 		}
-		if !recordMatchesRun(reg, rec, runID) {
+		decoded, derr := reg.Decode(event.Envelope{
+			Type: rec.Type, Version: rec.Version, Payload: rec.Payload,
+		})
+		if derr != nil {
 			continue
 		}
-		d.Events = append(d.Events, newRunEventRow(rec, hl))
+		if !runner.MatchesRun(decoded, runID) {
+			continue
+		}
+		row := newRunEventRow(rec, hl)
+		switch ev := decoded.(type) {
+		case runner.PermissionGrantedEvent:
+			resolutions[ev.RequestID] = &permissionView{
+				Resolved:   true,
+				Decision:   "granted",
+				Resolver:   ev.Approver,
+				Note:       ev.Note,
+				ResolvedAt: ev.GrantedAt.UTC().Format(time.RFC3339Nano),
+			}
+		case runner.PermissionDeniedEvent:
+			resolutions[ev.RequestID] = &permissionView{
+				Resolved:   true,
+				Decision:   "denied",
+				Resolver:   ev.Approver,
+				Note:       ev.Reason,
+				ResolvedAt: ev.DeniedAt.UTC().Format(time.RFC3339Nano),
+			}
+		}
+		collected = append(collected, rowDecode{row: row, decoded: decoded})
+
 		// Track terminal status for the badge.
 		switch rec.Type {
 		case runner.EventTypeRunStarted:
@@ -135,6 +191,30 @@ func loadRunDetail(opts Options, runID string, hl *Highlighter) (runDetailData, 
 			d.Status = runner.RunStatusAborted
 		}
 	}
+
+	// Second pass: decorate permission.requested rows with the
+	// matching resolution (if any) so the template can render
+	// either action buttons or a "resolved by X" status row.
+	for _, c := range collected {
+		row := c.row
+		if req, ok := c.decoded.(runner.PermissionRequestedEvent); ok {
+			perm := &permissionView{
+				RequestID: req.RequestID,
+				Tool:      req.Tool,
+				Reason:    req.Reason,
+			}
+			if r, ok := resolutions[req.RequestID]; ok {
+				perm.Resolved = true
+				perm.Decision = r.Decision
+				perm.Resolver = r.Resolver
+				perm.Note = r.Note
+				perm.ResolvedAt = r.ResolvedAt
+			}
+			row.Permission = perm
+		}
+		d.Events = append(d.Events, row)
+	}
+
 	if len(d.Events) == 0 {
 		return d, false, nil
 	}
