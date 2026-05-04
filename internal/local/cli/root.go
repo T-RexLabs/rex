@@ -80,28 +80,6 @@ for each command group.`,
 	return root
 }
 
-// runWithOutput is a tiny helper that pipes stdout/stderr through cobra's
-// configured writers. cobra's commands write to its OutOrStdout /
-// ErrOrStderr; this wrapper makes leaf code less verbose.
-type writers struct {
-	Out io.Writer
-	Err io.Writer
-}
-
-func cmdWriters(cmd *cobra.Command) writers {
-	return writers{Out: cmd.OutOrStdout(), Err: cmd.ErrOrStderr()}
-}
-
-// orStdout returns w when non-nil, else os.Stdout. Lets tests inject
-// buffers when constructing commands directly without going through a
-// root command.
-func orStdout(w io.Writer) io.Writer {
-	if w == nil {
-		return os.Stdout
-	}
-	return w
-}
-
 // useColor reports whether the CLI should emit ANSI escape codes for
 // w. Honours --no-color (cmd flag), NO_COLOR (env, per the de-facto
 // no-color.org convention), and TERM=dumb. When w is not a *os.File

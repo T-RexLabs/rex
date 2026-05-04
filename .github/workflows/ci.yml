@@ -44,6 +44,19 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # The Postgres service runs 17, but ubuntu-latest ships pg_dump 16,
+      # which refuses to dump from a newer server. Pull the matching
+      # client tools from the official PGDG repo.
+      - name: Install PostgreSQL 17 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+
       - name: Verify modules tidy
         run: |
           go mod tidy
@@ -71,7 +84,6 @@ jobs:
           cache: true
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
-          args: --timeout=5m
+          version: v2.12.1

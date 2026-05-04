@@ -337,7 +337,7 @@ func (s *Server) requireToken(r *http.Request) (identity.Fingerprint, error) {
 		return identity.Fingerprint{}, errors.New("missing Authorization header")
 	}
 	if !strings.HasPrefix(header, bearerPrefix) {
-		return identity.Fingerprint{}, errors.New("Authorization must be Bearer")
+		return identity.Fingerprint{}, errors.New("authorization must be Bearer")
 	}
 	value := strings.TrimPrefix(header, bearerPrefix)
 	tok, err := s.auth.resolveToken(value)

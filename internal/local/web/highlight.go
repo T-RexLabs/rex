@@ -135,7 +135,7 @@ func (h *Highlighter) HighlightCSS() string {
 
 	buf.WriteString("\n@media (prefers-color-scheme: dark) {\n")
 	if err := h.formatter.WriteCSS(&buf, h.styleDark); err != nil {
-		buf.WriteString(fmt.Sprintf("/* chroma dark css failed: %s */\n", err))
+		fmt.Fprintf(&buf, "/* chroma dark css failed: %s */\n", err)
 	}
 	buf.WriteString("}\n")
 

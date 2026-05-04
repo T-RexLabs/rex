@@ -87,7 +87,7 @@ func (e *Executor) Run(ctx context.Context) (*RunState, error) {
 	queue := append([]NodeID(nil), e.cfg.DAG.roots()...)
 
 	for len(queue) > 0 {
-		if cancelled := e.checkCancel(state, ctx); cancelled {
+		if cancelled := e.checkCancel(ctx, state); cancelled {
 			return state, nil
 		}
 
@@ -158,7 +158,7 @@ func (e *Executor) runNode(ctx context.Context, state *RunState, node Node) (nod
 	policy := node.Retry.Effective(e.cfg.DAG.DefaultRetry)
 
 	for attempt := 1; attempt <= policy.MaxAttempts; attempt++ {
-		if cancelled := e.checkCancel(state, ctx); cancelled {
+		if cancelled := e.checkCancel(ctx, state); cancelled {
 			return nodeOutcomeCancelled, ""
 		}
 
@@ -182,7 +182,7 @@ func (e *Executor) runNode(ctx context.Context, state *RunState, node Node) (nod
 		// directly. Doing this check after Run keeps primitives
 		// simple: they can return ctx.Err() naively and still get
 		// correct lifecycle bookkeeping.
-		if cancelled := e.checkCancel(state, ctx); cancelled {
+		if cancelled := e.checkCancel(ctx, state); cancelled {
 			return nodeOutcomeCancelled, ""
 		}
 
@@ -232,7 +232,7 @@ func (e *Executor) runNode(ctx context.Context, state *RunState, node Node) (nod
 
 // checkCancel emits RunCancelledEvent if ctx is done. Returns true when
 // the caller should stop and propagate cancellation upward.
-func (e *Executor) checkCancel(state *RunState, ctx context.Context) bool {
+func (e *Executor) checkCancel(ctx context.Context, state *RunState) bool {
 	err := ctx.Err()
 	if err == nil {
 		return false

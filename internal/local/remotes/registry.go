@@ -84,10 +84,6 @@ func Save(path string, r *Registry) error {
 
 	// Encode to a deterministic, name-sorted output so two runs
 	// against the same registry produce byte-identical files.
-	type sectionEntry struct {
-		Name string
-		R    Remote
-	}
 	keys := make([]string, 0, len(r.Remotes))
 	for k := range r.Remotes {
 		keys = append(keys, k)

@@ -76,7 +76,7 @@ central node's authorized-keys file.`,
 				return err
 			}
 
-			var handle identity.Handle = identity.DefaultHandle
+			handle := identity.DefaultHandle
 			if len(args) == 1 {
 				handle = identity.Handle(args[0])
 			}

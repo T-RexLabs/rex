@@ -145,13 +145,6 @@ func (s *Server) basePageData() pageData {
 	}
 }
 
-// withNav returns a copy of base with NavSection set. Tiny helper
-// so handlers don't repeat the assignment dance.
-func (p pageData) withNav(s string) pageData {
-	p.NavSection = s
-	return p
-}
-
 // render executes base+page against data. Returns a 500 on
 // template errors so the user sees something rather than a blank
 // response.

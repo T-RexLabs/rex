@@ -108,7 +108,7 @@ func TestAuthVerifyRejectsTamperedSignature(t *testing.T) {
 	pub := priv.Public().(ed25519.PublicKey)
 	fp, _ := identity.FingerprintOf(pub)
 
-	resp, body := postJSON(t, hs.URL+authChallengePath, struct{}{})
+	_, body := postJSON(t, hs.URL+authChallengePath, struct{}{})
 	var ch proto.AuthChallengeResponse
 	_ = json.Unmarshal(body, &ch)
 
@@ -121,7 +121,7 @@ func TestAuthVerifyRejectsTamperedSignature(t *testing.T) {
 	})
 	sig := ed25519.Sign(priv, canonical)
 
-	resp, body = postJSON(t, hs.URL+authVerifyPath, proto.AuthVerifyRequest{
+	resp, body := postJSON(t, hs.URL+authVerifyPath, proto.AuthVerifyRequest{
 		ChallengeID: ch.ChallengeID,
 		Fingerprint: fp.String(),
 		Scope:       "sync",
@@ -140,7 +140,7 @@ func TestAuthVerifyRejectsUnregisteredFingerprint(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
 	fp, _ := identity.FingerprintOf(pub)
 
-	resp, body := postJSON(t, hs.URL+authChallengePath, struct{}{})
+	_, body := postJSON(t, hs.URL+authChallengePath, struct{}{})
 	var ch proto.AuthChallengeResponse
 	_ = json.Unmarshal(body, &ch)
 
@@ -150,7 +150,7 @@ func TestAuthVerifyRejectsUnregisteredFingerprint(t *testing.T) {
 	})
 	sig := ed25519.Sign(priv, canonical)
 
-	resp, body = postJSON(t, hs.URL+authVerifyPath, proto.AuthVerifyRequest{
+	resp, body := postJSON(t, hs.URL+authVerifyPath, proto.AuthVerifyRequest{
 		ChallengeID: ch.ChallengeID,
 		Fingerprint: fp.String(),
 		Scope:       "sync",
@@ -170,7 +170,7 @@ func TestAuthVerifyChallengeReuseRejected(t *testing.T) {
 	fp, _ := identity.FingerprintOf(pub)
 
 	// Issue a challenge.
-	resp, body := postJSON(t, hs.URL+authChallengePath, struct{}{})
+	_, body := postJSON(t, hs.URL+authChallengePath, struct{}{})
 	var ch proto.AuthChallengeResponse
 	_ = json.Unmarshal(body, &ch)
 
@@ -187,7 +187,7 @@ func TestAuthVerifyChallengeReuseRejected(t *testing.T) {
 	}
 
 	// First use succeeds.
-	resp, body = postJSON(t, hs.URL+authVerifyPath, verify)
+	resp, body := postJSON(t, hs.URL+authVerifyPath, verify)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("first verify: %d %s", resp.StatusCode, body)
 	}
@@ -213,7 +213,7 @@ func TestAuthVerifyExpiredChallengeRejected(t *testing.T) {
 	fp, _ := identity.FingerprintOf(pub)
 
 	// Issue under one clock; consume under future-clock.
-	resp, body := postJSON(t, hs.URL+authChallengePath, struct{}{})
+	_, body := postJSON(t, hs.URL+authChallengePath, struct{}{})
 	var ch proto.AuthChallengeResponse
 	_ = json.Unmarshal(body, &ch)
 
@@ -228,7 +228,7 @@ func TestAuthVerifyExpiredChallengeRejected(t *testing.T) {
 	// "+5min").
 	srv.auth.now = func() time.Time { return time.Now().Add(5 * time.Minute) }
 
-	resp, body = postJSON(t, hs.URL+authVerifyPath, proto.AuthVerifyRequest{
+	resp, body := postJSON(t, hs.URL+authVerifyPath, proto.AuthVerifyRequest{
 		ChallengeID: ch.ChallengeID,
 		Fingerprint: fp.String(),
 		Scope:       "sync",

@@ -84,12 +84,13 @@ func freshPostgresStore(t *testing.T) (*PostgresStore, string) {
 	}
 	cleanupPool.Close()
 
-	scopedDSN := dsn
-	if dsn != "" && dsn[len(dsn)-1] == '?' {
+	var scopedDSN string
+	switch {
+	case dsn != "" && dsn[len(dsn)-1] == '?':
 		scopedDSN = dsn + "search_path=" + schema
-	} else if !contains(dsn, "?") {
+	case !contains(dsn, "?"):
 		scopedDSN = dsn + "?search_path=" + schema
-	} else {
+	default:
 		scopedDSN = dsn + "&search_path=" + schema
 	}
 

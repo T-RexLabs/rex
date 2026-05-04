@@ -137,7 +137,7 @@ func TestListReturnsManifestsByCreatedAtDesc(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("len: got %d want 3", len(got))
 	}
-	if !(got[0].CreatedAt.After(got[1].CreatedAt) && got[1].CreatedAt.After(got[2].CreatedAt)) {
+	if !got[0].CreatedAt.After(got[1].CreatedAt) || !got[1].CreatedAt.After(got[2].CreatedAt) {
 		t.Fatalf("ordering: %+v", got)
 	}
 }

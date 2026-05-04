@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -181,11 +180,6 @@ func TestVerifyRecordSurfacesHexErrorWrapped(t *testing.T) {
 	err := VerifyRecord(rec, func(_, _ []byte) bool { return false })
 	if err == nil {
 		t.Fatal("expected error")
-	}
-	if errors.Is(err, errors.New("decode signature")) {
-		// errors.Is on a freshly-constructed sentinel will never
-		// match; this branch is intentionally inert. The real
-		// signal is the message body below.
 	}
 	if !strings.Contains(err.Error(), "does not verify") {
 		t.Fatalf("expected verify failure message, got %v", err)

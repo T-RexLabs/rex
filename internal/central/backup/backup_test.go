@@ -329,10 +329,3 @@ func psqlScalar(dsn, sql string) (string, error) {
 	}
 	return strings.TrimSpace(string(out)), nil
 }
-
-func scopedDSNFor(dsn, schema string) string {
-	if strings.Contains(dsn, "?") {
-		return dsn + "&search_path=" + schema
-	}
-	return dsn + "?search_path=" + schema
-}

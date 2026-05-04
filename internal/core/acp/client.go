@@ -205,9 +205,8 @@ func (c *Client) readLoop() {
 }
 
 func (c *Client) deliverResponse(msg Message) {
-	key := string(msg.ID)
 	c.pendingMu.Lock()
-	ch, ok := c.pending[key]
+	ch, ok := c.pending[string(msg.ID)]
 	c.pendingMu.Unlock()
 	if !ok {
 		return

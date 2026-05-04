@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	// modernc.org/sqlite registers the "sqlite" driver with database/sql.
 	_ "modernc.org/sqlite"
 
 	"github.com/asabla/rex/internal/core/specfmt"

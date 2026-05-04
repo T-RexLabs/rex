@@ -1,41 +1,56 @@
-# golangci-lint configuration for the rex repository.
-# Kept conservative for the bootstrap; tighten as the codebase grows.
-
+version: "2"
 run:
-  timeout: 5m
   tests: true
-
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
     - govet
     - ineffassign
-    - staticcheck
-    - unused
-    - gofmt
-    - goimports
     - misspell
     - revive
-
-linters-settings:
-  goimports:
-    local-prefixes: github.com/asabla/rex
-  revive:
-    rules:
-      - name: blank-imports
-      - name: context-as-argument
-      - name: error-return
-      - name: error-strings
-      - name: errorf
-      - name: exported
-        disabled: true
-      - name: increment-decrement
-      - name: var-declaration
-      - name: package-comments
-
+    - staticcheck
+    - unused
+  settings:
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: exported
+          disabled: true
+        - name: increment-decrement
+        - name: var-declaration
+        - name: package-comments
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - specs
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  exclude-dirs:
-    - specs
   max-issues-per-linter: 0
   max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/asabla/rex
+  exclusions:
+    generated: lax
+    paths:
+      - specs
+      - third_party$
+      - builtin$
+      - examples$

@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"strings"
+	"net/url"
 	"testing"
 	"time"
 
@@ -120,9 +120,14 @@ func TestRLSFiresForNonOwnerRole(t *testing.T) {
 		}
 	})
 
-	// Connect as the non-owner role.
-	readerDSN := strings.Replace(scopedDSN, "postgres:dev", roleName+":rls_reader", 1)
-	readerDSN = strings.Replace(readerDSN, "postgres://postgres:dev", "postgres://"+roleName+":rls_reader", 1)
+	// Connect as the non-owner role. Swap the userinfo regardless
+	// of what password the superuser DSN uses (CI vs local differ).
+	readerURL, err := url.Parse(scopedDSN)
+	if err != nil {
+		t.Fatalf("parse scopedDSN: %v", err)
+	}
+	readerURL.User = url.UserPassword(roleName, "rls_reader")
+	readerDSN := readerURL.String()
 	rctx, rcancel := context.WithTimeout(ctx, 5*time.Second)
 	defer rcancel()
 	readerPool, err := pgxpool.New(rctx, readerDSN)
