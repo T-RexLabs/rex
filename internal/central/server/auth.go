@@ -193,10 +193,16 @@ func (s *Server) handleAuthChallenge(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := s.auth.issueChallenge(r.Host)
 	if err != nil {
+		s.log.Error("auth challenge: issue failed", "op", "auth.challenge", "err", err)
 		writeError(w, http.StatusInternalServerError, proto.ErrCodeServerError, err.Error())
 		return
 	}
 	s.metrics.RecordAuthChallenge()
+	s.log.Info("auth challenge issued",
+		"op", "auth.challenge",
+		"challenge_id", c.id,
+		"hostname", c.hostname,
+	)
 	writeJSON(w, http.StatusOK, proto.AuthChallengeResponse{
 		ChallengeID: c.id,
 		Nonce:       hex.EncodeToString(c.nonce),
@@ -230,17 +236,31 @@ func (s *Server) handleAuthVerify(w http.ResponseWriter, r *http.Request) {
 	c, err := s.auth.consumeChallenge(req.ChallengeID)
 	if err != nil {
 		// Fail closed without leaking which path tripped (AUTH.3).
+		s.log.Warn("auth verify: challenge consume failed",
+			"op", "auth.verify",
+			"challenge_id", req.ChallengeID,
+			"reason", err.Error(),
+		)
 		writeError(w, http.StatusUnauthorized, proto.ErrCodeUnauthorized, "challenge invalid")
 		return
 	}
 
 	fp, err := identity.ParseFingerprint(req.Fingerprint)
 	if err != nil {
+		s.log.Warn("auth verify: fingerprint parse failed",
+			"op", "auth.verify",
+			"challenge_id", req.ChallengeID,
+		)
 		writeError(w, http.StatusUnauthorized, proto.ErrCodeUnauthorized, "challenge invalid")
 		return
 	}
 	key, ok := s.keystore.Lookup(fp)
 	if !ok {
+		s.log.Warn("auth verify: fingerprint not registered",
+			"op", "auth.verify",
+			"challenge_id", req.ChallengeID,
+			"fingerprint", fp.String(),
+		)
 		writeError(w, http.StatusUnauthorized, proto.ErrCodeUnauthorized, "challenge invalid")
 		return
 	}
@@ -261,15 +281,29 @@ func (s *Server) handleAuthVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ed25519.Verify(key.publicKey, canonical, sig) {
+		s.log.Warn("auth verify: signature invalid",
+			"op", "auth.verify",
+			"challenge_id", req.ChallengeID,
+			"fingerprint", fp.String(),
+		)
 		writeError(w, http.StatusUnauthorized, proto.ErrCodeUnauthorized, "challenge invalid")
 		return
 	}
 
 	tok, err := s.auth.issueToken(fp, req.Scope)
 	if err != nil {
+		s.log.Error("auth verify: token issue failed", "op", "auth.verify", "err", err)
 		writeError(w, http.StatusInternalServerError, proto.ErrCodeServerError, err.Error())
 		return
 	}
+	// Note: token VALUE never reaches the logger (HEALTH.3 "no
+	// secrets"). We log only fingerprint + scope + expires_at.
+	s.log.Info("auth verify: token issued",
+		"op", "auth.verify",
+		"fingerprint", fp.String(),
+		"scope", req.Scope,
+		"expires_at", tok.expiresAt.UTC().Format(time.RFC3339Nano),
+	)
 	writeJSON(w, http.StatusOK, proto.AuthVerifyResponse{
 		AccessToken: tok.value,
 		ExpiresAt:   tok.expiresAt,

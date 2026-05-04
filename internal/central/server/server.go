@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -39,6 +40,11 @@ type Options struct {
 	// which loads the keystore from a TOML file and supplies it
 	// here.
 	Keystore *Keystore
+	// Logger is the structured logger every handler shares
+	// (HEALTH.3). New defaults to a discard logger when nil so
+	// existing tests don't need a logger fixture; cmd/rex-central
+	// supplies an os.Stdout JSON handler in production.
+	Logger *slog.Logger
 }
 
 // Server bundles the central-node HTTP surface and the state it
@@ -53,6 +59,7 @@ type Server struct {
 	mux      *http.ServeMux
 	stateRes proto.StateResponse
 	metrics  *Metrics
+	log      *slog.Logger
 }
 
 // New returns a Server ready to serve via Handler().
@@ -80,6 +87,10 @@ func New(opts Options) (*Server, error) {
 	if keystore == nil {
 		keystore = NewKeystore()
 	}
+	logger := opts.Logger
+	if logger == nil {
+		logger = NewLogger(LogConfig{}) // discards by default
+	}
 	s := &Server{
 		store:    store,
 		keypair:  kp,
@@ -93,6 +104,7 @@ func New(opts Options) (*Server, error) {
 			ProtocolVersion: proto.ProtocolVersion,
 		},
 		metrics: NewMetrics(),
+		log:     logger.With("actor", central.String()),
 	}
 	s.metrics.SetActiveSessionsSource(s.auth.activeSessions)
 	s.mux.HandleFunc("/sync/state", s.handleState)
@@ -164,6 +176,12 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 // handleEventsPost implements sync.API.2 — accept a contiguous
 // batch and acknowledge with the new HEAD. Idempotent: events the
 // server already has are skipped (sync.API.6).
+//
+// Logs one line per request at INFO with the structured fields
+// `op=push events=N accepted=A duplicates=D head=<id>` (or
+// `op=push conflict=true server_head=...` on the divergence
+// path). Never logs payload bytes or signature hex (HEALTH.3
+// "no logs contain secrets").
 func (s *Server) handleEventsPost(w http.ResponseWriter, r *http.Request) {
 	s.metrics.RecordPushRequest()
 	body, err := io.ReadAll(r.Body)
@@ -212,6 +230,12 @@ func (s *Server) handleEventsPost(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Since != currentHead {
 		s.metrics.RecordPushConflict()
+		s.log.Info("push conflict",
+			"op", "push",
+			"events", len(req.Events),
+			"client_since", req.Since,
+			"server_head", currentHead,
+		)
 		tail, err := s.store.Since(r.Context(), req.Since)
 		if err != nil {
 			// The client's cursor is unknown to us; surface as a
@@ -254,6 +278,13 @@ func (s *Server) handleEventsPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res.HeadID = headID
+	s.log.Info("push accepted",
+		"op", "push",
+		"events", len(req.Events),
+		"accepted", res.Accepted,
+		"duplicates", res.Duplicates,
+		"head", headID,
+	)
 	writeJSON(w, http.StatusOK, res)
 }
 

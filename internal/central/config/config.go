@@ -35,6 +35,10 @@ func Default() Config {
 			Addr:            "127.0.0.1:8080",
 			ShutdownTimeout: 15 * time.Second,
 		},
+		Log: Log{
+			Level:  "info",
+			Format: "json",
+		},
 	}
 }
 
@@ -45,6 +49,7 @@ type Config struct {
 	Server Server `toml:"server"`
 	DB     DB     `toml:"db"`
 	Auth   Auth   `toml:"auth"`
+	Log    Log    `toml:"log"`
 }
 
 // Server holds HTTP server settings.
@@ -75,6 +80,16 @@ type Auth struct {
 	// "skip verification" — the dev/test path; production
 	// deployments must always set it.
 	KeysFile string `toml:"keys_file"`
+}
+
+// Log configures the structured logger (HEALTH.3).
+type Log struct {
+	// Level is one of debug, info, warn, error. Anything else
+	// defaults to info — typo-tolerant.
+	Level string `toml:"level"`
+	// Format is "json" (default, what HEALTH.3 requires) or
+	// "text" for local-dev readability.
+	Format string `toml:"format"`
 }
 
 // Load reads path as TOML and overlays REX_CENTRAL_* env vars on
@@ -133,6 +148,12 @@ func overlayEnv(c *Config) {
 	}
 	if v := os.Getenv("REX_CENTRAL_KEYS_FILE"); v != "" {
 		c.Auth.KeysFile = v
+	}
+	if v := os.Getenv("REX_CENTRAL_LOG_LEVEL"); v != "" {
+		c.Log.Level = v
+	}
+	if v := os.Getenv("REX_CENTRAL_LOG_FORMAT"); v != "" {
+		c.Log.Format = v
 	}
 }
 

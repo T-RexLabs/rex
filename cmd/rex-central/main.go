@@ -22,6 +22,7 @@ import (
 	"github.com/asabla/rex/internal/central/server"
 )
 
+
 // version is set at build time via -ldflags. Defaults to "dev" for
 // local builds.
 var version = "dev"
@@ -60,6 +61,8 @@ func newServeCmd() *cobra.Command {
 		shutdownTimeout time.Duration
 		keysFile        string
 		dbDSN           string
+		logLevel        string
+		logFormat       string
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -107,17 +110,36 @@ lost on restart.
 			if cmd.Flags().Changed("db") {
 				cfg.DB.DSN = dbDSN
 			}
+			if cmd.Flags().Changed("log-level") {
+				cfg.Log.Level = logLevel
+			}
+			if cmd.Flags().Changed("log-format") {
+				cfg.Log.Format = logFormat
+			}
 
-			opts := server.Options{}
+			// Build the structured logger from the resolved
+			// config and pass it into Server.New. HEALTH.3:
+			// JSON to stdout in production. Tests inject their
+			// own writer via cmd.SetOut() if they need to assert
+			// log content.
+			logger := server.NewLogger(server.LogConfig{
+				Output: cmd.OutOrStdout(),
+				Level:  server.ParseLevel(cfg.Log.Level),
+				Format: cfg.Log.Format,
+			})
+
+			opts := server.Options{Logger: logger}
 			if cfg.Auth.KeysFile != "" {
 				ks, err := server.LoadKeystoreFile(cfg.Auth.KeysFile)
 				if err != nil {
 					return err
 				}
 				opts.Keystore = ks
-				fmt.Fprintf(cmd.OutOrStdout(),
-					"loaded %d authorized key(s) from %s\n",
-					len(ks.Handles()), cfg.Auth.KeysFile)
+				logger.Info("authorized keys loaded",
+					"op", "startup",
+					"keys_file", cfg.Auth.KeysFile,
+					"count", len(ks.Handles()),
+				)
 			}
 			if cfg.DB.DSN != "" {
 				pg, err := server.NewPostgresStore(cmd.Context(), cfg.DB.DSN)
@@ -126,11 +148,15 @@ lost on restart.
 				}
 				defer pg.Close()
 				opts.Store = pg
-				fmt.Fprintln(cmd.OutOrStdout(),
-					"using postgres event store (schema migrated)")
+				logger.Info("postgres store opened",
+					"op", "startup",
+					"store", "postgres",
+				)
 			} else {
-				fmt.Fprintln(cmd.OutOrStdout(),
-					"WARNING: no db dsn configured — using in-memory store; events lost on restart")
+				logger.Warn("no db dsn configured — using in-memory store; events lost on restart",
+					"op", "startup",
+					"store", "memory",
+				)
 			}
 			s, err := server.New(opts)
 			if err != nil {
@@ -142,9 +168,12 @@ lost on restart.
 				ReadHeaderTimeout: 10 * time.Second,
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(),
-				"rex-central serving on %s (actor %s)\n",
-				cfg.Server.Addr, s.Actor())
+			logger.Info("rex-central listening",
+				"op", "startup",
+				"addr", cfg.Server.Addr,
+				"actor", s.Actor().String(),
+				"version", version,
+			)
 
 			errCh := make(chan error, 1)
 			go func() {
@@ -163,7 +192,7 @@ lost on restart.
 					return fmt.Errorf("listen: %w", err)
 				}
 			case <-ctx.Done():
-				fmt.Fprintln(cmd.OutOrStdout(), "shutting down")
+				logger.Info("shutting down", "op", "shutdown", "grace", cfg.Server.ShutdownTimeout.String())
 				shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
 				defer cancel()
 				if err := httpSrv.Shutdown(shutdownCtx); err != nil {
@@ -178,5 +207,7 @@ lost on restart.
 	cmd.Flags().DurationVar(&shutdownTimeout, "shutdown-timeout", 15*time.Second, "max wait for graceful shutdown (overrides config + REX_CENTRAL_SHUTDOWN_TIMEOUT)")
 	cmd.Flags().StringVar(&keysFile, "keys", "", "path to authorized-keys TOML file (overrides config + REX_CENTRAL_KEYS_FILE)")
 	cmd.Flags().StringVar(&dbDSN, "db", "", "Postgres DSN (overrides config + REX_CENTRAL_DB_DSN); empty uses in-memory store")
+	cmd.Flags().StringVar(&logLevel, "log-level", "info", "log level: debug | info | warn | error (overrides config + REX_CENTRAL_LOG_LEVEL)")
+	cmd.Flags().StringVar(&logFormat, "log-format", "json", "log format: json | text (overrides config + REX_CENTRAL_LOG_FORMAT)")
 	return cmd
 }
