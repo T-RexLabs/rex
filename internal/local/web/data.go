@@ -51,6 +51,8 @@ func loadWorkspaceSummary(root string) (*workspaceSummary, error) {
 // runRow is one entry in the recent-runs table on the home page.
 type runRow struct {
 	RunID      string
+	Name       string
+	Kind       string
 	Status     runner.RunStatus
 	StartedAt  string
 	NodeEvents int
@@ -150,6 +152,7 @@ func loadRunRows(root string) ([]runRow, error) {
 	runner.RegisterEvents(reg)
 
 	by := map[string]*runner.RunSummary{}
+	kinds := map[string]string{} // run_id → "shell" | "harness"
 	for {
 		rec, err := r.Next()
 		if errors.Is(err, io.EOF) {
@@ -167,6 +170,14 @@ func loadRunRows(root string) ([]runRow, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Any harness.frame event for a run is sufficient evidence
+		// that the run is harness-driven; shell runs never produce
+		// frames. We fold this lookup into the same scan so we
+		// don't read events.log twice.
+		if hf, ok := decoded.(runner.HarnessFrameEvent); ok {
+			kinds[hf.RunID] = "harness"
+			continue
+		}
 		var probe runner.RunSummary
 		if !probe.FoldEvent(decoded) {
 			continue
@@ -181,8 +192,14 @@ func loadRunRows(root string) ([]runRow, error) {
 
 	out := make([]runRow, 0, len(by))
 	for _, s := range by {
+		kind := kinds[s.RunID]
+		if kind == "" {
+			kind = "shell"
+		}
 		out = append(out, runRow{
 			RunID:      s.RunID,
+			Name:       runner.FriendlyName(s.RunID),
+			Kind:       kind,
 			Status:     s.EffectiveStatus(),
 			StartedAt:  s.StartedAt.UTC().Format(time.RFC3339),
 			NodeEvents: s.NodeEvents,

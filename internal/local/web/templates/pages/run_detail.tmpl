@@ -1,10 +1,12 @@
-{{define "title"}}rex — run {{.RunID}}{{end}}
+{{define "title"}}rex — run {{.Name}}{{end}}
 
 {{define "content"}}
 <header class="page-header">
-  <p class="runid-heading">{{.RunID}}</p>
+  <p class="runid-heading">{{.Name}}</p>
   <div class="meta">
     <span class="pill pill-{{.Status}}"><i class="dot"></i>{{.Status}}</span>
+    <span>·</span>
+    <code class="muted">{{.RunID}}</code>
     <span>·</span>
     <span>{{len .Events}} event{{if ne (len .Events) 1}}s{{end}}</span>
     <span class="back"><a href="/runs"><span aria-hidden="true">←</span> all runs</a></span>

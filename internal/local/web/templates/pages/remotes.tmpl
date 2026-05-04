@@ -13,11 +13,15 @@
 <section class="section">
   {{if .Rows}}
     <div class="card">
-      <table class="table">
+      <table class="table sortable">
         <thead>
           <tr>
-            <th>name</th><th>url</th><th class="col-numeric">drafts</th>
-            <th>fingerprint</th><th>added</th><th>last seen</th>
+            <th data-sort-type="string" data-sort-default="asc">name</th>
+            <th data-sort-type="string">url</th>
+            <th data-sort-type="number" class="col-numeric">drafts</th>
+            <th data-sort-type="string">fingerprint</th>
+            <th data-sort-type="date">added</th>
+            <th data-sort-type="date">last seen</th>
           </tr>
         </thead>
         <tbody>

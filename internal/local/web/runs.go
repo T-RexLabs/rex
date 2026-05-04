@@ -102,6 +102,7 @@ func loadRunsList(opts Options) (runsListData, error) {
 type runDetailData struct {
 	pageData
 	RunID       string
+	Name        string
 	Status      runner.RunStatus
 	Events      []runEventRow
 	LastEventID string
@@ -116,7 +117,7 @@ func loadRunDetail(opts Options, runID string, hl *Highlighter) (runDetailData, 
 	ws, _ := loadWorkspaceSummary(opts.WorkspaceRoot)
 	base.Workspace = ws
 
-	d := runDetailData{pageData: base, RunID: runID}
+	d := runDetailData{pageData: base, RunID: runID, Name: runner.FriendlyName(runID)}
 	logPath := filepath.Join(opts.WorkspaceRoot, ".rex", "events.log")
 	r, err := eventlog.OpenReader(logPath)
 	if err != nil {

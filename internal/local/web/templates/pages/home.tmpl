@@ -33,12 +33,21 @@
   </div>
   {{if .RecentRuns}}
     <div class="card">
-      <table class="table">
-        <thead><tr><th>run</th><th>status</th><th>started</th><th class="col-numeric">nodes</th></tr></thead>
+      <table class="table sortable">
+        <thead>
+          <tr>
+            <th data-sort-type="string">name</th>
+            <th data-sort-type="string">kind</th>
+            <th data-sort-type="string">status</th>
+            <th data-sort-type="date" data-sort-default="desc" aria-sort="descending">started</th>
+            <th data-sort-type="number" class="col-numeric">nodes</th>
+          </tr>
+        </thead>
         <tbody>
           {{range .RecentRuns}}
           <tr>
-            <td><a href="/runs/{{.RunID}}"><code>{{.RunID}}</code></a></td>
+            <td><a href="/runs/{{.RunID}}"><code>{{.Name}}</code></a></td>
+            <td><span class="pill pill-{{.Kind}}">{{.Kind}}</span></td>
             <td><span class="pill pill-{{.Status}}"><i class="dot"></i>{{.Status}}</span></td>
             <td><time>{{.StartedAt}}</time></td>
             <td class="col-numeric">{{.NodeEvents}}</td>
@@ -59,8 +68,14 @@
   </div>
   {{if .Remotes}}
     <div class="card">
-      <table class="table">
-        <thead><tr><th>name</th><th class="col-numeric">drafts</th><th>last sync</th></tr></thead>
+      <table class="table sortable">
+        <thead>
+          <tr>
+            <th data-sort-type="string" data-sort-default="asc">name</th>
+            <th data-sort-type="number" class="col-numeric">drafts</th>
+            <th data-sort-type="date">last sync</th>
+          </tr>
+        </thead>
         <tbody>
           {{range .Remotes}}
           <tr>

@@ -11,9 +11,15 @@
 <section class="section">
   {{if .Rows}}
     <div class="card">
-      <table class="table">
+      <table class="table sortable">
         <thead>
-          <tr><th>timestamp</th><th>type</th><th>actor</th><th>workspace</th><th>id</th></tr>
+          <tr>
+            <th data-sort-type="date" data-sort-default="desc" aria-sort="descending">timestamp</th>
+            <th data-sort-type="string">type</th>
+            <th data-sort-type="string">actor</th>
+            <th data-sort-type="string">workspace</th>
+            <th data-sort-type="string">id</th>
+          </tr>
         </thead>
         <tbody>
           {{range .Rows}}

@@ -224,7 +224,8 @@ func reportShellRun(cmd *cobra.Command, res *runtask.ShellRunResult, nodeID stri
 			"status": string(res.State.Status),
 		})
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "run %s: %s\n", res.RunID, res.State.Status)
+	fmt.Fprintf(cmd.OutOrStdout(), "run %s (%s): %s\n",
+		runner.FriendlyName(res.RunID), res.RunID, res.State.Status)
 	node := res.State.Nodes[runner.NodeID(nodeID)]
 	if node != nil && len(node.Output) > 0 {
 		var out primshell.Output
@@ -258,7 +259,8 @@ func reportHarnessRun(cmd *cobra.Command, res *runtask.ShellRunResult, nodeID st
 			"status": string(res.State.Status),
 		})
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "run %s: %s\n", res.RunID, res.State.Status)
+	fmt.Fprintf(cmd.OutOrStdout(), "run %s (%s): %s\n",
+		runner.FriendlyName(res.RunID), res.RunID, res.State.Status)
 	node := res.State.Nodes[runner.NodeID(nodeID)]
 	if node != nil && len(node.Output) > 0 {
 		var out primharness.Output
@@ -325,13 +327,14 @@ func newRunListCmd() *cobra.Command {
 				return nil
 			}
 			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 2, 2, ' ', 0)
-			fmt.Fprintln(tw, "RUN_ID\tSTATUS\tSTARTED\tDURATION\tNODES")
+			fmt.Fprintln(tw, "NAME\tRUN_ID\tSTATUS\tSTARTED\tDURATION\tNODES")
 			for _, s := range summaries {
 				dur := "—"
 				if !s.EndedAt.IsZero() {
 					dur = s.EndedAt.Sub(s.StartedAt).Truncate(time.Millisecond).String()
 				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\n",
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\n",
+					runner.FriendlyName(s.RunID),
 					s.RunID, s.Status, s.StartedAt.UTC().Format(time.RFC3339), dur, s.NodeEvents)
 			}
 			return tw.Flush()
@@ -527,12 +530,12 @@ func loadRunEvents(workspaceRoot, runID string) ([]runRecord, error) {
 	return out, nil
 }
 
-// resolveRunID accepts either a full HLC run id or a unique prefix
-// of one and returns the canonical id. Run IDs are 22+ characters of
-// HLC, which makes copy-paste the only realistic interactive flow;
-// accepting prefixes (git-style) is the obvious ergonomic. Errors
-// when the prefix matches no run or matches more than one (the
-// latter lists the candidates so the user can disambiguate).
+// resolveRunID accepts either a full HLC run id, a unique prefix
+// of one, or a friendly slug ("brave-otter") and returns the
+// canonical HLC. Resolution order: exact HLC, friendly slug, HLC
+// prefix. Errors when nothing matches or when a prefix matches more
+// than one run (the latter lists the candidates so the user can
+// disambiguate).
 func resolveRunID(workspaceRoot, given string) (string, error) {
 	summaries, err := readRunSummaries(workspaceRoot)
 	if err != nil {
@@ -544,6 +547,26 @@ func resolveRunID(workspaceRoot, given string) (string, error) {
 		if s.RunID == given {
 			return given, nil
 		}
+	}
+	// Friendly slug match: walk every run, hash its id, see if
+	// it matches the input. Cheaper than O(slugs) since we only
+	// hash the runs the user has, not the whole dictionary.
+	if runner.IsFriendlyName(given) {
+		var slugMatches []string
+		for _, s := range summaries {
+			if runner.FriendlyName(s.RunID) == given {
+				slugMatches = append(slugMatches, s.RunID)
+			}
+		}
+		if len(slugMatches) == 1 {
+			return slugMatches[0], nil
+		}
+		if len(slugMatches) > 1 {
+			return "", fmt.Errorf("friendly name %q is ambiguous; matches %d runs: %s",
+				given, len(slugMatches), strings.Join(slugMatches, ", "))
+		}
+		// fall through to prefix match — a hyphenated string
+		// might still be a valid HLC prefix in pathological cases
 	}
 	var matches []string
 	for _, s := range summaries {
@@ -762,12 +785,12 @@ func summarizeEventPayload(eventType string, payload json.RawMessage) string {
 	case runner.EventTypeRunStarted:
 		var ev runner.RunStartedEvent
 		if err := json.Unmarshal(payload, &ev); err == nil {
-			return fmt.Sprintf("run=%s", ev.RunID)
+			return fmt.Sprintf("run=%s", runner.FriendlyName(ev.RunID))
 		}
 	case runner.EventTypeRunCompleted:
 		var ev runner.RunCompletedEvent
 		if err := json.Unmarshal(payload, &ev); err == nil {
-			return fmt.Sprintf("run=%s status=completed", ev.RunID)
+			return fmt.Sprintf("run=%s status=completed", runner.FriendlyName(ev.RunID))
 		}
 	case runner.EventTypeRunCancelled:
 		return "status=cancelled"

@@ -16,9 +16,15 @@
 
   {{if .Specs}}
     <div class="card">
-      <table class="table">
+      <table class="table sortable">
         <thead>
-          <tr><th>id</th><th>name</th><th>state</th><th class="col-numeric">tasks</th><th class="col-numeric">components</th></tr>
+          <tr>
+            <th data-sort-type="string" data-sort-default="asc">id</th>
+            <th data-sort-type="string">name</th>
+            <th data-sort-type="string">state</th>
+            <th data-sort-type="number" class="col-numeric">tasks</th>
+            <th data-sort-type="number" class="col-numeric">components</th>
+          </tr>
         </thead>
         <tbody>
           {{range .Specs}}
