@@ -44,21 +44,42 @@ func categorizeFrame(ev runner.HarnessFrameEvent, hl *Highlighter) *frameView {
 	}
 
 	// Responses to client-issued calls (session/new returning a
-	// session id, session/prompt returning a stop_reason). Carry
-	// the method on the envelope (Rex sets it when persisting).
-	if ev.Method != "" {
-		text := ""
-		if len(raw.Result) > 0 {
-			text = "ok"
-			if reason := extractStopReason(raw.Result); reason != "" {
-				text = "stop_reason=" + reason
-			}
-		} else if len(raw.Error) > 0 {
-			text = "error"
+	// session id, session/prompt returning a stop_reason). The
+	// inner ACP frame has no method on responses, so we use
+	// whatever ev.Method the runtask layer captured plus the
+	// payload shape to figure out what kind of response this is.
+	if len(raw.Result) > 0 || len(raw.Error) > 0 {
+		method := ev.Method
+		if method == "" {
+			method = "response"
 		}
-		return &frameView{Kind: "meta", Method: ev.Method, Text: text}
+		text := "ok"
+		if len(raw.Error) > 0 {
+			text = "error"
+		} else if reason := extractStopReason(raw.Result); reason != "" {
+			text = "stop_reason=" + reason
+		} else if sid := extractResultSessionID(raw.Result); sid != "" {
+			text = "session=" + sid
+		}
+		return &frameView{Kind: "meta", Role: "system", Method: method, Text: text}
+	}
+	if raw.Method != "" {
+		// A notification we don't have a typed renderer for.
+		return &frameView{Kind: "meta", Role: "system", Method: raw.Method}
 	}
 	return nil
+}
+
+// extractResultSessionID pulls sessionId out of the result body
+// (used for the session/new response which establishes the id).
+func extractResultSessionID(result json.RawMessage) string {
+	var probe struct {
+		SessionID string `json:"sessionId"`
+	}
+	if err := json.Unmarshal(result, &probe); err == nil {
+		return probe.SessionID
+	}
+	return ""
 }
 
 // decodeUpdate parses a session/update params payload. The Anthropic

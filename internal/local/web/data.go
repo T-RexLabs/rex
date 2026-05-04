@@ -55,6 +55,8 @@ type runRow struct {
 	Kind       string
 	Status     runner.RunStatus
 	StartedAt  string
+	EndedAt    string
+	Duration   string
 	NodeEvents int
 }
 
@@ -196,14 +198,19 @@ func loadRunRows(root string) ([]runRow, error) {
 		if kind == "" {
 			kind = "shell"
 		}
-		out = append(out, runRow{
+		row := runRow{
 			RunID:      s.RunID,
 			Name:       runner.FriendlyName(s.RunID),
 			Kind:       kind,
 			Status:     s.EffectiveStatus(),
 			StartedAt:  s.StartedAt.UTC().Format(time.RFC3339),
 			NodeEvents: s.NodeEvents,
-		})
+		}
+		if !s.EndedAt.IsZero() {
+			row.EndedAt = s.EndedAt.UTC().Format(time.RFC3339)
+			row.Duration = s.EndedAt.Sub(s.StartedAt).Truncate(time.Millisecond).String()
+		}
+		out = append(out, row)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt > out[j].StartedAt })
 	return out, nil

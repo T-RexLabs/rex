@@ -40,7 +40,7 @@
             <th data-sort-type="string">kind</th>
             <th data-sort-type="string">status</th>
             <th data-sort-type="date" data-sort-default="desc" aria-sort="descending">started</th>
-            <th data-sort-type="number" class="col-numeric">nodes</th>
+            <th data-sort-type="number" class="col-numeric">duration</th>
           </tr>
         </thead>
         <tbody>
@@ -50,7 +50,7 @@
             <td><span class="pill pill-{{.Kind}}">{{.Kind}}</span></td>
             <td><span class="pill pill-{{.Status}}"><i class="dot"></i>{{.Status}}</span></td>
             <td><time>{{.StartedAt}}</time></td>
-            <td class="col-numeric">{{.NodeEvents}}</td>
+            <td class="col-numeric">{{if .Duration}}{{.Duration}}{{else}}<span class="dim">—</span>{{end}}</td>
           </tr>
           {{end}}
         </tbody>
