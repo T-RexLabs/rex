@@ -13,11 +13,12 @@
     <div class="topbar-inner">
       <a class="brand" href="/">rex</a>
       <nav class="nav" aria-label="primary">
-        <a href="/"        {{if eq .NavSection "home"}}aria-current="page"{{end}}>overview</a>
-        <a href="/specs"   {{if eq .NavSection "specs"}}aria-current="page"{{end}}>specs</a>
-        <a href="/runs"    {{if eq .NavSection "runs"}}aria-current="page"{{end}}>runs</a>
-        <a href="/audit"   {{if eq .NavSection "audit"}}aria-current="page"{{end}}>audit</a>
-        <a href="/remotes" {{if eq .NavSection "remotes"}}aria-current="page"{{end}}>remotes</a>
+        <a href="/"         {{if eq .NavSection "home"}}aria-current="page"{{end}}>overview</a>
+        <a href="/specs"    {{if eq .NavSection "specs"}}aria-current="page"{{end}}>specs</a>
+        <a href="/runs"     {{if eq .NavSection "runs"}}aria-current="page"{{end}}>runs</a>
+        <a href="/audit"    {{if eq .NavSection "audit"}}aria-current="page"{{end}}>audit</a>
+        <a href="/remotes"  {{if eq .NavSection "remotes"}}aria-current="page"{{end}}>remotes</a>
+        <a href="/settings" {{if eq .NavSection "settings"}}aria-current="page"{{end}}>settings</a>
       </nav>
       <form class="topbar-search" method="get" action="/search" role="search">
         <input class="topbar-search-input"

@@ -1,0 +1,97 @@
+{{define "title"}}rex — settings{{end}}
+
+{{define "content"}}
+<header class="page-header">
+  <h1>settings</h1>
+  <div class="meta">
+    <span>read-only — surfaces local state and where to edit it</span>
+  </div>
+</header>
+
+<section class="section">
+  <div class="section-head">
+    <h2>workspace</h2>
+    <span class="section-meta">edit via <code>$EDITOR</code> on <code>{{.WorkspaceYAMLPath}}</code></span>
+  </div>
+  <div class="card">
+    <dl class="kv">
+      <dt>id</dt>
+      <dd><code>{{.WorkspaceID}}</code></dd>
+      <dt>name</dt>
+      <dd>{{.WorkspaceName}}</dd>
+      <dt>state</dt>
+      <dd><span class="pill pill-{{.WorkspaceState}}"><i class="dot"></i>{{.WorkspaceState}}</span></dd>
+      <dt>path</dt>
+      <dd><code class="dim">{{.WorkspacePath}}</code></dd>
+      {{if .WorkspaceCreatedAt}}
+      <dt>created</dt>
+      <dd><time>{{.WorkspaceCreatedAt}}</time></dd>
+      {{end}}
+    </dl>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <h2>identity</h2>
+    <span class="section-meta">manage via <code>rex identity</code></span>
+  </div>
+  {{if .IdentityErr}}
+    <aside class="banner banner-error" role="alert">
+      <span><strong>identity unavailable.</strong> {{.IdentityErr}}</span>
+    </aside>
+  {{else}}
+    <div class="card">
+      <dl class="kv">
+        <dt>active handle</dt>
+        <dd><code>{{.IdentityHandle}}</code></dd>
+        <dt>fingerprint</dt>
+        <dd><code>{{.IdentityFingerprint}}</code></dd>
+        <dt>store dir</dt>
+        <dd><code class="dim">{{.IdentityStoreDir}}</code></dd>
+        <dt>identities on disk</dt>
+        <dd>{{.IdentityCount}}</dd>
+      </dl>
+      {{if .IdentityPubPEM}}
+        <h3 class="section-h2">public key</h3>
+        <p class="muted small">paste into a remote node's identity registry.</p>
+        <pre class="source"><code>{{.IdentityPubPEM}}</code></pre>
+      {{end}}
+    </div>
+  {{end}}
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <h2>remotes</h2>
+    <span class="section-meta">manage via <code>rex remote add</code> / <code>rex remote remove</code></span>
+  </div>
+  <div class="card">
+    <dl class="kv">
+      <dt>registry path</dt>
+      <dd><code class="dim">{{.RemotesPath}}</code></dd>
+      <dt>registered</dt>
+      <dd>{{.RemotesCount}} <span class="muted small">(<a href="/remotes">view all</a>)</span></dd>
+    </dl>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <h2>hooks</h2>
+    <span class="section-meta">drop executable scripts named after event types — see <code>rex hooks list</code></span>
+  </div>
+  <div class="card">
+    <dl class="kv">
+      <dt>workspace dir</dt>
+      <dd><code class="dim">{{.WorkspaceHooksDir}}</code></dd>
+      <dt>workspace hooks</dt>
+      <dd>{{.WorkspaceHookCount}} executable</dd>
+      <dt>global dir</dt>
+      <dd><code class="dim">{{.GlobalHooksDir}}</code></dd>
+      <dt>global hooks</dt>
+      <dd>{{.GlobalHookCount}} executable</dd>
+    </dl>
+  </div>
+</section>
+{{end}}

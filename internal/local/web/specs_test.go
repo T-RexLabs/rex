@@ -424,3 +424,34 @@ description: |
 		}
 	}
 }
+
+func TestSettingsRendersAllSections(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t, "ws-settings")
+	hs := newTestServer(t, root)
+
+	resp, err := http.Get(hs.URL + "/settings")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: %d", resp.StatusCode)
+	}
+	body := readBody(t, resp)
+	for _, want := range []string{
+		">settings<",
+		"workspace</h2>",
+		"identity</h2>",
+		"remotes</h2>",
+		"hooks</h2>",
+		"workspace.yaml",
+		"rex identity",
+		"rex remote add",
+		"rex hooks list",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in /settings:\n%s", want, body[:minInt(len(body), 2000)])
+		}
+	}
+}
