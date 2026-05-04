@@ -116,7 +116,7 @@ Captured in `readme.md` and `overview.SCOPE.*` — do not implement:
 ## Project conventions
 
 - **Go module path:** `github.com/asabla/rex`.
-- **Go version:** pinned via `go.mod` (currently 1.23.0 — bumped from 1.22.1 to avoid a macOS 26 LC_UUID linker incompatibility); CI uses `go-version-file: go.mod`. Bump in `go.mod` and CI follows.
+- **Go version:** pinned via `go.mod` (currently 1.25.0); CI uses `go-version-file: go.mod`. Bump in `go.mod` and CI follows. The `deploy/Dockerfile` and `deploy/docker-compose.dev.yml` use `golang:1.25-alpine` to match — bump together when raising `go.mod`.
 - **No-cgo guarantee:** `overview.ENG.2` forbids cgo in the local binary. SQLite goes through `modernc.org/sqlite` (pure Go). Do not add cgo deps.
 - **Linter:** `golangci-lint` with config at `.golangci.yml`.
 - **Tests:** stdlib `testing`. Determinism is required for sync, executor, and audit-log tests — inject time and randomness, never read the environment in test bodies (`overview.ENG.4`).

@@ -1,0 +1,40 @@
+# Dev override: layered on top of docker-compose.yml.
+#
+#   docker compose -f deploy/docker-compose.yml \
+#                  -f deploy/docker-compose.dev.yml \
+#                  up
+#
+# Differences from base:
+#   - Postgres publishes :55432 on the host so psql / IDEs can
+#     attach. (Production setups close this off.)
+#   - rex-central publishes :8080 directly so a local rex CLI can
+#     `rex remote add primary http://127.0.0.1:8080` without
+#     going through TLS.
+#   - rex-central runs with `go run ./cmd/rex-central serve` so
+#     code changes don't need a docker rebuild — bind-mount the
+#     repo, swap entrypoint to a Go toolchain image.
+#   - Caddy does not run by default in dev (no `--profile tls`);
+#     local clients hit rex-central on plain HTTP.
+
+services:
+  postgres:
+    ports:
+      - "55432:5432"
+
+  rex-central:
+    image: golang:1.25-alpine
+    build: !reset null
+    user: "0:0" # so go can write its module cache to a bind mount
+    working_dir: /src
+    entrypoint: ["go", "run", "./cmd/rex-central", "serve"]
+    volumes:
+      - ..:/src
+      - go-mod-cache:/go/pkg/mod
+    ports:
+      - "8080:8080"
+    environment:
+      REX_CENTRAL_DB_DSN: postgres://rex:${REX_PG_PASSWORD:-dev}@postgres:5432/rex?sslmode=disable
+      REX_CENTRAL_ADDR: 0.0.0.0:8080
+
+volumes:
+  go-mod-cache:

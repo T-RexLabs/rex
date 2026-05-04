@@ -1,0 +1,25 @@
+# Caddyfile — TLS reverse proxy for rex-central (central-node.SEC.1).
+#
+# Operators set REX_CENTRAL_HOST in .env to their public hostname
+# before bringing the tls profile up. Caddy provisions
+# Let's Encrypt certs automatically when the host resolves to
+# this server. For self-hosted scenarios behind another TLS
+# terminator, drop the caddy profile entirely.
+
+{$REX_CENTRAL_HOST} {
+	reverse_proxy rex-central:8080
+
+	# Sensible defaults; override in your fork as needed.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		# rex-central serves both HTML (web UI later) and JSON.
+		# Don't set CSP here — the binary owns its own surface.
+	}
+
+	# Allow large pushes; rex push batches can carry many events.
+	request_body {
+		max_size 50MB
+	}
+}

@@ -1,0 +1,29 @@
+# rex-central non-secret defaults (central-node.DEPLOY.2).
+# Mounted at /etc/rex/central.toml inside the container.
+#
+# Secrets (DB password, identity material) belong in env vars
+# that the bundled docker-compose.yml passes through; do NOT
+# put them here.
+
+[server]
+# Address the binary listens on. Inside the bundled compose,
+# this is overridden by REX_CENTRAL_ADDR=0.0.0.0:8080 so caddy
+# can reach it. Bare-metal deployments without a reverse proxy
+# usually want 127.0.0.1:<port> + a host-level TLS terminator.
+addr = "127.0.0.1:8080"
+
+# Max wait on SIGTERM/SIGINT before forcing exit.
+shutdown_timeout = "15s"
+
+[db]
+# Empty DSN means "use the in-memory store" (events lost on
+# restart). The bundled compose sets REX_CENTRAL_DB_DSN via env
+# from the postgres service.
+dsn = ""
+
+[auth]
+# Path to the authorized-keys TOML file (sync.SEC.1). Empty
+# disables signature verification — fine for dev, never in
+# production. Relative paths resolve against this config file's
+# directory.
+keys_file = ""
