@@ -36,7 +36,7 @@ tasks:
     references: [DB.1, DB.2, DB.3]
 
   - id: tenant-routing
-    description: "Implement the tenant-routing middleware that scopes every request to an org based on the authenticated identity's org membership"
+    description: "Implement the tenant-routing middleware that scopes every request to an org based on the authenticated identity's membership and the workspace->org table; add the workspaces table, the org_id column on events, the migration backfill via the default org seed, and Row Level Security policies as defense-in-depth"
     state: todo
     references: [TENANT.1, TENANT.2, TENANT.3]
 
@@ -83,9 +83,11 @@ components:
     name: Multi-tenancy
     requirements:
       "1": "Every API request resolves to exactly one org based on the authenticated identity's membership and either an explicit `X-Rex-Org` header or the workspace ID in the request path"
+      "1-note": "For request paths that don't contain a workspace id (every /sync/* endpoint), the middleware resolves the org from the authenticated identity's membership. Single-org identities get their org inferred; multi-org identities MUST include an X-Rex-Org header — the API rejects ambiguous requests with 400 rather than picking (TENANT.2). Workspace-prefixed routes (/workspaces/<id>/...) resolve via the workspaces table; the resolved org is then cross-checked against the identity's memberships."
       "2": "If an identity is a member of multiple orgs, the chosen org must be made explicit; the API never picks for the user"
       "3": "Cross-org operations are forbidden at the API layer; an admin in org A cannot read or write data in org B even if they hold an admin role in both, except by switching contexts"
       "4": "The tenant-routing middleware writes the resolved org ID into the request context once; downstream handlers read from the context, not from headers"
+      "4-note": "v1 backwards-compat: a 'default' org is seeded on the first multi-tenant migration. Existing single-tenant deployments (events from PostgresStore v1, schema_version 1) get every previously-authenticated identity auto-joined to that org and every event row backfilled to it before the NOT NULL constraint on org_id lands. Fresh deployments still get the default org so the system has a sane home for events before BOOT.* ships real org creation. The default org is NOT special-cased after bootstrap — it's a regular org subject to the same RBAC and tenancy boundaries."
 
   BOOT:
     name: First-run bootstrap

@@ -256,7 +256,73 @@ var schemaSteps = []string{
 		CREATE INDEX IF NOT EXISTS events_type_idx          ON events(type);
 		CREATE INDEX IF NOT EXISTS events_insertion_seq_idx ON events(insertion_seq);
 	`,
+
+	// 2: orgs + memberships + invites
+	//    (identity-and-trust.ORG.*, central-node.TENANT.4-note).
+	//
+	// orgs: the tenancy boundary (ORG.2). idp_config + scim_config
+	// are nullable jsonb so IDP-CENTRAL bridging can land later
+	// without a schema bump (overview.SYS.4 additivity).
+	//
+	// org_memberships: which fingerprint belongs to which org
+	// with which role. Default role is "member"; the
+	// identity-and-trust.RBAC engine refines this when it ships.
+	//
+	// org_invites: the redeem-with-public-key invite flow named
+	// in ORG.5 + BOOT.3.
+	//
+	// gen_random_uuid() is core in Postgres 13+; rex-central
+	// targets 17 (post the alpine bump). No pgcrypto extension
+	// needed.
+	//
+	// Default org seed: a single 'default' org auto-joined by
+	// every authenticated identity until BOOT.* ships real org
+	// creation (TENANT.4-note). The seed is idempotent — a
+	// rerun-safe INSERT WHERE NOT EXISTS so the migration stays
+	// re-entrant.
+	`
+		CREATE TABLE IF NOT EXISTS orgs (
+			id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			name          TEXT NOT NULL UNIQUE,
+			display_name  TEXT NOT NULL DEFAULT '',
+			created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+			idp_config    JSONB,
+			scim_config   JSONB
+		);
+
+		CREATE TABLE IF NOT EXISTS org_memberships (
+			org_id       UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+			fingerprint  TEXT NOT NULL,
+			role         TEXT NOT NULL DEFAULT 'member',
+			joined_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+			PRIMARY KEY (org_id, fingerprint)
+		);
+		CREATE INDEX IF NOT EXISTS org_memberships_fingerprint_idx
+			ON org_memberships(fingerprint);
+
+		CREATE TABLE IF NOT EXISTS org_invites (
+			id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			org_id       UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+			invited_by   TEXT NOT NULL,
+			token        TEXT NOT NULL UNIQUE,
+			role         TEXT NOT NULL DEFAULT 'member',
+			expires_at   TIMESTAMPTZ NOT NULL,
+			redeemed_at  TIMESTAMPTZ,
+			redeemed_by  TEXT
+		);
+		CREATE INDEX IF NOT EXISTS org_invites_pending_idx
+			ON org_invites(token) WHERE redeemed_at IS NULL;
+
+		INSERT INTO orgs (name, display_name)
+			SELECT 'default', 'Default organization'
+			WHERE NOT EXISTS (SELECT 1 FROM orgs WHERE name = 'default');
+	`,
 }
+
+// DefaultOrgName is the seeded org's name. Used by
+// EnsureDefaultMembership and tests; constants live near the
+// migration that creates the row.
+const DefaultOrgName = "default"
 
 // migrate runs every schemaStep whose 1-based index is greater
 // than the value in rex_schema_version. Idempotent: a freshly

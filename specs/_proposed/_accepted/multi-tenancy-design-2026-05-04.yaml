@@ -1,0 +1,178 @@
+# Proposed amendment — multi-tenancy design pass.
+#
+# Status:    accepted
+# Folded:    2026-05-04 — three notes + two task description clarifications applied to specs/identity-and-trust.yaml + specs/central-node.yaml.
+# Date:      2026-05-04
+# Surfaced by:
+#   Pre-implementation review for the org-model-central +
+#   tenant-routing tasks. Three design decisions that cross
+#   identity-and-trust.yaml and central-node.yaml needed
+#   pinning down before code lands. None of the decisions
+#   contradict existing requirements; they all clarify shapes
+#   the spec text left open.
+#
+# Targets two specs and adds exactly three additive notes plus
+# one clarifying task description. No requirements removed; no
+# semantics changed.
+
+target: multi
+amendment_kind: additive
+
+# -----------------------------------------------------------------
+# Decision 1: Workspace -> org binding via "first push wins".
+#
+# identity-and-trust.ORG.6 says "Workspaces on a central node are
+# owned by exactly one org" but doesn't pin HOW a workspace
+# acquires its org. Two paths considered:
+#
+#   (a) first-push-wins: when the central sees a workspace_id
+#       it has never observed, it stamps that workspace with
+#       the pushing identity's resolved org; subsequent pushes
+#       for the same workspace must come from members of that
+#       same org (else 403).
+#
+#   (b) explicit registration: workspaces must be created via a
+#       dedicated POST /workspaces call before events can flow.
+#
+# Picking (a) for v1 — matches the existing flow where
+# `rex remote add primary <url>` + `rex push` Just Works without
+# a separate registration handshake. Surface the choice as
+# ORG."6-note" so the design is auditable.
+# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------
+# Decision 2: Default org seeded on first multi-tenant migration.
+#
+# When the v1.x multi-tenant schema lands on a Postgres that
+# already has events from the single-tenant phase (PostgresStore
+# v1 from commit de5e3a3), those events have no org_id. To avoid
+# a destructive break, the migration:
+#
+#   - creates a single "default" org row;
+#   - auto-joins every previously-authenticated identity (read
+#     from the keystore at migration time);
+#   - backfills events.org_id = default.id;
+#   - then adds the NOT NULL constraint on org_id.
+#
+# Fresh deployments still get the default org but no backfill.
+# The default org is also what BOOT.* eventually bootstraps the
+# real founder admin against; until BOOT lands, all identities
+# implicitly belong to `default`.
+#
+# Surface as central-node.TENANT."4-note" — keeping it on the
+# tenant component since it's a migration-shape concern, not a
+# permanent identity-model shape.
+# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------
+# Decision 3: Org resolution for non-workspace-prefixed routes.
+#
+# TENANT.1 says request resolves via "either an explicit X-Rex-Org
+# header or the workspace ID in the request path". For sync
+# endpoints (/sync/events, /sync/state) the workspace_id is
+# inside event payloads, not the URL path. The middleware
+# resolves by:
+#
+#   1. Auth identity -> membership lookup.
+#   2. If exactly one org membership: use it. (single-org case)
+#   3. If multiple memberships: require X-Rex-Org header; reject
+#      with 400 if absent. The API NEVER picks for the user
+#      (TENANT.2).
+#   4. For workspace-prefixed routes (/workspaces/<id>/...): the
+#      workspaces table lookup wins; X-Rex-Org and identity
+#      membership are still cross-checked.
+#
+# Surface as TENANT."1-note".
+# -----------------------------------------------------------------
+
+changes:
+  - kind: add-requirement-note
+    spec: identity-and-trust
+    component: ORG
+    requirement: "6"
+    note_id: "6-note"
+    text: |
+      Workspaces are bound to an org via first-push-wins: when
+      the central observes a workspace_id it has never indexed,
+      it stamps the new workspaces row with the pushing
+      identity's resolved org. Subsequent pushes for the same
+      workspace_id must come from members of that org or are
+      rejected with 403. Explicit `POST /workspaces` registration
+      is reserved for a future task that needs it (e.g. a
+      central-side CLI for ops); v1 ships first-push-wins as the
+      single binding mechanism.
+
+  - kind: add-requirement-note
+    spec: central-node
+    component: TENANT
+    requirement: "1"
+    note_id: "1-note"
+    text: |
+      For request paths that don't contain a workspace id (every
+      /sync/* endpoint), the middleware resolves the org from
+      the authenticated identity's membership. Single-org
+      identities get their org inferred; multi-org identities
+      MUST include an X-Rex-Org header — the API rejects
+      ambiguous requests with 400 rather than picking (TENANT.2).
+      Workspace-prefixed routes (/workspaces/<id>/...) resolve
+      via the workspaces table; the resolved org is then
+      cross-checked against the identity's memberships.
+
+  - kind: add-requirement-note
+    spec: central-node
+    component: TENANT
+    requirement: "4"
+    note_id: "4-note"
+    text: |
+      v1 backwards-compat: a "default" org is seeded on the
+      first multi-tenant migration. Existing single-tenant
+      deployments (events from PostgresStore v1, schema_version
+      1) get every previously-authenticated identity auto-joined
+      to that org and every event row backfilled to it before
+      the NOT NULL constraint on org_id lands. Fresh
+      deployments still get the default org so the system has a
+      sane home for events before BOOT.* ships real org
+      creation. The default org is NOT special-cased after
+      bootstrap — it's a regular org subject to the same RBAC
+      and tenancy boundaries.
+
+  - kind: clarify-task-description
+    spec: central-node
+    task_id: tenant-routing
+    new_description: "Implement the tenant-routing middleware that scopes every request to an org based on the authenticated identity's membership and the workspace->org table; add the workspaces table, the org_id column on events, the migration backfill via the default org seed, and Row Level Security policies as defense-in-depth"
+
+  - kind: clarify-task-description
+    spec: identity-and-trust
+    task_id: org-model-central
+    new_description: "Implement orgs, org_memberships, and org_invites as central-only entities; seed a default org on first multi-tenant migration so existing single-tenant deployments keep working until BOOT.* ships real org creation"
+
+# Folding instructions (when accepted):
+#
+#   1. Add ORG."6-note" to specs/identity-and-trust.yaml.
+#   2. Add TENANT."1-note" and TENANT."4-note" to
+#      specs/central-node.yaml.
+#   3. Update the two task descriptions in place; no state
+#      changes (both still todo).
+#   4. Bump metadata.updated_at on both specs to 2026-05-04.
+#   5. Move this file to specs/_proposed/_accepted/.
+#   6. Validate: `go run ./cmd/rex spec validate specs/*.yaml`
+#      → 0 errors, 0 warnings.
+#
+# Implementation order after the fold:
+#
+#   PR 1: identity-and-trust.org-model-central
+#         schemaSteps v2: orgs, org_memberships, org_invites
+#         tables + default org seed; auto-join hook on first
+#         auth-verify per identity. No middleware yet.
+#
+#   PR 2: central-node.tenant-routing
+#         schemaSteps v3: workspaces table, org_id on events,
+#         backfill, NOT NULL.
+#         schemaSteps v4: RLS policies on events + workspaces.
+#         Middleware: resolve org, write to request context,
+#         enforce on every /sync/* call.
+#         Local CLI: `--org` flag on `rex remote add` (stored
+#         in remotes.toml); X-Rex-Org header sent on every
+#         sync request when configured.
+#
+# RBAC-SVR.* and BOOT.* land as separate tasks after these two.

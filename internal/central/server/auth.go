@@ -296,6 +296,23 @@ func (s *Server) handleAuthVerify(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, proto.ErrCodeServerError, err.Error())
 		return
 	}
+	// Auto-join the verified identity to the default org if the
+	// store knows about orgs (central-node.TENANT.4-note). The
+	// MemoryStore doesn't implement MembershipEnsurer; that's
+	// the dev/test path with no orgs and we just skip. Soft-
+	// fail: a database hiccup here logs a WARN but doesn't fail
+	// the auth — the token is issued either way; the next push
+	// will go through tenant-routing once it lands and surface
+	// a clearer 403 if membership is genuinely required.
+	if ensurer, ok := s.store.(MembershipEnsurer); ok {
+		if err := ensurer.EnsureDefaultMembership(r.Context(), fp.String()); err != nil {
+			s.log.Warn("auth verify: ensure default membership failed",
+				"op", "auth.verify",
+				"fingerprint", fp.String(),
+				"err", err.Error(),
+			)
+		}
+	}
 	// Note: token VALUE never reaches the logger (HEALTH.3 "no
 	// secrets"). We log only fingerprint + scope + expires_at.
 	s.log.Info("auth verify: token issued",

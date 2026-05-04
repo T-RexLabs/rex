@@ -43,8 +43,8 @@ tasks:
     references: [RBAC.1, RBAC.2, RBAC.3, RBAC.4]
 
   - id: org-model-central
-    description: Implement orgs as a central-only entity with membership, invites, and per-org tenancy
-    state: todo
+    description: "Implement orgs, org_memberships, and org_invites as central-only entities; seed a default org on first multi-tenant migration so existing single-tenant deployments keep working until BOOT.* ships real org creation"
+    state: done
     references: [ORG.1, ORG.2, ORG.3, ORG.4]
 
 components:
@@ -88,6 +88,7 @@ components:
       "4": A user (identified by public key fingerprint) may be a member of multiple orgs on the same central node, with different roles in each
       "5": 'Org membership is granted via invite flow: an existing member with `org.admin` permission issues an invite link that the recipient redeems with their public key'
       "6": Workspaces on a central node are owned by exactly one org
+      "6-note": "Workspaces are bound to an org via first-push-wins: when the central observes a workspace_id it has never indexed, it stamps the new workspaces row with the pushing identity's resolved org. Subsequent pushes for the same workspace_id must come from members of that org or are rejected with 403. Explicit `POST /workspaces` registration is reserved for a future task that needs it (e.g. a central-side CLI for ops); v1 ships first-push-wins as the single binding mechanism."
 
   RBAC:
     name: Role-based access control
