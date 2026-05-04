@@ -291,11 +291,19 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 		runID = ws.Clock.Now().String()
 	}
 
+	// frameWriter persists each ACP frame as a harness.frame event
+	// in the workspace log so `rex run watch`, `rex run show`, and
+	// the web run-detail page all see the actual transcript content
+	// — not just lifecycle events. Shipping the wire-shape verbatim
+	// keeps additive ACP evolution forward-compatible (overview.SYS.4).
+	frameWriter := buildHarnessFrameWriter(ws, runID, runner.NodeID(nodeID))
+
 	reg := runner.NewPrimitiveRegistry()
 	reg.Register(primharness.PrimitiveType, primharness.New(primharness.Options{
 		WorkspaceID: ws.ID,
 		Adapters:    req.Adapters,
 		OnStderr:    req.OnStderr,
+		OnFrame:     frameWriter,
 	}))
 
 	exec, err := runner.NewExecutor(runner.ExecConfig{
@@ -312,6 +320,67 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 		return nil, err
 	}
 	return &ShellRunResult{RunID: runID, State: state}, nil
+}
+
+// buildHarnessFrameWriter returns a primharness.OnFrame callback
+// that translates each received ACP frame into a HarnessFrameEvent
+// and appends it to the workspace event log. The frame ends up in
+// events.log alongside the run/node lifecycle events, so every
+// downstream surface (cli watch, run show, web run-detail) sees it
+// without each having to know the ACP wire format.
+//
+// Append errors are swallowed: a stdout-write failure must not
+// abort an in-flight harness session. The frame count tracked by
+// primharness still increments either way, so the diagnostic in
+// node.succeeded.output stays accurate.
+func buildHarnessFrameWriter(ws *Workspace, runID string, nodeID runner.NodeID) func(acp.RawMessage) {
+	return func(raw acp.RawMessage) {
+		ev := runner.HarnessFrameEvent{
+			RunID:     runID,
+			NodeID:    nodeID,
+			Method:    raw.Message.Method,
+			RequestID: rawMessageID(raw),
+			SessionID: extractSessionID(raw),
+			Frame:     append(json.RawMessage{}, raw.Raw...),
+			At:        time.Now().UTC(),
+		}
+		payload, err := json.Marshal(ev)
+		if err != nil {
+			return
+		}
+		_, _ = ws.Writer.Append(runner.EventTypeHarnessFrame, runner.EventVersion, payload)
+	}
+}
+
+// rawMessageID stringifies the JSON-RPC id field. ACP uses both
+// numeric and string ids; coalescing to a string keeps the event
+// payload simple downstream.
+func rawMessageID(raw acp.RawMessage) string {
+	if len(raw.Message.ID) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(strings.Trim(string(raw.Message.ID), `"`))
+}
+
+// extractSessionID best-effort pulls the sessionId out of an ACP
+// frame's params (notifications) or result (responses). When the
+// frame doesn't carry one, returns "" — frames produced before
+// session/new completes are the obvious case. We do this rather
+// than typed decoding because the params shape varies per method
+// and we don't want each new method to require a code change.
+func extractSessionID(raw acp.RawMessage) string {
+	for _, body := range [][]byte{raw.Message.Params, raw.Message.Result} {
+		if len(body) == 0 {
+			continue
+		}
+		var probe struct {
+			SessionID string `json:"sessionId"`
+		}
+		if err := json.Unmarshal(body, &probe); err == nil && probe.SessionID != "" {
+			return probe.SessionID
+		}
+	}
+	return ""
 }
 
 // SplitShellCommand parses a POSIX-ish quoted shell string into

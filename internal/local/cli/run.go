@@ -804,8 +804,99 @@ func summarizeEventPayload(eventType string, payload json.RawMessage) string {
 		if err := json.Unmarshal(payload, &ev); err == nil {
 			return fmt.Sprintf("node=%s request=%s", ev.NodeID, ev.RequestID)
 		}
+	case runner.EventTypeHarnessFrame:
+		return summarizeHarnessFrame(payload)
 	}
 	return fmt.Sprintf("(%d bytes)", len(payload))
+}
+
+// summarizeHarnessFrame extracts the most useful one-liner out of an
+// ACP frame for the human-readable event stream. Priority:
+//   1. an agent_message_chunk text — the actual model output
+//   2. a tool call name — when the harness invokes a tool
+//   3. the bare ACP method name as a fallback
+// Length is capped so a long agent message doesn't blow out one
+// terminal line; full content is in `rex run show <id>`.
+func summarizeHarnessFrame(payload json.RawMessage) string {
+	var ev runner.HarnessFrameEvent
+	if err := json.Unmarshal(payload, &ev); err != nil {
+		return fmt.Sprintf("(%d bytes)", len(payload))
+	}
+	// Try the typed update path first.
+	var frame struct {
+		Method string          `json:"method"`
+		Params json.RawMessage `json:"params"`
+		Result json.RawMessage `json:"result"`
+	}
+	_ = json.Unmarshal(ev.Frame, &frame)
+
+	if len(frame.Params) > 0 {
+		var p struct {
+			Update struct {
+				Type    string          `json:"type"`
+				Content json.RawMessage `json:"content"`
+				Text    string          `json:"text,omitempty"`
+				Tool    struct {
+					Name string `json:"name"`
+				} `json:"tool"`
+			} `json:"update"`
+		}
+		if err := json.Unmarshal(frame.Params, &p); err == nil && p.Update.Type != "" {
+			text := extractFrameText(p.Update.Type, p.Update.Text, p.Update.Content, p.Update.Tool.Name)
+			if text != "" {
+				return fmt.Sprintf("%s %s", p.Update.Type, truncate(text, 80))
+			}
+			return p.Update.Type
+		}
+	}
+	if ev.Method != "" {
+		return ev.Method
+	}
+	if len(frame.Result) > 0 {
+		return "result"
+	}
+	return "(frame)"
+}
+
+// extractFrameText pulls a human-readable string out of a
+// session/update payload. Different update types put the text in
+// different places; this collapses them into one return.
+func extractFrameText(updateType, fallbackText string, content json.RawMessage, toolName string) string {
+	if fallbackText != "" {
+		return fallbackText
+	}
+	if toolName != "" {
+		return toolName
+	}
+	if len(content) > 0 {
+		// content may be {type:"text", text:"..."} or an array of
+		// such blocks. Try both shapes.
+		var single struct {
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(content, &single); err == nil && single.Text != "" {
+			return single.Text
+		}
+		var arr []struct {
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(content, &arr); err == nil {
+			for _, b := range arr {
+				if b.Text != "" {
+					return b.Text
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func truncate(s string, n int) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
 }
 
 // splitShellCommand parses a --shell argument into argv. For v1 we

@@ -23,6 +23,12 @@ const (
 	EventTypePermissionRequested = "permission.requested"
 	EventTypePermissionGranted   = "permission.granted"
 	EventTypePermissionDenied    = "permission.denied"
+	// EventTypeHarnessFrame captures one ACP frame received from the
+	// harness during a harness_invocation node. The payload mirrors
+	// the wire shape (method + params for notifications, id + result
+	// for responses); the executor and primitives stay agnostic to
+	// what the harness actually said. (execution.ACP.3)
+	EventTypeHarnessFrame = "harness.frame"
 )
 
 // EventVersion is the schema version the runner currently emits. Bump
@@ -133,6 +139,28 @@ type PermissionDeniedEvent struct {
 	Reason    string    `json:"reason,omitempty"`
 }
 
+// HarnessFrameEvent captures one ACP frame received from the harness
+// during a harness_invocation node — the actual transcript content
+// (model text chunks, tool calls, tool results, anything the bridge
+// streams). Frame is the JSON of the inner ACP message; readers can
+// further decode it by Method / inspect Result for typed views.
+//
+// We persist the wire payload verbatim rather than splitting it into
+// "agent text" / "tool call" / etc. typed events so additive
+// upstream evolution (overview.SYS.4) doesn't force a rex schema
+// migration: as the ACP grows new update types, the frames flow
+// through unchanged and renderers (cli watch / web run-detail)
+// catch up at their own pace.
+type HarnessFrameEvent struct {
+	RunID     string          `json:"run_id"`
+	NodeID    NodeID          `json:"node_id"`
+	SessionID string          `json:"session_id,omitempty"`
+	Method    string          `json:"method,omitempty"`
+	RequestID string          `json:"request_id,omitempty"`
+	Frame     json.RawMessage `json:"frame"`
+	At        time.Time       `json:"at"`
+}
+
 // RegisterEvents adds decoders for every runner event type to r so
 // readers (replay, watchers) can decode runner events without each
 // reader rebuilding its own table.
@@ -148,6 +176,7 @@ func RegisterEvents(r *event.Registry) {
 	r.Register(EventTypePermissionRequested, EventVersion, decodeAs[PermissionRequestedEvent])
 	r.Register(EventTypePermissionGranted, EventVersion, decodeAs[PermissionGrantedEvent])
 	r.Register(EventTypePermissionDenied, EventVersion, decodeAs[PermissionDeniedEvent])
+	r.Register(EventTypeHarnessFrame, EventVersion, decodeAs[HarnessFrameEvent])
 }
 
 func decodeAs[T any](_ uint32, payload []byte) (any, error) {
@@ -185,6 +214,8 @@ func classifyEvent(evt any) (string, uint32, error) {
 		return EventTypePermissionGranted, EventVersion, nil
 	case PermissionDeniedEvent:
 		return EventTypePermissionDenied, EventVersion, nil
+	case HarnessFrameEvent:
+		return EventTypeHarnessFrame, EventVersion, nil
 	}
 	return "", 0, fmt.Errorf("runner: unknown event type %T", evt)
 }
