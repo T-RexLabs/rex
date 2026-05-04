@@ -101,7 +101,7 @@ func TestRunDetailRendersHistory(t *testing.T) {
 		"node.succeeded",
 		"run.completed",
 		`pill-completed`,
-		`sse-connect="/runs/the-run/stream"`,
+		`sse-connect="/runs/the-run/stream?after=`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q\n%s", want, body[:minInt(len(body), 2500)])
@@ -165,6 +165,68 @@ func TestRunStreamReplaysPriorEventsThenStays(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("stream missing %q", want)
 		}
+	}
+}
+
+func TestRunStreamSkipsEventsAtOrBeforeAfter(t *testing.T) {
+	t.Parallel()
+
+	// Regression: every page load was rendering each prior event
+	// twice — once via the server's initial-render and once via the
+	// SSE handler's initial replay. The fix is for the page to pass
+	// ?after=<last-rendered-id> so the stream skips events the page
+	// already has.
+	root := initWorkspace(t, "ws-stream-after")
+	seedRunEvents(t, root, "after-run")
+	hs := newTestServer(t, root)
+
+	// Find the id of the second-to-last event so we can assert the
+	// stream skips the first three but emits the last one.
+	r, err := eventlog.OpenReader(filepath.Join(root, ".rex", "events.log"))
+	if err != nil {
+		t.Fatalf("OpenReader: %v", err)
+	}
+	defer r.Close()
+	var ids []string
+	for {
+		rec, err := r.Next()
+		if err != nil {
+			break
+		}
+		ids = append(ids, rec.ID)
+	}
+	if len(ids) < 4 {
+		t.Fatalf("expected 4 events, got %d", len(ids))
+	}
+	after := ids[2] // skip events 0..2; expect event 3 (run.completed) only
+
+	ctx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet,
+		hs.URL+"/runs/after-run/stream?after="+after, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+
+	buf := make([]byte, 64*1024)
+	var collected strings.Builder
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			collected.Write(buf[:n])
+		}
+		if err != nil {
+			break
+		}
+	}
+	body := collected.String()
+	if strings.Contains(body, "run.started") || strings.Contains(body, "node.started") || strings.Contains(body, "node.succeeded") {
+		t.Errorf("stream emitted events at or before after=%s:\n%s", after, body)
+	}
+	if !strings.Contains(body, "run.completed") {
+		t.Errorf("stream missed the post-after event run.completed:\n%s", body)
 	}
 }
 

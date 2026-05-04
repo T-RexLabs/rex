@@ -73,11 +73,19 @@ func loadRunsList(opts Options) (runsListData, error) {
 }
 
 // runDetailData backs run_detail.tmpl.
+//
+// LastEventID is the id of the chronologically last event the
+// server rendered into the page. The template passes it to the
+// SSE endpoint as ?after=<id> so the SSE handler does NOT replay
+// events that are already in the page DOM — otherwise every page
+// load shows each prior event twice (server-rendered + SSE
+// replay).
 type runDetailData struct {
 	pageData
-	RunID  string
-	Status runner.RunStatus
-	Events []runEventRow
+	RunID       string
+	Status      runner.RunStatus
+	Events      []runEventRow
+	LastEventID string
 }
 
 // loadRunDetail walks events.log and returns the records whose
@@ -130,6 +138,7 @@ func loadRunDetail(opts Options, runID string, hl *Highlighter) (runDetailData, 
 	if len(d.Events) == 0 {
 		return d, false, nil
 	}
+	d.LastEventID = d.Events[len(d.Events)-1].ID
 	return d, true, nil
 }
 
@@ -149,11 +158,23 @@ func recordMatchesRun(reg *event.Registry, rec eventlog.Record, runID string) bo
 }
 
 // streamRunEvents implements the SSE handler for /runs/<id>/stream.
-// On connect: replay every prior event for the run. Then poll
-// events.log at ssePollInterval, emitting each newly-appended
-// matching record. The loop exits when the request context cancels
-// (client disconnect) or, at the SSE protocol level, when the
-// underlying TCP connection drops.
+//
+// The handler honours an `after=<event-id>` query parameter: when
+// set, it skips every event with id <= after (HLC strings sort
+// lexicographically, matching their causal order), so the page's
+// initial server-rendered events are NOT re-emitted as duplicates
+// when the SSE connection opens. The run-detail template populates
+// this from runDetailData.LastEventID.
+//
+// Without `after`, the handler replays every matching event from
+// the start — useful for tools that read the stream raw without a
+// pre-existing rendered page.
+//
+// After the initial scan, the handler tail-polls events.log at
+// ssePollInterval, emitting each newly-appended matching record.
+// The loop exits when the request context cancels (client
+// disconnect) or, at the SSE protocol level, when the underlying
+// TCP connection drops.
 func (s *Server) streamRunEvents(w http.ResponseWriter, r *http.Request, runID string) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -168,6 +189,7 @@ func (s *Server) streamRunEvents(w http.ResponseWriter, r *http.Request, runID s
 	flusher.Flush()
 
 	ctx := r.Context()
+	after := r.URL.Query().Get("after")
 	logPath := filepath.Join(s.opts.WorkspaceRoot, ".rex", "events.log")
 	reg := event.NewRegistry()
 	runner.RegisterEvents(reg)
@@ -222,6 +244,15 @@ func (s *Server) streamRunEvents(w http.ResponseWriter, r *http.Request, runID s
 				return err
 			}
 			if !recordMatchesRun(reg, rec, runID) {
+				continue
+			}
+			// Skip events the page already rendered. Event IDs
+			// are HLC strings; lexicographic <= matches causal
+			// order, so anything <= `after` was on the page at
+			// load time. Without this gate every page load
+			// shows each prior event twice (server-rendered +
+			// SSE replay).
+			if after != "" && rec.ID <= after {
 				continue
 			}
 			if _, dup := seen[rec.ID]; dup {

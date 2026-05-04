@@ -13,7 +13,7 @@
 
 <section class="section"
          hx-ext="sse"
-         sse-connect="/runs/{{.RunID}}/stream"
+         sse-connect="/runs/{{.RunID}}/stream{{if .LastEventID}}?after={{.LastEventID}}{{end}}"
          sse-swap="run-event"
          hx-target="#run-events"
          hx-swap="beforeend">
