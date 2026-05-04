@@ -107,8 +107,8 @@ func decodeUpdate(params json.RawMessage, hl *Highlighter) *frameView {
 
 			// Claude-specific meters / hints we surface as a
 			// muted info row rather than agent text.
-			Used             int64           `json:"used"`
-			Size             int64           `json:"size"`
+			Used              int64           `json:"used"`
+			Size              int64           `json:"size"`
 			AvailableCommands json.RawMessage `json:"availableCommands"`
 		} `json:"update"`
 	}

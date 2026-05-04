@@ -31,7 +31,7 @@ import (
 // light theme's blues and reds against the dark UI surface,
 // where they're nearly invisible.
 type Highlighter struct {
-	formatter *chromahtml.Formatter
+	formatter  *chromahtml.Formatter
 	styleLight *chroma.Style
 	styleDark  *chroma.Style
 }

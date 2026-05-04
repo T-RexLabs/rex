@@ -109,7 +109,7 @@ func TestPushEmitsAcceptedLogLine(t *testing.T) {
 
 	_, hs, buf := captureLogs(t)
 	body, _ := json.Marshal(proto.PushRequest{
-		Since:  "",
+		Since: "",
 		Events: []eventlog.Record{
 			{
 				ID:          "log-test-1",

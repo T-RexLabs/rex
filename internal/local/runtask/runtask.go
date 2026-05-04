@@ -37,12 +37,12 @@ import (
 // hooks dispatcher, search indexer. Open returns it; the caller
 // invokes Close to drain hooks and close the search index.
 type Workspace struct {
-	Root     string
-	ID       string
-	Writer   *eventlog.Writer
-	Clock    *eventlog.Clock
-	indexer  *search.Index
-	hooks    *hooks.Dispatcher
+	Root    string
+	ID      string
+	Writer  *eventlog.Writer
+	Clock   *eventlog.Clock
+	indexer *search.Index
+	hooks   *hooks.Dispatcher
 }
 
 // Open builds the writer + clock + dispatcher + indexer for the

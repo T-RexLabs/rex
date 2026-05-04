@@ -187,9 +187,9 @@ func runSyncFn(cmd *cobra.Command, _ []string) error {
 	jsonOut, _ := cmd.Flags().GetBool("json")
 	if jsonOut {
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
-			"pulled":   res.Pulled,
-			"head_id":  res.Push.HeadID,
-			"pushed":   res.Push.Accepted,
+			"pulled":     res.Pulled,
+			"head_id":    res.Push.HeadID,
+			"pushed":     res.Push.Accepted,
 			"duplicates": res.Push.Duplicates,
 		})
 	}

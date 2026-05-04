@@ -22,12 +22,13 @@ import (
 // approve / deny on the run-detail page (web-ui.LIVE.3).
 //
 // Form fields:
-//   request_id  (required) — matches the request_id on the
-//                            corresponding permission.requested.
-//   decision    (required) — "grant" | "deny".
-//   note        (optional) — operator's note; for deny this maps
-//                            to the resolution event's Reason
-//                            field, for grant it maps to Note.
+//
+//	request_id  (required) — matches the request_id on the
+//	                         corresponding permission.requested.
+//	decision    (required) — "grant" | "deny".
+//	note        (optional) — operator's note; for deny this maps
+//	                         to the resolution event's Reason
+//	                         field, for grant it maps to Note.
 //
 // Idempotency: a request_id that already has a resolution event
 // returns 409 Conflict — the runner only honours the first

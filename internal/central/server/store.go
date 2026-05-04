@@ -23,14 +23,14 @@ var ErrUnknownCursor = errors.New("server: unknown cursor")
 //
 // Method semantics match the existing in-memory contract:
 //
-//   Head:   id of the latest record in insertion order, or "" empty.
-//   Append: idempotent; (added=true) on a fresh id, (added=false)
-//           on a duplicate. Used to enable sync.API.6 (push is
-//           safe to retry).
-//   Since:  records strictly after the cursor in insertion order.
-//           Empty cursor = everything; unknown cursor =
-//           ErrUnknownCursor (hard divergence).
-//   Len:    total record count; informational.
+//	Head:   id of the latest record in insertion order, or "" empty.
+//	Append: idempotent; (added=true) on a fresh id, (added=false)
+//	        on a duplicate. Used to enable sync.API.6 (push is
+//	        safe to retry).
+//	Since:  records strictly after the cursor in insertion order.
+//	        Empty cursor = everything; unknown cursor =
+//	        ErrUnknownCursor (hard divergence).
+//	Len:    total record count; informational.
 type Store interface {
 	Head(ctx context.Context) (string, error)
 	Append(ctx context.Context, rec eventlog.Record) (added bool, err error)

@@ -327,13 +327,13 @@ func (idx *Index) rebuildSpecs(workspaceRoot string, stats *Stats) error {
 // Result is one match. Snippet is the FTS5 snippet excerpt with
 // match markers (<<>> by convention from sqlite snippet()).
 type Result struct {
-	EntityType  string `json:"entity_type"`  // "event" | "spec"
-	WorkspaceID string `json:"workspace_id"`
-	EntityID    string `json:"entity_id"`
-	Title       string `json:"title"`
-	Snippet     string `json:"snippet"`
+	EntityType  string  `json:"entity_type"` // "event" | "spec"
+	WorkspaceID string  `json:"workspace_id"`
+	EntityID    string  `json:"entity_id"`
+	Title       string  `json:"title"`
+	Snippet     string  `json:"snippet"`
 	Score       float64 `json:"score"`
-	URI         string `json:"uri"`
+	URI         string  `json:"uri"`
 }
 
 // SearchOptions configure a Search call.

@@ -39,8 +39,8 @@ type specNewData struct {
 var availableStates = []string{"draft", "active", "stable", "deprecated"}
 
 type specTemplateOption struct {
-	ID       string
-	Name     string
+	ID        string
+	Name      string
 	IsDefault bool
 }
 

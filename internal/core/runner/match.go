@@ -126,7 +126,7 @@ func summaryRunID(decoded any) string {
 
 // EffectiveStatus is the run's status defaulting to Running when no
 // terminal event has been folded yet. Lets table renderers display
-// in-flight runs without an explicit "if status == '' then Running"
+// in-flight runs without an explicit "if status == ” then Running"
 // dance at every callsite.
 func (s RunSummary) EffectiveStatus() RunStatus {
 	if s.Status == "" {

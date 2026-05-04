@@ -103,8 +103,8 @@ func TestHarnessInvocationCapturesFramesAndCompletes(t *testing.T) {
 	t.Parallel()
 
 	var (
-		mu      sync.Mutex
-		frames  []string
+		mu     sync.Mutex
+		frames []string
 	)
 	observer := func(raw acp.RawMessage) {
 		mu.Lock()

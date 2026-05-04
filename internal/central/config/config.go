@@ -5,15 +5,15 @@
 //
 // Precedence (lowest to highest) per central-node.DEPLOY.2:
 //
-//   1. Built-in defaults (Default()).
-//   2. The TOML config file. The file is for "non-secret
-//      defaults, holding everything that's safe to commit to a
-//      git repo or a docker image".
-//   3. Environment variables. The file is for "secrets and
-//      per-deployment overrides", per DEPLOY.2.
-//   4. CLI flags from cmd/rex-central/serve. Operators
-//      diagnosing issues can always override anything from the
-//      command line.
+//  1. Built-in defaults (Default()).
+//  2. The TOML config file. The file is for "non-secret
+//     defaults, holding everything that's safe to commit to a
+//     git repo or a docker image".
+//  3. Environment variables. The file is for "secrets and
+//     per-deployment overrides", per DEPLOY.2.
+//  4. CLI flags from cmd/rex-central/serve. Operators
+//     diagnosing issues can always override anything from the
+//     command line.
 package config
 
 import (

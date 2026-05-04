@@ -6,10 +6,10 @@ func TestParseACIDFullForm(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		ref    string
-		spec   string
-		comp   string
-		req    string
+		ref  string
+		spec string
+		comp string
+		req  string
 	}{
 		{"auth-flow.AUTH.1.1", "auth-flow", "AUTH", "1.1"},
 		{"sync.ORDER.3", "sync", "ORDER", "3"},

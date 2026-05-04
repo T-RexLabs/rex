@@ -17,8 +17,8 @@ const IdentityDirName = "identity"
 // Permissions used for written files. KEY.5 says private keys are
 // mode 0600 minimum; the package writes 0600 strictly.
 const (
-	privateKeyMode os.FileMode = 0o600
-	publicKeyMode  os.FileMode = 0o644
+	privateKeyMode  os.FileMode = 0o600
+	publicKeyMode   os.FileMode = 0o644
 	identityDirMode os.FileMode = 0o700
 )
 

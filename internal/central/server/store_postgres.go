@@ -114,9 +114,9 @@ func (s *PostgresStore) Close() {
 // Head returns the id of the row with the largest insertion_seq
 // for the request's org. Three layers of scoping:
 //
-//   1. WithOrgID requires an org id on ctx (application gate).
-//   2. The WHERE org_id = $1 filter on the query.
-//   3. Postgres RLS rules from schema v4 — defense in depth.
+//  1. WithOrgID requires an org id on ctx (application gate).
+//  2. The WHERE org_id = $1 filter on the query.
+//  3. Postgres RLS rules from schema v4 — defense in depth.
 //
 // All three must agree; if app code forgets either of the
 // first two, RLS catches it.

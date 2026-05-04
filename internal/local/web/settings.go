@@ -45,10 +45,10 @@ type settingsData struct {
 	RemotesCount int
 
 	// Hooks
-	WorkspaceHooksDir   string
-	WorkspaceHookCount  int
-	GlobalHooksDir      string
-	GlobalHookCount     int
+	WorkspaceHooksDir  string
+	WorkspaceHookCount int
+	GlobalHooksDir     string
+	GlobalHookCount    int
 }
 
 // handleSettings renders /settings.

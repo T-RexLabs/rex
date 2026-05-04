@@ -57,9 +57,9 @@ func TestStaticAssetsServed(t *testing.T) {
 	hs := newTestServer(t, root)
 
 	for path, mustContain := range map[string]string{
-		"/static/app.css":           "rex local ui",
-		"/static/htmx.min.js":       "htmx",
-		"/static/htmx-ext-sse.js":   "sse",
+		"/static/app.css":         "rex local ui",
+		"/static/htmx.min.js":     "htmx",
+		"/static/htmx-ext-sse.js": "sse",
 	} {
 		resp, err := http.Get(hs.URL + path)
 		if err != nil {

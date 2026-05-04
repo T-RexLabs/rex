@@ -20,12 +20,12 @@ import (
 // access-token TTL is short by design; refresh-token rotation lands
 // later (TOKEN.3).
 const (
-	challengeNonceLen   = 32
-	challengeTTL        = 60 * time.Second
-	accessTokenTTL      = 15 * time.Minute
-	authChallengePath   = "/auth/challenge"
-	authVerifyPath      = "/auth/verify"
-	bearerPrefix        = "Bearer "
+	challengeNonceLen = 32
+	challengeTTL      = 60 * time.Second
+	accessTokenTTL    = 15 * time.Minute
+	authChallengePath = "/auth/challenge"
+	authVerifyPath    = "/auth/verify"
+	bearerPrefix      = "Bearer "
 )
 
 // challenge is one in-flight handshake nonce. It expires after

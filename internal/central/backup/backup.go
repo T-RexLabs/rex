@@ -160,12 +160,13 @@ func Validate(ctx context.Context, path string) error {
 // validation failure is surfaced before any destructive work.
 //
 // The flags:
-//   --clean            drop existing objects before recreating
-//   --if-exists        avoid noisy errors when --clean has
-//                      nothing to drop (fresh DB)
-//   --no-owner         match the no-owner dump
-//   --no-privileges    match the no-privileges dump
-//   -d <dsn>           destination database
+//
+//	--clean            drop existing objects before recreating
+//	--if-exists        avoid noisy errors when --clean has
+//	                   nothing to drop (fresh DB)
+//	--no-owner         match the no-owner dump
+//	--no-privileges    match the no-privileges dump
+//	-d <dsn>           destination database
 //
 // pg_restore writes its own progress to stderr; Restore captures
 // it and returns it as part of the error message on failure so

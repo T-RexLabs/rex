@@ -452,13 +452,13 @@ func decodeError(resp *http.Response) error {
 // Bootstrap redeems the central's one-time admin claim token
 // (central-node.BOOT.2). The flow:
 //
-//   1. Client makes sure it has a Bearer token (via its
-//      configured Signer running through the standard
-//      challenge/verify handshake — same as Push/Pull).
-//   2. POST /admin/bootstrap with the token in the body.
-//   3. On success the response is a proto.BootstrapResponse
-//      with the org id + name + the redeemer's fingerprint
-//      (echoed back for the client's audit log).
+//  1. Client makes sure it has a Bearer token (via its
+//     configured Signer running through the standard
+//     challenge/verify handshake — same as Push/Pull).
+//  2. POST /admin/bootstrap with the token in the body.
+//  3. On success the response is a proto.BootstrapResponse
+//     with the org id + name + the redeemer's fingerprint
+//     (echoed back for the client's audit log).
 //
 // Returns a typed error when the token is rejected so the CLI
 // can surface "token is invalid or already redeemed" without

@@ -111,4 +111,3 @@ func (s *Server) handleRunStart(w http.ResponseWriter, r *http.Request) {
 	// target — POST/redirect/GET pattern, refreshes idempotent.
 	http.Redirect(w, r, "/runs/"+res.RunID, http.StatusSeeOther)
 }
-

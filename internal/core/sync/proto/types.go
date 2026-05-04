@@ -106,8 +106,8 @@ const AuthSigningVersion = "rex-auth-v1"
 // AuthChallengeResponse is the body of POST /auth/challenge
 // (identity-and-trust.AUTH.1, AUTH.1.1).
 type AuthChallengeResponse struct {
-	ChallengeID string    `json:"challenge_id"`
-	Nonce       string    `json:"nonce"` // hex-encoded 32 random bytes
+	ChallengeID string `json:"challenge_id"`
+	Nonce       string `json:"nonce"` // hex-encoded 32 random bytes
 	// Hostname is the central node's hostname as it sees itself
 	// (the request's Host header). Bound into the signing input
 	// to prevent cross-server replay (AUTH.1.2).

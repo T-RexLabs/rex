@@ -20,14 +20,14 @@ type NodeState struct {
 // resolution. Stored on RunState so a watcher arriving mid-run sees
 // pending approvals without re-reading the event log.
 type PermissionState struct {
-	NodeID     NodeID
-	Tool       string
-	Reason     string
+	NodeID      NodeID
+	Tool        string
+	Reason      string
 	RequestedAt time.Time
-	Resolved   bool
-	Granted    bool
-	Approver   string
-	Note       string
+	Resolved    bool
+	Granted     bool
+	Approver    string
+	Note        string
 }
 
 // RunState is the engine state derived from the event log. Two RunStates

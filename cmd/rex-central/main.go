@@ -23,7 +23,6 @@ import (
 	"github.com/asabla/rex/internal/central/server"
 )
 
-
 // version is set at build time via -ldflags. Defaults to "dev" for
 // local builds.
 var version = "dev"

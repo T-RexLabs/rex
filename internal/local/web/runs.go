@@ -486,4 +486,3 @@ func (s *Server) streamRunEvents(w http.ResponseWriter, r *http.Request, runID s
 		}
 	}
 }
-

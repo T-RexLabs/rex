@@ -519,11 +519,11 @@ func newRunShowCmd() *cobra.Command {
 
 // runSummary is one row reported by `rex run list`.
 type runSummary struct {
-	RunID      string             `json:"run_id"`
-	Status     runner.RunStatus   `json:"status"`
-	StartedAt  time.Time          `json:"started_at"`
-	EndedAt    time.Time          `json:"ended_at,omitempty"`
-	NodeEvents int                `json:"node_events"`
+	RunID      string           `json:"run_id"`
+	Status     runner.RunStatus `json:"status"`
+	StartedAt  time.Time        `json:"started_at"`
+	EndedAt    time.Time        `json:"ended_at,omitempty"`
+	NodeEvents int              `json:"node_events"`
 }
 
 // readRunSummaries scans the workspace's events.log and aggregates one
@@ -588,13 +588,13 @@ func readRunSummaries(workspaceRoot string) ([]runSummary, error) {
 // runRecord is the on-wire shape `rex run show` emits — the eventlog
 // Record's structural fields plus the decoded run id when available.
 type runRecord struct {
-	ID          string             `json:"id"`
-	Timestamp   eventlog.HLC       `json:"timestamp"`
-	Type        string             `json:"type"`
-	Version     uint32             `json:"version"`
-	Actor       string             `json:"actor,omitempty"`
-	WorkspaceID string             `json:"workspace_id"`
-	Payload     json.RawMessage    `json:"payload"`
+	ID          string          `json:"id"`
+	Timestamp   eventlog.HLC    `json:"timestamp"`
+	Type        string          `json:"type"`
+	Version     uint32          `json:"version"`
+	Actor       string          `json:"actor,omitempty"`
+	WorkspaceID string          `json:"workspace_id"`
+	Payload     json.RawMessage `json:"payload"`
 }
 
 // loadRunEvents returns every record in events.log whose decoded
@@ -956,9 +956,9 @@ func summarizeEventPayload(eventType string, payload json.RawMessage) string {
 
 // summarizeHarnessFrame extracts the most useful one-liner out of an
 // ACP frame for the human-readable event stream. Priority:
-//   1. an agent_message_chunk text — the actual model output
-//   2. a tool call name — when the harness invokes a tool
-//   3. the bare ACP method name as a fallback
+//  1. an agent_message_chunk text — the actual model output
+//  2. a tool call name — when the harness invokes a tool
+//  3. the bare ACP method name as a fallback
 //
 // Length is capped so a long agent message doesn't blow out one
 // terminal line; full content is in `rex run show <id>`. The
@@ -1089,4 +1089,3 @@ func splitShellCommand(cmd string) ([]string, error) {
 	flush()
 	return out, nil
 }
-

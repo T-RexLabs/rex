@@ -31,10 +31,10 @@ import (
 // stays consistent even if a typo creeps into the fingerprint
 // field — the loader recomputes and compares).
 type AuthorizedKey struct {
-	Handle        string `toml:"handle"`
-	Fingerprint   string `toml:"fingerprint"`
-	PublicKeyPEM  string `toml:"public_key_pem"`
-	publicKey     ed25519.PublicKey
+	Handle       string `toml:"handle"`
+	Fingerprint  string `toml:"fingerprint"`
+	PublicKeyPEM string `toml:"public_key_pem"`
+	publicKey    ed25519.PublicKey
 }
 
 // authorizedKeysFile is the on-disk shape of `--keys <file>`.
@@ -116,9 +116,9 @@ func (s *Keystore) Add(handle string, pub ed25519.PublicKey) (identity.Fingerpri
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.keys[fp] = AuthorizedKey{
-		Handle:       handle,
-		Fingerprint:  fp.String(),
-		publicKey:    pub,
+		Handle:      handle,
+		Fingerprint: fp.String(),
+		publicKey:   pub,
 	}
 	return fp, nil
 }

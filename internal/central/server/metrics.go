@@ -91,11 +91,23 @@ func (m *Metrics) RecordEventAppended(added, isAudit bool) {
 // reached the handler (post-auth). RecordPushConflict ticks when
 // the same request returned 409 (since-mismatch). Together they
 // give a divergence-rate metric.
-func (m *Metrics) RecordPushRequest()  { if m != nil { m.pushRequests.Add(1) } }
-func (m *Metrics) RecordPushConflict() { if m != nil { m.pushConflicts.Add(1) } }
+func (m *Metrics) RecordPushRequest() {
+	if m != nil {
+		m.pushRequests.Add(1)
+	}
+}
+func (m *Metrics) RecordPushConflict() {
+	if m != nil {
+		m.pushConflicts.Add(1)
+	}
+}
 
 // RecordAuthChallenge ticks once per challenge issued.
-func (m *Metrics) RecordAuthChallenge() { if m != nil { m.authChallenges.Add(1) } }
+func (m *Metrics) RecordAuthChallenge() {
+	if m != nil {
+		m.authChallenges.Add(1)
+	}
+}
 
 // Snapshot returns the current values. Used by /metrics and
 // (rarely) by tests asserting recording behavior. The

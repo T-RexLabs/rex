@@ -18,12 +18,12 @@ import (
 
 // Defaults from hooks.EXEC.3 / EXEC.4.
 const (
-	DefaultWorkers       = 4
-	DefaultHookTimeout   = 30 * time.Second
-	DefaultKillGrace     = 5 * time.Second
-	hookLogDirName       = "hook-log"
-	wildcardHookName     = "post-any"
-	configSuffixSidecar  = ".config.toml"
+	DefaultWorkers      = 4
+	DefaultHookTimeout  = 30 * time.Second
+	DefaultKillGrace    = 5 * time.Second
+	hookLogDirName      = "hook-log"
+	wildcardHookName    = "post-any"
+	configSuffixSidecar = ".config.toml"
 )
 
 // Options configure a Dispatcher.
@@ -388,10 +388,14 @@ func (r *realCmd) ExitCode() int { return r.exitCode }
 
 // reader/writer adapters bridge the dispatcher's narrow interfaces
 // onto the io.Reader / io.Writer that os/exec wants.
-type readerAdapter struct{ rd interface{ Read([]byte) (int, error) } }
+type readerAdapter struct {
+	rd interface{ Read([]byte) (int, error) }
+}
 
 func (r readerAdapter) Read(p []byte) (int, error) { return r.rd.Read(p) }
 
-type writerAdapter struct{ w interface{ Write([]byte) (int, error) } }
+type writerAdapter struct {
+	w interface{ Write([]byte) (int, error) }
+}
 
 func (w writerAdapter) Write(p []byte) (int, error) { return w.w.Write(p) }

@@ -10,11 +10,11 @@ import (
 // (spec-format.TMPL.1, .2). Stable strings so tooling can
 // round-trip them.
 const (
-	ExtraTemplate          = "template"           // boolean: this spec IS a template
-	ExtraTemplateID        = "template_id"        // string: this spec opts into a named template
+	ExtraTemplate          = "template"            // boolean: this spec IS a template
+	ExtraTemplateID        = "template_id"         // string: this spec opts into a named template
 	ExtraDefaultTemplateID = "default_template_id" // string (workspace-level): default template
-	ExtraAppliesTo         = "applies_to"         // string: "workspace" | "org"
-	ExtraRequiredExtra     = "required_extra"     // []string: keys non-template specs must have
+	ExtraAppliesTo         = "applies_to"          // string: "workspace" | "org"
+	ExtraRequiredExtra     = "required_extra"      // []string: keys non-template specs must have
 )
 
 // IsTemplate reports whether doc is itself a template spec.

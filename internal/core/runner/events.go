@@ -100,10 +100,10 @@ type NodeFailedEvent struct {
 // NodeRetriedEvent fires immediately before a retry attempt. It is
 // distinct from NodeStarted so a watcher can show "retrying in 2s" UX.
 type NodeRetriedEvent struct {
-	RunID      string        `json:"run_id"`
-	NodeID     NodeID        `json:"node_id"`
-	NextAttempt int          `json:"next_attempt"`
-	BackoffFor time.Duration `json:"backoff_for"`
+	RunID       string        `json:"run_id"`
+	NodeID      NodeID        `json:"node_id"`
+	NextAttempt int           `json:"next_attempt"`
+	BackoffFor  time.Duration `json:"backoff_for"`
 }
 
 // PermissionRequestedEvent fires when a primitive (typically
@@ -121,12 +121,12 @@ type PermissionRequestedEvent struct {
 
 // PermissionGrantedEvent fires when a permission request is approved.
 type PermissionGrantedEvent struct {
-	RunID      string    `json:"run_id"`
-	NodeID     NodeID    `json:"node_id"`
-	RequestID  string    `json:"request_id"`
-	Approver   string    `json:"approver,omitempty"`
-	GrantedAt  time.Time `json:"granted_at"`
-	Note       string    `json:"note,omitempty"`
+	RunID     string    `json:"run_id"`
+	NodeID    NodeID    `json:"node_id"`
+	RequestID string    `json:"request_id"`
+	Approver  string    `json:"approver,omitempty"`
+	GrantedAt time.Time `json:"granted_at"`
+	Note      string    `json:"note,omitempty"`
 }
 
 // PermissionDeniedEvent fires when a permission request is denied.

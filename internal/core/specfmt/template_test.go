@@ -122,8 +122,8 @@ func TestNewSpecFromTemplateMinimalSkeleton(t *testing.T) {
 
 	now := time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
 	got, err := NewSpecFromTemplate(ScaffoldOptions{
-		ID:    "skeleton",
-		Now:   func() time.Time { return now },
+		ID:  "skeleton",
+		Now: func() time.Time { return now },
 	})
 	if err != nil {
 		t.Fatalf("NewSpecFromTemplate: %v", err)

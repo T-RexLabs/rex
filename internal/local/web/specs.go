@@ -100,10 +100,10 @@ func splitParagraphs(s string) []string {
 // specDetailData backs the spec_detail.tmpl page.
 type specDetailData struct {
 	pageData
-	Spec        *specView
-	RawYAML     string
-	YAMLPretty  template.HTML // chroma-highlighted view of RawYAML
-	ActiveTab   string
+	Spec       *specView
+	RawYAML    string
+	YAMLPretty template.HTML // chroma-highlighted view of RawYAML
+	ActiveTab  string
 }
 
 func loadSpecsList(opts Options) (specsListData, error) {

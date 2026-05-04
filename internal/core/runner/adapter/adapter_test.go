@@ -12,8 +12,8 @@ type stubAdapter struct {
 	caps Capabilities
 }
 
-func (s stubAdapter) Name() string                          { return s.name }
-func (s stubAdapter) Capabilities() Capabilities            { return s.caps }
+func (s stubAdapter) Name() string               { return s.name }
+func (s stubAdapter) Capabilities() Capabilities { return s.caps }
 func (s stubAdapter) Spawn(opts SpawnOptions) (*exec.Cmd, error) {
 	return exec.CommandContext(opts.Ctx, "/bin/true"), nil
 }
