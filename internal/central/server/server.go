@@ -28,8 +28,10 @@ type Options struct {
 	// material.
 	Keypair *identity.Keypair
 	// Store is the event store backing /sync/events. New creates
-	// an in-memory Store if nil.
-	Store *Store
+	// an in-memory Store if nil. Implementations: MemoryStore (the
+	// default, dev/test), PostgresStore (durable production
+	// deployments — central-node.DB.*).
+	Store Store
 	// Keystore holds the public keys the server trusts for
 	// signature verification (sync.SEC.1). When nil or empty,
 	// verification is skipped — useful for dev/test. In production
@@ -43,7 +45,7 @@ type Options struct {
 // serves. A Server is safe for concurrent use; the underlying Store
 // owns its own mutex.
 type Server struct {
-	store    *Store
+	store    Store
 	keypair  identity.Keypair
 	actor    identity.Actor
 	keystore *Keystore
@@ -106,8 +108,8 @@ func (s *Server) Handler() http.Handler { return s.mux }
 func (s *Server) Actor() identity.Actor { return s.actor }
 
 // Store returns the underlying event store. Tests use this to
-// pre-seed records.
-func (s *Server) Store() *Store { return s.store }
+// pre-seed records or assert counts.
+func (s *Server) Store() Store { return s.store }
 
 // Keystore returns the server's keystore for tests and admin
 // surfaces.
@@ -119,7 +121,12 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res := s.stateRes
-	res.HeadID = s.store.Head()
+	headID, err := s.store.Head(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, proto.ErrCodeServerError, err.Error())
+		return
+	}
+	res.HeadID = headID
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -187,9 +194,13 @@ func (s *Server) handleEventsPost(w http.ResponseWriter, r *http.Request) {
 	// Conflict detection: the client's `since` must match our
 	// current HEAD. If it does not, return 409 with the diverging
 	// tail so the client can rebase.
-	currentHead := s.store.Head()
+	currentHead, err := s.store.Head(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, proto.ErrCodeServerError, err.Error())
+		return
+	}
 	if req.Since != currentHead {
-		tail, err := s.store.Since(req.Since)
+		tail, err := s.store.Since(r.Context(), req.Since)
 		if err != nil {
 			// The client's cursor is unknown to us; surface as a
 			// conflict with empty tail so the client knows to
@@ -213,7 +224,7 @@ func (s *Server) handleEventsPost(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, proto.ErrCodeBadRequest, err.Error())
 			return
 		}
-		added, err := s.store.Append(rec)
+		added, err := s.store.Append(r.Context(), rec)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, proto.ErrCodeServerError, err.Error())
 			return
@@ -224,7 +235,12 @@ func (s *Server) handleEventsPost(w http.ResponseWriter, r *http.Request) {
 			res.Duplicates++
 		}
 	}
-	res.HeadID = s.store.Head()
+	headID, err := s.store.Head(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, proto.ErrCodeServerError, err.Error())
+		return
+	}
+	res.HeadID = headID
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -264,7 +280,7 @@ func (s *Server) verifyRecord(rec eventlog.Record) error {
 // cursor as Server-Sent Events.
 func (s *Server) handleEventsGet(w http.ResponseWriter, r *http.Request) {
 	cursor := r.URL.Query().Get("since")
-	tail, err := s.store.Since(cursor)
+	tail, err := s.store.Since(r.Context(), cursor)
 	if err != nil {
 		if errors.Is(err, ErrUnknownCursor) {
 			writeError(w, http.StatusBadRequest, proto.ErrCodeBadRequest, "unknown cursor")

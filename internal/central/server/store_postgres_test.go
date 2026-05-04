@@ -1,0 +1,345 @@
+package server
+
+import (
+	"context"
+	"errors"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/asabla/rex/internal/core/storage/eventlog"
+)
+
+// pgDSN returns the Postgres DSN from REX_PG_TEST_DSN. Tests
+// that need a real Postgres call this and t.Skip when unset so
+// `go test ./...` works on a developer's laptop without Docker
+// running. CI sets the env via the workflow's services: block.
+func pgDSN(t *testing.T) string {
+	t.Helper()
+	dsn := os.Getenv("REX_PG_TEST_DSN")
+	if dsn == "" {
+		t.Skip("REX_PG_TEST_DSN unset; skipping Postgres-backed test")
+	}
+	return dsn
+}
+
+// schemaSafeName turns a test name into a valid Postgres
+// identifier (lowercase + underscores). Postgres identifiers
+// max 63 chars; t.Name() can be longer for table-driven tests
+// but our tests stay well under.
+func schemaSafeName(t *testing.T) string {
+	t.Helper()
+	out := make([]byte, 0, len(t.Name())+8)
+	for i := 0; i < len(t.Name()); i++ {
+		c := t.Name()[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+			out = append(out, c)
+		case c >= 'A' && c <= 'Z':
+			out = append(out, c+32) // tolower
+		default:
+			out = append(out, '_')
+		}
+	}
+	return "rextest_" + string(out)
+}
+
+// freshPostgresStore returns a PostgresStore that operates
+// inside its own per-test Postgres schema. The schema is
+// dropped on test cleanup; running tests in parallel is safe
+// because each one carries its own table namespace. This is
+// what the Postgres docs call "schema-as-namespace" and it's
+// the cheapest way to get isolation without spinning up a
+// fresh database per test.
+//
+// search_path is appended to the DSN so every connection in
+// the pool defaults to the schema; the migrator and Store
+// queries don't need to know they're scoped.
+//
+// The function also returns the scoped DSN so tests that
+// re-open a connection (e.g. proving persistence across pool
+// lifetimes) can reach the same schema.
+func freshPostgresStore(t *testing.T) (*PostgresStore, string) {
+	t.Helper()
+	dsn := pgDSN(t)
+	schema := schemaSafeName(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Setup: drop the schema if it exists, then recreate. Use a
+	// dedicated short-lived pool so it doesn't clash with the
+	// test pool's connections.
+	cleanupPool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect for setup: %v", err)
+	}
+	for _, sql := range []string{
+		`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`,
+		`CREATE SCHEMA "` + schema + `"`,
+	} {
+		if _, err := cleanupPool.Exec(ctx, sql); err != nil {
+			cleanupPool.Close()
+			t.Fatalf("setup %q: %v", sql, err)
+		}
+	}
+	cleanupPool.Close()
+
+	scopedDSN := dsn
+	if dsn != "" && dsn[len(dsn)-1] == '?' {
+		scopedDSN = dsn + "search_path=" + schema
+	} else if !contains(dsn, "?") {
+		scopedDSN = dsn + "?search_path=" + schema
+	} else {
+		scopedDSN = dsn + "&search_path=" + schema
+	}
+
+	store, err := NewPostgresStore(ctx, scopedDSN)
+	if err != nil {
+		t.Fatalf("NewPostgresStore: %v", err)
+	}
+	t.Cleanup(func() {
+		store.Close()
+		// Drop the schema after the test so a long-lived test
+		// database doesn't accumulate per-test schemas across
+		// runs. Best-effort: a failing drop is logged but
+		// doesn't fail the test.
+		dropCtx, dropCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer dropCancel()
+		dropPool, err := pgxpool.New(dropCtx, dsn)
+		if err != nil {
+			t.Logf("post-test connect: %v", err)
+			return
+		}
+		defer dropPool.Close()
+		if _, err := dropPool.Exec(dropCtx, `DROP SCHEMA IF EXISTS "`+schema+`" CASCADE`); err != nil {
+			t.Logf("post-test drop schema %s: %v", schema, err)
+		}
+	})
+	return store, scopedDSN
+}
+
+// contains is a stdlib-strings-free shim so this file's
+// imports stay compact.
+func contains(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
+func TestPostgresStoreEmptyHead(t *testing.T) {
+	t.Parallel()
+
+	s, _ := freshPostgresStore(t)
+	ctx := context.Background()
+	head, err := s.Head(ctx)
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+	if head != "" {
+		t.Fatalf("empty head: got %q", head)
+	}
+	n, err := s.Len(ctx)
+	if err != nil {
+		t.Fatalf("Len: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("len: got %d", n)
+	}
+}
+
+func TestPostgresStoreAppendIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	s, _ := freshPostgresStore(t)
+	ctx := context.Background()
+	r := mkRec("r1")
+	r.Payload = []byte(`{"k":"v"}`)
+	r.Timestamp = eventlog.HLC{Wall: 1700000000, Logical: 7}
+
+	added, err := s.Append(ctx, r)
+	if err != nil {
+		t.Fatalf("first Append: %v", err)
+	}
+	if !added {
+		t.Fatal("first append should add")
+	}
+
+	added2, err := s.Append(ctx, r)
+	if err != nil {
+		t.Fatalf("dup Append: %v", err)
+	}
+	if added2 {
+		t.Fatal("duplicate append should not add")
+	}
+
+	n, err := s.Len(ctx)
+	if err != nil {
+		t.Fatalf("Len: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("len after dup: got %d want 1", n)
+	}
+	head, err := s.Head(ctx)
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+	if head != "r1" {
+		t.Fatalf("head: got %q", head)
+	}
+}
+
+func TestPostgresStoreAppendRejectsEmptyID(t *testing.T) {
+	t.Parallel()
+
+	s, _ := freshPostgresStore(t)
+	if _, err := s.Append(context.Background(), eventlog.Record{}); err == nil {
+		t.Fatal("expected error for empty id")
+	}
+}
+
+func TestPostgresStoreSinceEmptyCursorReturnsAllInOrder(t *testing.T) {
+	t.Parallel()
+
+	s, _ := freshPostgresStore(t)
+	ctx := context.Background()
+	for _, id := range []string{"a", "b", "c"} {
+		if _, err := s.Append(ctx, mkRec(id)); err != nil {
+			t.Fatalf("Append %s: %v", id, err)
+		}
+	}
+	got, err := s.Since(ctx, "")
+	if err != nil {
+		t.Fatalf("Since: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("len: got %d want 3", len(got))
+	}
+	for i, want := range []string{"a", "b", "c"} {
+		if got[i].ID != want {
+			t.Fatalf("at %d: got %q want %q", i, got[i].ID, want)
+		}
+	}
+}
+
+func TestPostgresStoreSinceCursorReturnsTail(t *testing.T) {
+	t.Parallel()
+
+	s, _ := freshPostgresStore(t)
+	ctx := context.Background()
+	for _, id := range []string{"a", "b", "c", "d"} {
+		_, _ = s.Append(ctx, mkRec(id))
+	}
+	got, err := s.Since(ctx, "b")
+	if err != nil {
+		t.Fatalf("Since: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len: got %d want 2", len(got))
+	}
+	if got[0].ID != "c" || got[1].ID != "d" {
+		t.Fatalf("ids: %+v", got)
+	}
+}
+
+func TestPostgresStoreSinceUnknownCursorErrors(t *testing.T) {
+	t.Parallel()
+
+	s, _ := freshPostgresStore(t)
+	ctx := context.Background()
+	if _, err := s.Append(ctx, mkRec("a")); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	_, err := s.Since(ctx, "ghost")
+	if !errors.Is(err, ErrUnknownCursor) {
+		t.Fatalf("got %v want ErrUnknownCursor", err)
+	}
+}
+
+func TestPostgresStoreSinceLatestReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	s, _ := freshPostgresStore(t)
+	ctx := context.Background()
+	for _, id := range []string{"a", "b"} {
+		_, _ = s.Append(ctx, mkRec(id))
+	}
+	got, err := s.Since(ctx, "b")
+	if err != nil {
+		t.Fatalf("Since: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty tail, got %d records", len(got))
+	}
+}
+
+func TestPostgresStorePreservesPayloadAndHLC(t *testing.T) {
+	t.Parallel()
+
+	s, _ := freshPostgresStore(t)
+	ctx := context.Background()
+	r := eventlog.Record{
+		ID:          "r-payload",
+		Type:        "test.payload",
+		Version:     2,
+		Actor:       "l-aaaaaaaaaaaaaaaa",
+		WorkspaceID: "ws-roundtrip",
+		Payload:     []byte(`{"key":"value","n":42}`),
+		Signature:   "deadbeef",
+		Timestamp:   eventlog.HLC{Wall: 1700000000123456789, Logical: 11},
+	}
+	if _, err := s.Append(ctx, r); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	tail, err := s.Since(ctx, "")
+	if err != nil {
+		t.Fatalf("Since: %v", err)
+	}
+	if len(tail) != 1 {
+		t.Fatalf("len: %d", len(tail))
+	}
+	got := tail[0]
+	if got.ID != r.ID || got.Type != r.Type || got.Version != r.Version ||
+		got.Actor != r.Actor || got.WorkspaceID != r.WorkspaceID ||
+		got.Signature != r.Signature {
+		t.Fatalf("scalar fields: got=%+v want=%+v", got, r)
+	}
+	if got.Timestamp != r.Timestamp {
+		t.Fatalf("HLC: got=%+v want=%+v", got.Timestamp, r.Timestamp)
+	}
+	if string(got.Payload) == "" {
+		t.Fatalf("payload empty after roundtrip")
+	}
+}
+
+func TestPostgresStoreSurvivesPoolReopen(t *testing.T) {
+	t.Parallel()
+
+	s, scopedDSN := freshPostgresStore(t)
+	ctx := context.Background()
+	for _, id := range []string{"a", "b", "c"} {
+		_, _ = s.Append(ctx, mkRec(id))
+	}
+	s.Close()
+
+	// New pool against the same scoped DSN — proves persistence
+	// across pool lifetimes within the per-test schema.
+	ctx2, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	s2, err := NewPostgresStore(ctx2, scopedDSN)
+	if err != nil {
+		t.Fatalf("re-open: %v", err)
+	}
+	t.Cleanup(s2.Close)
+	tail, err := s2.Since(ctx2, "")
+	if err != nil {
+		t.Fatalf("Since: %v", err)
+	}
+	if len(tail) != 3 {
+		t.Fatalf("len after reopen: got %d want 3", len(tail))
+	}
+}

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
@@ -203,7 +204,11 @@ func TestPushOneBadRecordRejectsWholeBatch(t *testing.T) {
 	}
 	// Atomicity: nothing was accepted (same server we authorized
 	// against).
-	if srv.Store().Len() != 0 {
-		t.Fatalf("partial batch leaked through: len=%d", srv.Store().Len())
+	n, err := srv.Store().Len(context.Background())
+	if err != nil {
+		t.Fatalf("Store().Len: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("partial batch leaked through: len=%d", n)
 	}
 }

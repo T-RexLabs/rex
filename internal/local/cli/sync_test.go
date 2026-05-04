@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"os"
@@ -122,7 +123,7 @@ func TestPullReceivesServerEvent(t *testing.T) {
 	t.Parallel()
 
 	srv, hs := startCentral(t)
-	_, _ = srv.Store().Append(eventlog.Record{
+	_, _ = srv.Store().Append(context.Background(), eventlog.Record{
 		ID: "srv-1", Type: "test.event", Version: 1,
 		Actor: "l-aaaaaaaaaaaaaaaa", WorkspaceID: "ws", Payload: json.RawMessage(`{}`),
 	})
@@ -143,7 +144,7 @@ func TestSyncDivergenceRendersConflict(t *testing.T) {
 	t.Parallel()
 
 	srv, hs := startCentral(t)
-	_, _ = srv.Store().Append(eventlog.Record{
+	_, _ = srv.Store().Append(context.Background(), eventlog.Record{
 		ID: "srv-1", Type: "test.event", Version: 1,
 		Actor: "l-aaaaaaaaaaaaaaaa", WorkspaceID: "ws", Payload: json.RawMessage(`{}`),
 	})

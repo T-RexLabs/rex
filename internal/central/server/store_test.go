@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -19,44 +20,59 @@ func mkRec(id string) eventlog.Record {
 func TestStoreEmptyHead(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	s := NewStore()
-	if s.Head() != "" {
-		t.Fatalf("empty store head: got %q", s.Head())
+	head, err := s.Head(ctx)
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+	if head != "" {
+		t.Fatalf("empty store head: got %q", head)
 	}
 }
 
 func TestStoreAppendIsIdempotent(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	s := NewStore()
 	r := mkRec("r1")
-	added, err := s.Append(r)
+	added, err := s.Append(ctx, r)
 	if err != nil {
 		t.Fatalf("Append: %v", err)
 	}
 	if !added {
 		t.Fatal("first append should add")
 	}
-	added2, err := s.Append(r)
+	added2, err := s.Append(ctx, r)
 	if err != nil {
 		t.Fatalf("Append duplicate: %v", err)
 	}
 	if added2 {
 		t.Fatal("duplicate append should not add")
 	}
-	if s.Len() != 1 {
-		t.Fatalf("len after duplicate: got %d want 1", s.Len())
+	n, err := s.Len(ctx)
+	if err != nil {
+		t.Fatalf("Len: %v", err)
 	}
-	if s.Head() != "r1" {
-		t.Fatalf("head: got %q", s.Head())
+	if n != 1 {
+		t.Fatalf("len after duplicate: got %d want 1", n)
+	}
+	head, err := s.Head(ctx)
+	if err != nil {
+		t.Fatalf("Head: %v", err)
+	}
+	if head != "r1" {
+		t.Fatalf("head: got %q", head)
 	}
 }
 
 func TestStoreAppendRejectsEmptyID(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	s := NewStore()
-	if _, err := s.Append(eventlog.Record{}); err == nil {
+	if _, err := s.Append(ctx, eventlog.Record{}); err == nil {
 		t.Fatal("expected error for empty id")
 	}
 }
@@ -64,11 +80,12 @@ func TestStoreAppendRejectsEmptyID(t *testing.T) {
 func TestStoreSinceEmptyCursorReturnsAll(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	s := NewStore()
 	for _, id := range []string{"a", "b", "c"} {
-		_, _ = s.Append(mkRec(id))
+		_, _ = s.Append(ctx, mkRec(id))
 	}
-	got, err := s.Since("")
+	got, err := s.Since(ctx, "")
 	if err != nil {
 		t.Fatalf("Since: %v", err)
 	}
@@ -85,11 +102,12 @@ func TestStoreSinceEmptyCursorReturnsAll(t *testing.T) {
 func TestStoreSinceCursorReturnsTail(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	s := NewStore()
 	for _, id := range []string{"a", "b", "c", "d"} {
-		_, _ = s.Append(mkRec(id))
+		_, _ = s.Append(ctx, mkRec(id))
 	}
-	got, err := s.Since("b")
+	got, err := s.Since(ctx, "b")
 	if err != nil {
 		t.Fatalf("Since: %v", err)
 	}
@@ -104,9 +122,10 @@ func TestStoreSinceCursorReturnsTail(t *testing.T) {
 func TestStoreSinceUnknownCursorErrors(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	s := NewStore()
-	_, _ = s.Append(mkRec("a"))
-	_, err := s.Since("ghost")
+	_, _ = s.Append(ctx, mkRec("a"))
+	_, err := s.Since(ctx, "ghost")
 	if !errors.Is(err, ErrUnknownCursor) {
 		t.Fatalf("got %v want ErrUnknownCursor", err)
 	}
@@ -115,11 +134,12 @@ func TestStoreSinceUnknownCursorErrors(t *testing.T) {
 func TestStoreSinceLatestReturnsEmpty(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	s := NewStore()
 	for _, id := range []string{"a", "b"} {
-		_, _ = s.Append(mkRec(id))
+		_, _ = s.Append(ctx, mkRec(id))
 	}
-	got, err := s.Since("b")
+	got, err := s.Since(ctx, "b")
 	if err != nil {
 		t.Fatalf("Since: %v", err)
 	}

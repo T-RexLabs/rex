@@ -17,6 +17,24 @@ jobs:
   test:
     name: build & test
     runs-on: ubuntu-latest
+    services:
+      # Postgres for the central-node store tests. Tests skip
+      # when REX_PG_TEST_DSN is unset (developer laptops without
+      # Docker), so this services: block is what makes them
+      # actually run in CI.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: rex_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      REX_PG_TEST_DSN: postgres://postgres:ci@127.0.0.1:5432/rex_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
 

@@ -20,6 +20,8 @@ Major shipped post-trunk pieces beyond the build order: hooks dispatcher, log ta
 - Run a single binary directly: `go run ./cmd/rex --version`
 - Validate every spec strictly: `go run ./cmd/rex spec validate specs/*.yaml` (zero errors, zero warnings is the bar)
 - Start the local web UI: `go run ./cmd/rex serve` (binds 127.0.0.1:7474 by default; loopback-only)
+- Run with the Postgres-backed central tests: `make pg-up && make test-pg` (starts a local Postgres container, runs the full suite with `REX_PG_TEST_DSN` set so the central `PostgresStore` tests don't skip; `make pg-down` cleans up)
+- Run rex-central with persistence: `rex-central serve --db 'postgres://...'` — without `--db` events go to an in-memory store and are lost on restart
 
 CI lives in `.github/workflows/ci.yml` and runs build, vet, race tests, `go mod tidy` drift check, and golangci-lint on every push and PR.
 

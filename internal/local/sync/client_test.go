@@ -74,7 +74,7 @@ func TestClientPushConflictReturnsTypedError(t *testing.T) {
 
 	srv, hs := newTestServer(t)
 	c := NewClient(hs.URL)
-	_, _ = srv.Store().Append(mkRec("seed"))
+	_, _ = srv.Store().Append(context.Background(), mkRec("seed"))
 
 	_, err := c.Push(context.Background(), "wrong", []eventlog.Record{mkRec("e1")})
 	if !IsConflict(err) {
@@ -94,7 +94,7 @@ func TestClientPullObservesAllEvents(t *testing.T) {
 
 	srv, hs := newTestServer(t)
 	for _, id := range []string{"a", "b", "c"} {
-		_, _ = srv.Store().Append(mkRec(id))
+		_, _ = srv.Store().Append(context.Background(), mkRec(id))
 	}
 	c := NewClient(hs.URL)
 	var got []string
@@ -120,7 +120,7 @@ func TestClientPullSinceCursorReturnsTail(t *testing.T) {
 
 	srv, hs := newTestServer(t)
 	for _, id := range []string{"a", "b", "c"} {
-		_, _ = srv.Store().Append(mkRec(id))
+		_, _ = srv.Store().Append(context.Background(), mkRec(id))
 	}
 	c := NewClient(hs.URL)
 	var got []string
@@ -141,7 +141,7 @@ func TestClientPullCallbackErrorAborts(t *testing.T) {
 
 	srv, hs := newTestServer(t)
 	for _, id := range []string{"a", "b", "c"} {
-		_, _ = srv.Store().Append(mkRec(id))
+		_, _ = srv.Store().Append(context.Background(), mkRec(id))
 	}
 	c := NewClient(hs.URL)
 	abort := errors.New("abort")
@@ -205,7 +205,7 @@ func TestSyncDivergenceReturnsConflict(t *testing.T) {
 	t.Parallel()
 
 	srv, hs := newTestServer(t)
-	_, _ = srv.Store().Append(mkRec("server-only"))
+	_, _ = srv.Store().Append(context.Background(), mkRec("server-only"))
 
 	wsRoot := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(wsRoot, ".rex"), 0o755); err != nil {
@@ -229,7 +229,7 @@ func TestSyncNoLocalChangesStillPulls(t *testing.T) {
 	t.Parallel()
 
 	srv, hs := newTestServer(t)
-	_, _ = srv.Store().Append(mkRec("server-only"))
+	_, _ = srv.Store().Append(context.Background(), mkRec("server-only"))
 
 	wsRoot := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(wsRoot, ".rex"), 0o755); err != nil {

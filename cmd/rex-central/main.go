@@ -57,13 +57,14 @@ func newServeCmd() *cobra.Command {
 		addr            string
 		shutdownTimeout time.Duration
 		keysFile        string
+		dbDSN           string
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Run the central HTTP server",
-		Long: `Starts the in-process central server on --addr (default
-127.0.0.1:8080). Honours SIGINT and SIGTERM with a graceful shutdown
-of up to --shutdown-timeout (default 15s) before forcing exit.
+		Long: `Starts the central server on --addr (default 127.0.0.1:8080).
+Honours SIGINT and SIGTERM with a graceful shutdown of up to
+--shutdown-timeout (default 15s) before forcing exit.
 
 When --keys <file> is set, the server loads an authorized-keys TOML
 file and verifies every pushed event's signature (sync.SEC.1).
@@ -71,9 +72,10 @@ Records signed by unregistered fingerprints or with invalid
 signatures are rejected with 401. Without --keys, signature
 verification is skipped (dev/test path only).
 
-V1 scope is the in-process minimum: in-memory event store, no
-multi-tenancy, no orgs. Postgres/Docker production deployment is
-post-v0.
+When --db <dsn> is set, events persist to Postgres via the schema
+the central node migrates on startup (central-node.DB.*). Without
+--db, the server uses an in-memory store — convenient for dev/test
+but loses every event on restart.
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := server.Options{}
@@ -86,6 +88,19 @@ post-v0.
 				fmt.Fprintf(cmd.OutOrStdout(),
 					"loaded %d authorized key(s) from %s\n",
 					len(ks.Handles()), keysFile)
+			}
+			if dbDSN != "" {
+				pg, err := server.NewPostgresStore(cmd.Context(), dbDSN)
+				if err != nil {
+					return fmt.Errorf("postgres store: %w", err)
+				}
+				defer pg.Close()
+				opts.Store = pg
+				fmt.Fprintln(cmd.OutOrStdout(),
+					"using postgres event store (schema migrated)")
+			} else {
+				fmt.Fprintln(cmd.OutOrStdout(),
+					"WARNING: no --db dsn — using in-memory store; events lost on restart")
 			}
 			s, err := server.New(opts)
 			if err != nil {
@@ -131,5 +146,6 @@ post-v0.
 	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:8080", "TCP address to listen on")
 	cmd.Flags().DurationVar(&shutdownTimeout, "shutdown-timeout", 15*time.Second, "max wait for graceful shutdown")
 	cmd.Flags().StringVar(&keysFile, "keys", "", "path to authorized-keys TOML file (signature verification off when empty)")
+	cmd.Flags().StringVar(&dbDSN, "db", "", "Postgres DSN (postgres://...); empty uses in-memory store")
 	return cmd
 }
