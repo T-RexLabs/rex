@@ -1,0 +1,56 @@
+{{define "title"}}rex — {{.Workspace.ID}}{{end}}
+
+{{define "content"}}
+<section class="overview">
+  <h1>{{.Workspace.Name}}</h1>
+  <dl class="kv">
+    <dt>id</dt><dd>{{.Workspace.ID}}</dd>
+    <dt>state</dt><dd><span class="pill pill-{{.Workspace.State}}">{{.Workspace.State}}</span></dd>
+    <dt>created</dt><dd>{{.Workspace.CreatedAt}}</dd>
+    <dt>specs</dt><dd>{{.SpecCount}}</dd>
+    <dt>runs</dt><dd>{{.RunCount}}</dd>
+    <dt>events total</dt><dd>{{.EventCount}}</dd>
+  </dl>
+</section>
+
+<section class="card">
+  <h2>recent runs</h2>
+  {{if .RecentRuns}}
+    <table class="table">
+      <thead><tr><th>run</th><th>status</th><th>started</th><th>events</th></tr></thead>
+      <tbody>
+        {{range .RecentRuns}}
+        <tr>
+          <td><a href="/runs/{{.RunID}}"><code>{{.RunID}}</code></a></td>
+          <td><span class="pill pill-{{.Status}}">{{.Status}}</span></td>
+          <td><time>{{.StartedAt}}</time></td>
+          <td>{{.NodeEvents}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p class="muted">no runs yet — run <code>rex run start --shell &lt;cmd&gt;</code> to seed one</p>
+  {{end}}
+</section>
+
+<section class="card">
+  <h2>remotes</h2>
+  {{if .Remotes}}
+    <table class="table">
+      <thead><tr><th>name</th><th>drafts</th><th>last sync</th></tr></thead>
+      <tbody>
+        {{range .Remotes}}
+        <tr>
+          <td>{{.Name}}</td>
+          <td>{{.Drafts}}</td>
+          <td><time>{{.LastSync}}</time></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p class="muted">no remotes registered — try <code>rex remote add</code></p>
+  {{end}}
+</section>
+{{end}}

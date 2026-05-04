@@ -1,0 +1,31 @@
+{{define "base"}}<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{block "title" .}}Rex{{end}}</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">rex</a>
+    <nav class="nav">
+      <a href="/">overview</a>
+      <a href="/specs">specs</a>
+      <a href="/runs">runs</a>
+      <a href="/audit">audit</a>
+      <a href="/remotes">remotes</a>
+    </nav>
+    <span class="ws-badge" title="workspace">
+      {{if .Workspace}}{{.Workspace.ID}}{{else}}(no workspace){{end}}
+    </span>
+  </header>
+  <main class="main">
+    {{block "content" .}}{{end}}
+  </main>
+  <footer class="footer">
+    <span>rex {{.Version}}</span>
+    <span class="muted">local-only — bound to {{.BindAddr}}</span>
+  </footer>
+</body>
+</html>{{end}}

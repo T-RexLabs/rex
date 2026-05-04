@@ -70,6 +70,7 @@ for each command group.`,
 	root.AddCommand(newSnapshotCmd())
 	root.AddCommand(newLogCmd())
 	root.AddCommand(newSearchCmd())
+	root.AddCommand(newServeCmd(version))
 
 	return root
 }

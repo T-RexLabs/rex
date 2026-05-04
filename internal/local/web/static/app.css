@@ -1,0 +1,167 @@
+/* Rex local UI — hand-written, no preprocessor (web-ui.STACK.3). */
+
+:root {
+  --bg: #fafafa;
+  --fg: #1a1a1a;
+  --muted: #6b6b6b;
+  --border: #d0d0d0;
+  --accent: #2e6fff;
+  --accent-fg: #ffffff;
+  --pill-active: #1f7a3a;
+  --pill-draft: #b8870a;
+  --pill-completed: #1f7a3a;
+  --pill-aborted: #b03434;
+  --pill-cancelled: #6b6b6b;
+  --pill-running: #2e6fff;
+  --code-bg: #f0f0f0;
+  --card-bg: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161616;
+    --fg: #ededed;
+    --muted: #8e8e8e;
+    --border: #303030;
+    --accent: #6a96ff;
+    --accent-fg: #0c0c0c;
+    --pill-active: #4ec168;
+    --pill-draft: #e0a93a;
+    --pill-completed: #4ec168;
+    --pill-aborted: #ef6868;
+    --pill-cancelled: #9a9a9a;
+    --pill-running: #6a96ff;
+    --code-bg: #232323;
+    --card-bg: #1d1d1d;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+code, pre, .mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--card-bg);
+}
+.brand { font-weight: 700; font-size: 1.05rem; }
+.nav { display: flex; gap: 1rem; flex-grow: 1; }
+.nav a { color: var(--fg); }
+.ws-badge {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  padding: 0.15rem 0.5rem;
+}
+
+.main {
+  max-width: 1100px;
+  margin: 1.5rem auto;
+  padding: 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 1rem 1.25rem;
+}
+.card h2 {
+  margin-top: 0;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  color: var(--muted);
+}
+
+.overview h1 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.6rem;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0;
+}
+.kv dt {
+  color: var(--muted);
+  text-transform: lowercase;
+}
+.kv dd { margin: 0; }
+
+.muted { color: var(--muted); }
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+.table thead th {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  text-transform: lowercase;
+  color: var(--muted);
+  font-weight: 500;
+}
+.table tbody td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+code {
+  background: var(--code-bg);
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.2rem;
+  font-size: 0.88em;
+}
+
+.pill {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: 1rem;
+  font-size: 0.8rem;
+  background: var(--code-bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+.pill-active, .pill-completed { background: var(--pill-active); color: white; border-color: transparent; }
+.pill-draft { background: var(--pill-draft); color: white; border-color: transparent; }
+.pill-aborted { background: var(--pill-aborted); color: white; border-color: transparent; }
+.pill-cancelled { background: var(--pill-cancelled); color: white; border-color: transparent; }
+.pill-running { background: var(--pill-running); color: white; border-color: transparent; }
+
+.footer {
+  max-width: 1100px;
+  margin: 2rem auto;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
