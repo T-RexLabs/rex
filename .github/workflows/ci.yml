@@ -45,8 +45,9 @@ jobs:
           cache: true
 
       # The Postgres service runs 17, but ubuntu-latest ships pg_dump 16,
-      # which refuses to dump from a newer server. Pull the matching
-      # client tools from the official PGDG repo.
+      # which refuses to dump from a newer server. Install the matching
+      # client tools from the official PGDG repo and put them ahead of
+      # the system pg_dump on PATH.
       - name: Install PostgreSQL 17 client
         run: |
           sudo install -d /usr/share/postgresql-common/pgdg
@@ -56,6 +57,7 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
 
       - name: Verify modules tidy
         run: |
