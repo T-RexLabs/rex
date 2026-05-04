@@ -96,3 +96,31 @@ func orStdout(w io.Writer) io.Writer {
 	}
 	return w
 }
+
+// useColor reports whether the CLI should emit ANSI escape codes for
+// w. Honours --no-color (cmd flag), NO_COLOR (env, per the de-facto
+// no-color.org convention), and TERM=dumb. When w is not a *os.File
+// pointing at a character device (i.e. a buffer in tests, or a pipe
+// in scripts), returns false so output stays clean for grep/awk
+// downstream.
+func useColor(cmd *cobra.Command, w io.Writer) bool {
+	noColor, _ := cmd.Flags().GetBool("no-color")
+	if noColor {
+		return false
+	}
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	if os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}

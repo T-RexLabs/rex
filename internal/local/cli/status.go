@@ -100,9 +100,9 @@ func runStatus(out interface{ Write([]byte) (int, error) }, root string, jsonOut
 	fmt.Fprintf(out, "hooks:       %d\n", hooks)
 	fmt.Fprintf(out, "schedules:   %d\n", schedules)
 	fmt.Fprintf(out, "events:      %d total\n", totalDrafts)
-	fmt.Fprintln(out, "current run: none (run-cli deferred)")
+	fmt.Fprintln(out, "current run: none")
 	if len(remotes) == 0 {
-		fmt.Fprintln(out, "remotes:     none (run `rex push --url ...` to attach)")
+		fmt.Fprintln(out, "remotes:     none (run `rex remote add <name> <url>` to attach)")
 		return nil
 	}
 	fmt.Fprintln(out, "remotes:")

@@ -17,15 +17,26 @@ import (
 )
 
 // newLogCmd returns the `rex log` parent and wires its leaves.
+//
+// Bare `rex log` runs the `tail` body with default flags so the
+// most common ergonomic ("just show me the recent events") works
+// without typing the subcommand. `rex log tail` keeps the full
+// flag surface for explicit invocation; existing scripts are
+// unaffected.
 func newLogCmd() *cobra.Command {
+	tail := newLogTailCmd()
 	cmd := &cobra.Command{
 		Use:   "log",
 		Short: "Query the workspace's audit log",
 		Long: `Reads .rex/events.log and presents recent or filtered audit
 entries (audit.QUERY.1). Full-text search across the log lands when
-the FTS index does (audit.QUERY.2).`,
+the FTS index does (audit.QUERY.2).
+
+With no subcommand, behaves like ` + "`rex log tail`" + ` with
+default flags. Pass --help on tail to see filter options.`,
+		RunE: tail.RunE,
 	}
-	cmd.AddCommand(newLogTailCmd())
+	cmd.AddCommand(tail)
 	return cmd
 }
 

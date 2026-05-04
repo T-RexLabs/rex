@@ -325,7 +325,10 @@ func newRunShowCmd() *cobra.Command {
 			if root == "" {
 				return errNoWorkspace
 			}
-			runID := args[0]
+			runID, err := resolveRunID(root, args[0])
+			if err != nil {
+				return err
+			}
 
 			records, err := loadRunEvents(root, runID)
 			if err != nil {
@@ -490,6 +493,41 @@ func loadRunEvents(workspaceRoot, runID string) ([]runRecord, error) {
 		}
 	}
 	return out, nil
+}
+
+// resolveRunID accepts either a full HLC run id or a unique prefix
+// of one and returns the canonical id. Run IDs are 22+ characters of
+// HLC, which makes copy-paste the only realistic interactive flow;
+// accepting prefixes (git-style) is the obvious ergonomic. Errors
+// when the prefix matches no run or matches more than one (the
+// latter lists the candidates so the user can disambiguate).
+func resolveRunID(workspaceRoot, given string) (string, error) {
+	summaries, err := readRunSummaries(workspaceRoot)
+	if err != nil {
+		return "", err
+	}
+	// Exact match wins immediately so a full id never pays the
+	// scan cost of "could this be a prefix".
+	for _, s := range summaries {
+		if s.RunID == given {
+			return given, nil
+		}
+	}
+	var matches []string
+	for _, s := range summaries {
+		if strings.HasPrefix(s.RunID, given) {
+			matches = append(matches, s.RunID)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("no events found for run %q", given)
+	case 1:
+		return matches[0], nil
+	default:
+		return "", fmt.Errorf("run id %q is ambiguous; matches %d runs: %s",
+			given, len(matches), strings.Join(matches, ", "))
+	}
 }
 
 // openReaderForPath wraps eventlog.OpenReader to return (nil, nil) when

@@ -370,12 +370,18 @@ func resolveShortACIDAcrossWorkspace(cmd *cobra.Command, ws *specfmt.Workspace, 
 
 // pathsFromArgs maps positional arguments to spec file paths. When
 // args is empty, walks the workspace's specs/ directory. workspaceFlag
-// overrides the CWD-walk. Errors are returned for unresolvable args.
+// overrides the CWD-walk. Errors are returned for unresolvable args
+// — including errNoWorkspace when args is empty and neither --workspace
+// nor a CWD-anchored .rex/ exists, so the caller surfaces the same
+// "no rex workspace" message every other top-level command does.
 func pathsFromArgs(args []string, workspaceFlag string) ([]string, error) {
 	if len(args) == 0 {
 		root, err := workspaceRootFor(workspaceFlag)
 		if err != nil {
 			return nil, err
+		}
+		if root == "" {
+			return nil, errNoWorkspace
 		}
 		return listSpecFiles(specDir(root))
 	}
