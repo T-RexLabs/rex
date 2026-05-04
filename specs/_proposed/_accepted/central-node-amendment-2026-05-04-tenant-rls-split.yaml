@@ -1,0 +1,45 @@
+# Proposed amendment to specs/central-node.yaml.
+#
+# Status:    accepted
+# Folded:    2026-05-04 — task description split + new tenant-rls task added.
+# Surfaced by:
+#   Mid-implementation review of tenant-routing. The original
+#   task description (post the multi-tenancy-design fold)
+#   bundled four things: schema v3 (workspaces + org_id),
+#   schema v4 (RLS), the middleware, and workspace binding.
+#   Implementing v4 RLS requires every PostgresStore method to
+#   wrap its query in a transaction and SET LOCAL
+#   app.current_org_id, plus updating every existing
+#   PostgresStore test to provide an org context — a refactor
+#   that materially expands the tenant-routing diff.
+#
+# Splitting RLS out keeps each PR coherent and reviewable. The
+# primary scoping (middleware + workspace binding + org_id
+# column) catches every real request; RLS as defense-in-depth
+# fires only when the middleware fails to scope, which is
+# exactly the safety-net role DB.2 names. Shipping primary
+# scoping first means real multi-tenant isolation works today;
+# RLS hardens it in the follow-up.
+
+target: central-node
+amendment_kind: additive
+
+changes:
+  - kind: clarify-task-description
+    spec: central-node
+    task_id: tenant-routing
+    new_description: "Implement the tenant-routing middleware that scopes every request to an org based on the authenticated identity's membership and the workspace->org table; add the workspaces table, the org_id column on events, and the migration backfill via the default org seed. Defense-in-depth Row Level Security policies land separately under tenant-rls."
+
+  - kind: add-task
+    spec: central-node
+    task:
+      id: tenant-rls
+      description: "Add Postgres Row Level Security policies on the multi-tenant tables (events, workspaces) and refactor PostgresStore methods to set app.current_org_id per transaction; defense-in-depth on top of the middleware-level scoping that ships with tenant-routing"
+      state: todo
+      references: [DB.2]
+
+# Folding instructions (applied):
+#
+#   1. Update tenant-routing description in central-node.yaml.
+#   2. Append tenant-rls to the tasks block.
+#   3. Bump metadata.updated_at to 2026-05-04 (already current).

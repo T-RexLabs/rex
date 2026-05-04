@@ -36,9 +36,14 @@ tasks:
     references: [DB.1, DB.2, DB.3]
 
   - id: tenant-routing
-    description: "Implement the tenant-routing middleware that scopes every request to an org based on the authenticated identity's membership and the workspace->org table; add the workspaces table, the org_id column on events, the migration backfill via the default org seed, and Row Level Security policies as defense-in-depth"
-    state: todo
+    description: "Implement the tenant-routing middleware that scopes every request to an org based on the authenticated identity's membership and the workspace->org table; add the workspaces table, the org_id column on events, and the migration backfill via the default org seed. Defense-in-depth Row Level Security policies land separately under tenant-rls."
+    state: done
     references: [TENANT.1, TENANT.2, TENANT.3]
+
+  - id: tenant-rls
+    description: "Add Postgres Row Level Security policies on the multi-tenant tables (events, workspaces) and refactor PostgresStore methods to set app.current_org_id per transaction; defense-in-depth on top of the middleware-level scoping that ships with tenant-routing"
+    state: todo
+    references: [DB.2]
 
   - id: admin-bootstrap
     description: "Implement the first-run admin bootstrap flow (initial org, initial admin identity)"

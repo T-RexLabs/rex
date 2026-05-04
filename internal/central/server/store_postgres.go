@@ -76,12 +76,21 @@ func (s *PostgresStore) Close() {
 	}
 }
 
-// Head returns the id of the row with the largest insertion_seq,
-// or empty when the table is empty.
+// Head returns the id of the row with the largest insertion_seq
+// for the request's org (read from ctx via OrgIDFromContext), or
+// empty when the org has no rows. Multi-tenant scoping: the
+// query filters by org_id so cross-org peeking is impossible at
+// the application layer; tenant-rls will add Postgres-level RLS
+// as defense-in-depth.
 func (s *PostgresStore) Head(ctx context.Context) (string, error) {
+	orgID := OrgIDFromContext(ctx)
+	if orgID == "" {
+		return "", errors.New("server: head requires an org id on context (use WithOrgID)")
+	}
 	var id string
 	err := s.pool.QueryRow(ctx,
-		`SELECT id FROM events ORDER BY insertion_seq DESC LIMIT 1`,
+		`SELECT id FROM events WHERE org_id = $1 ORDER BY insertion_seq DESC LIMIT 1`,
+		orgID,
 	).Scan(&id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -94,21 +103,59 @@ func (s *PostgresStore) Head(ctx context.Context) (string, error) {
 
 // Append inserts rec, idempotent on the id PK. Returns
 // added=true on a fresh insert, added=false on a duplicate.
+//
+// Multi-tenant scoping: the request's org id must be stamped on
+// ctx via WithOrgID — Append refuses an unscoped context so the
+// middleware can never fail closed silently. The append runs
+// inside a transaction:
+//
+//   1. Workspace binding (ORG.6-note "first-push-wins"): if the
+//      record carries a workspace_id, INSERT the binding row
+//      ON CONFLICT DO NOTHING. Subsequent pushes for the same
+//      workspace_id from a member of a different org will hit
+//      the workspace's stored org_id mismatch check (added with
+//      tenant-routing middleware).
+//   2. Insert the event row with org_id set from the context.
 func (s *PostgresStore) Append(ctx context.Context, rec eventlog.Record) (bool, error) {
 	if rec.ID == "" {
 		return false, errors.New("server: append requires a non-empty record id")
 	}
-	// Payload is already JSON; use it as-is.
+	orgID := OrgIDFromContext(ctx)
+	if orgID == "" {
+		return false, errors.New("server: append requires an org id on context (use WithOrgID)")
+	}
 	payload := rec.Payload
 	if len(payload) == 0 {
 		payload = json.RawMessage("null")
 	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("server: begin tx for append: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // commit overrides
+
+	// Workspace binding: idempotent on (id) PK. ON CONFLICT
+	// DO NOTHING means a second push from a different org
+	// silently keeps the original binding; the tenant-routing
+	// middleware checks the binding earlier and surfaces the
+	// org mismatch with 403 before Append is reached.
+	if rec.WorkspaceID != "" {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO workspaces (id, org_id, first_actor)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (id) DO NOTHING
+		`, rec.WorkspaceID, orgID, rec.Actor); err != nil {
+			return false, fmt.Errorf("server: bind workspace: %w", err)
+		}
+	}
+
 	var id string
-	err := s.pool.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		INSERT INTO events (
 			id, hlc_wall, hlc_logical,
-			type, version, actor, workspace_id, payload, signature
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			type, version, actor, workspace_id, payload, signature, org_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO NOTHING
 		RETURNING id
 	`,
@@ -121,20 +168,54 @@ func (s *PostgresStore) Append(ctx context.Context, rec eventlog.Record) (bool, 
 		rec.WorkspaceID,
 		[]byte(payload),
 		rec.Signature,
+		orgID,
 	).Scan(&id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			if commitErr := tx.Commit(ctx); commitErr != nil {
+				return false, fmt.Errorf("server: commit dup append: %w", commitErr)
+			}
 			return false, nil // duplicate id
 		}
 		return false, fmt.Errorf("server: append: %w", err)
 	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("server: commit append: %w", err)
+	}
 	return true, nil
 }
 
+// WorkspaceOrg returns the org id bound to a workspace_id, or
+// empty + false when no binding exists. Used by the
+// tenant-routing middleware to enforce ORG.6-note
+// "first-push-wins" — if a binding already exists, subsequent
+// pushes must come from a member of that org.
+func (s *PostgresStore) WorkspaceOrg(ctx context.Context, workspaceID string) (string, bool, error) {
+	var orgID string
+	err := s.pool.QueryRow(ctx,
+		`SELECT org_id::text FROM workspaces WHERE id = $1`,
+		workspaceID,
+	).Scan(&orgID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("server: workspace org: %w", err)
+	}
+	return orgID, true, nil
+}
+
 // Since returns the records strictly after cursor in
-// insertion_seq order. Empty cursor returns the full table;
-// unknown cursor returns ErrUnknownCursor.
+// insertion_seq order, scoped to the request's org. Empty
+// cursor returns every row in the org; unknown cursor returns
+// ErrUnknownCursor. The cursor's existence check is also
+// org-scoped — a cursor pointing at another org's row reads as
+// unknown, not as a head-mid-other-org peek.
 func (s *PostgresStore) Since(ctx context.Context, cursor string) ([]eventlog.Record, error) {
+	orgID := OrgIDFromContext(ctx)
+	if orgID == "" {
+		return nil, errors.New("server: since requires an org id on context (use WithOrgID)")
+	}
 	var (
 		rows pgx.Rows
 		err  error
@@ -144,26 +225,25 @@ func (s *PostgresStore) Since(ctx context.Context, cursor string) ([]eventlog.Re
 			SELECT id, hlc_wall, hlc_logical,
 			       type, version, actor, workspace_id, payload, signature
 			FROM events
+			WHERE org_id = $1
 			ORDER BY insertion_seq
-		`)
+		`, orgID)
 	} else {
-		// Resolve the cursor in a CTE; an unknown cursor leaves
-		// `cur` empty so the EXISTS gate short-circuits to 0
-		// rows. The trailing existence check below distinguishes
-		// "no rows because cursor is the head" from "no rows
-		// because cursor was never seen". A naive
-		// COALESCE(-1) here would silently return the entire
-		// table on an unknown cursor — wrong, and what an early
-		// version of this code did.
+		// CTE resolves the cursor's insertion_seq in the same
+		// org; if the cursor doesn't belong to this org the CTE
+		// is empty and EXISTS short-circuits to 0 rows, then the
+		// trailing existence check upgrades empty to
+		// ErrUnknownCursor.
 		rows, err = s.pool.Query(ctx, `
-			WITH cur AS (SELECT insertion_seq FROM events WHERE id = $1)
+			WITH cur AS (SELECT insertion_seq FROM events WHERE id = $1 AND org_id = $2)
 			SELECT id, hlc_wall, hlc_logical,
 			       type, version, actor, workspace_id, payload, signature
 			FROM events
-			WHERE EXISTS (SELECT 1 FROM cur)
+			WHERE org_id = $2
+			  AND EXISTS (SELECT 1 FROM cur)
 			  AND insertion_seq > (SELECT insertion_seq FROM cur)
 			ORDER BY insertion_seq
-		`, cursor)
+		`, cursor, orgID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("server: since: %w", err)
@@ -197,13 +277,15 @@ func (s *PostgresStore) Since(ctx context.Context, cursor string) ([]eventlog.Re
 	}
 
 	// If a non-empty cursor returned 0 rows, distinguish "cursor
-	// is the head" from "cursor was never seen". The cheapest
-	// way is one extra existence check.
+	// is the head" from "cursor was never seen in this org". The
+	// existence check is org-scoped — a cursor that exists in a
+	// different org reads as unknown, not as a head-mid-other-
+	// org peek.
 	if cursor != "" && len(out) == 0 {
 		var exists bool
 		if err := s.pool.QueryRow(ctx,
-			`SELECT EXISTS(SELECT 1 FROM events WHERE id = $1)`,
-			cursor,
+			`SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND org_id = $2)`,
+			cursor, orgID,
 		).Scan(&exists); err != nil {
 			return nil, fmt.Errorf("server: since cursor-exists: %w", err)
 		}
@@ -214,11 +296,18 @@ func (s *PostgresStore) Since(ctx context.Context, cursor string) ([]eventlog.Re
 	return out, nil
 }
 
-// Len returns the total row count.
+// Len returns the row count for the request's org. An unscoped
+// ctx errors rather than counting all rows — same defense-in-
+// depth shape as Append/Since/Head.
 func (s *PostgresStore) Len(ctx context.Context) (int, error) {
+	orgID := OrgIDFromContext(ctx)
+	if orgID == "" {
+		return 0, errors.New("server: len requires an org id on context (use WithOrgID)")
+	}
 	var n int
 	if err := s.pool.QueryRow(ctx,
-		`SELECT count(*) FROM events`,
+		`SELECT count(*) FROM events WHERE org_id = $1`,
+		orgID,
 	).Scan(&n); err != nil {
 		return 0, fmt.Errorf("server: len: %w", err)
 	}
@@ -317,6 +406,66 @@ var schemaSteps = []string{
 			SELECT 'default', 'Default organization'
 			WHERE NOT EXISTS (SELECT 1 FROM orgs WHERE name = 'default');
 	`,
+
+	// 3: workspaces table + org_id column on events
+	//    (central-node.TENANT.1, identity-and-trust.ORG.6,
+	//    DB.2's "every row in every multi-tenant table carries
+	//    an org_id column").
+	//
+	// workspaces is the binding between workspace_id strings
+	// (free-form text on the event payload) and the org that
+	// owns them. ORG.6-note: first-push-wins — the row is
+	// created on first observation; subsequent pushes for the
+	// same workspace_id must come from members of the same org.
+	//
+	// Backfill: existing single-tenant deployments bound to
+	// schema v1 have events.workspace_id values with no
+	// matching workspaces row. The migration walks events,
+	// creates a workspaces row per distinct id (bound to
+	// 'default' org), then backfills events.org_id from
+	// workspaces.org_id, then makes events.org_id NOT NULL.
+	`
+		CREATE TABLE IF NOT EXISTS workspaces (
+			id           TEXT PRIMARY KEY,
+			org_id       UUID NOT NULL REFERENCES orgs(id),
+			created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+			first_actor  TEXT NOT NULL DEFAULT ''
+		);
+		CREATE INDEX IF NOT EXISTS workspaces_org_id_idx ON workspaces(org_id);
+
+		INSERT INTO workspaces (id, org_id)
+			SELECT DISTINCT e.workspace_id, o.id
+			FROM   events e
+			CROSS JOIN orgs o
+			WHERE  e.workspace_id <> ''
+			AND    o.name = 'default'
+		ON CONFLICT (id) DO NOTHING;
+
+		ALTER TABLE events ADD COLUMN IF NOT EXISTS org_id UUID;
+
+		UPDATE events e SET org_id = w.org_id
+		FROM   workspaces w
+		WHERE  e.workspace_id = w.id
+		AND    e.org_id IS NULL;
+
+		UPDATE events SET org_id = (SELECT id FROM orgs WHERE name = 'default')
+		WHERE  org_id IS NULL;
+
+		ALTER TABLE events ALTER COLUMN org_id SET NOT NULL;
+		ALTER TABLE events ADD CONSTRAINT events_org_id_fkey
+			FOREIGN KEY (org_id) REFERENCES orgs(id);
+		CREATE INDEX IF NOT EXISTS events_org_id_idx ON events(org_id);
+	`,
+
+	// NOTE: schema v4 (Row Level Security) is deferred to a
+	// dedicated tenant-rls task. RLS is defense-in-depth on top
+	// of the application-level middleware that ships in v3 +
+	// the workspaces binding; shipping it here would force a
+	// broader Store-method refactor (SET LOCAL on every query
+	// inside a transaction) that doesn't fit the
+	// tenant-routing scope. See specs/_proposed/_accepted/
+	// central-node-amendment-2026-05-04-tenant-rls-split.yaml
+	// for the rationale.
 }
 
 // DefaultOrgName is the seeded org's name. Used by

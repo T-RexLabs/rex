@@ -49,18 +49,16 @@ func schemaSafeName(t *testing.T) string {
 // freshPostgresStore returns a PostgresStore that operates
 // inside its own per-test Postgres schema. The schema is
 // dropped on test cleanup; running tests in parallel is safe
-// because each one carries its own table namespace. This is
-// what the Postgres docs call "schema-as-namespace" and it's
-// the cheapest way to get isolation without spinning up a
-// fresh database per test.
+// because each one carries its own table namespace.
 //
-// search_path is appended to the DSN so every connection in
-// the pool defaults to the schema; the migrator and Store
-// queries don't need to know they're scoped.
+// Tests that need the default org id (every PostgresStore.Append
+// since tenant-routing landed) call defaultOrgCtx(t, store) to
+// build a request-shaped context. Same call site convenience as
+// WithOrgID(ctx, ...) but resolves the default org once.
 //
-// The function also returns the scoped DSN so tests that
-// re-open a connection (e.g. proving persistence across pool
-// lifetimes) can reach the same schema.
+// Returns the scoped DSN so tests that re-open a connection
+// (e.g. proving persistence across pool lifetimes) can reach
+// the same schema.
 func freshPostgresStore(t *testing.T) (*PostgresStore, string) {
 	t.Helper()
 	dsn := pgDSN(t)
@@ -131,11 +129,25 @@ func contains(s, sub string) bool {
 	return false
 }
 
+// defaultOrgCtx returns a context stamped with the default org's
+// id — the shape PostgresStore.Append expects. Used by every
+// PostgresStore test that exercises Append/Since/Head/Len. The
+// default org row is seeded by schema step 2; LookupOrg is the
+// canonical accessor.
+func defaultOrgCtx(t *testing.T, store *PostgresStore) context.Context {
+	t.Helper()
+	org, err := store.LookupOrg(context.Background(), DefaultOrgName)
+	if err != nil {
+		t.Fatalf("LookupOrg(default): %v", err)
+	}
+	return WithOrgID(context.Background(), org.ID)
+}
+
 func TestPostgresStoreEmptyHead(t *testing.T) {
 	t.Parallel()
 
 	s, _ := freshPostgresStore(t)
-	ctx := context.Background()
+	ctx := defaultOrgCtx(t, s)
 	head, err := s.Head(ctx)
 	if err != nil {
 		t.Fatalf("Head: %v", err)
@@ -156,7 +168,7 @@ func TestPostgresStoreAppendIsIdempotent(t *testing.T) {
 	t.Parallel()
 
 	s, _ := freshPostgresStore(t)
-	ctx := context.Background()
+	ctx := defaultOrgCtx(t, s)
 	r := mkRec("r1")
 	r.Payload = []byte(`{"k":"v"}`)
 	r.Timestamp = eventlog.HLC{Wall: 1700000000, Logical: 7}
@@ -206,7 +218,7 @@ func TestPostgresStoreSinceEmptyCursorReturnsAllInOrder(t *testing.T) {
 	t.Parallel()
 
 	s, _ := freshPostgresStore(t)
-	ctx := context.Background()
+	ctx := defaultOrgCtx(t, s)
 	for _, id := range []string{"a", "b", "c"} {
 		if _, err := s.Append(ctx, mkRec(id)); err != nil {
 			t.Fatalf("Append %s: %v", id, err)
@@ -230,7 +242,7 @@ func TestPostgresStoreSinceCursorReturnsTail(t *testing.T) {
 	t.Parallel()
 
 	s, _ := freshPostgresStore(t)
-	ctx := context.Background()
+	ctx := defaultOrgCtx(t, s)
 	for _, id := range []string{"a", "b", "c", "d"} {
 		_, _ = s.Append(ctx, mkRec(id))
 	}
@@ -250,7 +262,7 @@ func TestPostgresStoreSinceUnknownCursorErrors(t *testing.T) {
 	t.Parallel()
 
 	s, _ := freshPostgresStore(t)
-	ctx := context.Background()
+	ctx := defaultOrgCtx(t, s)
 	if _, err := s.Append(ctx, mkRec("a")); err != nil {
 		t.Fatalf("Append: %v", err)
 	}
@@ -264,7 +276,7 @@ func TestPostgresStoreSinceLatestReturnsEmpty(t *testing.T) {
 	t.Parallel()
 
 	s, _ := freshPostgresStore(t)
-	ctx := context.Background()
+	ctx := defaultOrgCtx(t, s)
 	for _, id := range []string{"a", "b"} {
 		_, _ = s.Append(ctx, mkRec(id))
 	}
@@ -281,7 +293,7 @@ func TestPostgresStorePreservesPayloadAndHLC(t *testing.T) {
 	t.Parallel()
 
 	s, _ := freshPostgresStore(t)
-	ctx := context.Background()
+	ctx := defaultOrgCtx(t, s)
 	r := eventlog.Record{
 		ID:          "r-payload",
 		Type:        "test.payload",
@@ -320,7 +332,7 @@ func TestPostgresStoreSurvivesPoolReopen(t *testing.T) {
 	t.Parallel()
 
 	s, scopedDSN := freshPostgresStore(t)
-	ctx := context.Background()
+	ctx := defaultOrgCtx(t, s)
 	for _, id := range []string{"a", "b", "c"} {
 		_, _ = s.Append(ctx, mkRec(id))
 	}
@@ -335,6 +347,10 @@ func TestPostgresStoreSurvivesPoolReopen(t *testing.T) {
 		t.Fatalf("re-open: %v", err)
 	}
 	t.Cleanup(s2.Close)
+	// Use the freshly reopened store to resolve the default org
+	// id and re-stamp ctx2 — the org id isn't carried across
+	// pools.
+	ctx2 = defaultOrgCtx(t, s2)
 	tail, err := s2.Since(ctx2, "")
 	if err != nil {
 		t.Fatalf("Since: %v", err)

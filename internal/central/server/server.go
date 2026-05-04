@@ -157,12 +157,38 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	// request requires a Bearer token issued via the handshake
 	// (sync.API.5). When unset, the server runs in dev mode and
 	// passes the token check.
+	var fingerprint string
 	if !s.keystore.Empty() {
-		if _, err := s.requireToken(r); err != nil {
+		fp, err := s.requireToken(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, proto.ErrCodeUnauthorized, err.Error())
 			return
 		}
+		fingerprint = fp.String()
 	}
+
+	// Tenant routing: resolve the org for this request and stamp
+	// it on the request context (TENANT.1, TENANT.4). The
+	// PostgresStore reads OrgIDFromContext on every Append/Since/
+	// Head/Len; without it those calls fail rather than silently
+	// query unscoped (defense in depth at the application layer
+	// until tenant-rls adds Postgres-level RLS).
+	if fingerprint != "" {
+		orgID, _, err := s.resolveOrgForRequest(r, fingerprint)
+		if err != nil {
+			var te *tenantStatusError
+			if errors.As(err, &te) {
+				writeError(w, te.status, te.code, te.msg)
+			} else {
+				writeError(w, http.StatusInternalServerError, proto.ErrCodeServerError, err.Error())
+			}
+			return
+		}
+		if orgID != "" {
+			r = r.WithContext(WithOrgID(r.Context(), orgID))
+		}
+	}
+
 	switch r.Method {
 	case http.MethodGet:
 		s.handleEventsGet(w, r)
@@ -217,6 +243,25 @@ func (s *Server) handleEventsPost(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusBadRequest, proto.ErrCodeBadRequest, err.Error())
 				return
 			}
+		}
+	}
+
+	// Workspace binding (ORG.6-note "first-push-wins"). When
+	// the request has an org context (PostgresStore + tenant
+	// routing path), reject if any pushed record references a
+	// workspace already bound to a different org.
+	if orgID := OrgIDFromContext(r.Context()); orgID != "" {
+		recs := make([]recordWithWorkspace, len(req.Events))
+		for i, e := range req.Events {
+			recs[i] = recordWithWorkspace{WorkspaceID: e.WorkspaceID}
+		}
+		if err := s.enforceWorkspaceBinding(r.Context(), orgID, recs); err != nil {
+			s.log.Warn("push: workspace binding mismatch",
+				"op", "push",
+				"err", err.Error(),
+			)
+			writeError(w, http.StatusForbidden, "workspace_org_mismatch", err.Error())
+			return
 		}
 	}
 
