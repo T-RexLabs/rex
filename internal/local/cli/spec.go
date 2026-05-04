@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 
 	"github.com/asabla/rex/internal/core/specfmt"
 )
@@ -22,12 +24,142 @@ func newSpecCmd() *cobra.Command {
 YAML file under .rex/specs/<id>.yaml; the format is described by
 specs/spec-format.yaml.`,
 	}
+	cmd.AddCommand(newSpecCreateCmd())
 	cmd.AddCommand(newSpecValidateCmd())
 	cmd.AddCommand(newSpecListCmd())
 	cmd.AddCommand(newSpecShowCmd())
 	cmd.AddCommand(newSpecACIDCmd())
 	return cmd
 }
+
+func newSpecCreateCmd() *cobra.Command {
+	var (
+		workspaceFlag string
+		templateFlag  string
+		nameFlag      string
+		stateFlag     string
+		force         bool
+	)
+	cmd := &cobra.Command{
+		Use:   "create <id>",
+		Short: "Create a new spec from the workspace's default template (or named template)",
+		Long: `Writes .rex/specs/<id>.yaml. With --template <id> the new spec
+inherits the named template's tasks/components/constraints/extra
+(template-marker keys stripped). Without --template, falls back to
+the workspace's default template (extra.default_template_id in
+.rex/workspace.yaml) if set, then to a minimal v1-shaped skeleton.
+
+Refuses to overwrite an existing spec unless --force is passed.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			if !specfmt.IsKebab(id) {
+				return fmt.Errorf("spec id %q is not kebab-case", id)
+			}
+			root, err := workspaceRootForOrError(workspaceFlag)
+			if err != nil {
+				return err
+			}
+
+			template, err := resolveTemplateForCreate(root, templateFlag)
+			if err != nil {
+				return err
+			}
+
+			doc, err := specfmt.NewSpecFromTemplate(specfmt.ScaffoldOptions{
+				ID:       id,
+				Name:     nameFlag,
+				State:    stateFlag,
+				Template: template,
+			})
+			if err != nil {
+				return err
+			}
+
+			path := filepath.Join(specDir(root), id+".yaml")
+			if !force {
+				if _, err := os.Stat(path); err == nil {
+					return fmt.Errorf("%s already exists; pass --force to overwrite", path)
+				}
+			}
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				return fmt.Errorf("create specs dir: %w", err)
+			}
+			body, err := yaml.Marshal(doc)
+			if err != nil {
+				return fmt.Errorf("marshal spec: %w", err)
+			}
+			if err := os.WriteFile(path, body, 0o644); err != nil {
+				return fmt.Errorf("write %s: %w", path, err)
+			}
+			from := "minimal skeleton"
+			if template != nil {
+				from = fmt.Sprintf("template %q", template.Metadata.ID)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "created %s (from %s)\n", path, from)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
+	cmd.Flags().StringVar(&templateFlag, "template", "", "template spec id to inherit shape from (overrides workspace default)")
+	cmd.Flags().StringVar(&nameFlag, "name", "", "human-readable name (default: spec id)")
+	cmd.Flags().StringVar(&stateFlag, "state", "draft", "metadata.state for the new spec")
+	cmd.Flags().BoolVar(&force, "force", false, "overwrite an existing spec at .rex/specs/<id>.yaml")
+	return cmd
+}
+
+// resolveTemplateForCreate picks the template a `spec create` should
+// scaffold from. Precedence:
+//   - explicit --template flag (must exist or error)
+//   - workspace.yaml's extra.default_template_id (must exist or error)
+//   - none (returns nil; scaffolds a minimal skeleton)
+func resolveTemplateForCreate(root, explicit string) (*specfmt.Document, error) {
+	id := explicit
+	if id == "" {
+		id = workspaceDefaultTemplateID(root)
+	}
+	if id == "" {
+		return nil, nil
+	}
+	paths, err := listSpecFiles(specDir(root))
+	if err != nil {
+		return nil, err
+	}
+	ws, _, err := loadWorkspace(paths)
+	if err != nil {
+		return nil, err
+	}
+	t := ws.Template(id)
+	if t == nil {
+		return nil, fmt.Errorf("template %q not found in workspace (or extra.template != true)", id)
+	}
+	return t, nil
+}
+
+// workspaceDefaultTemplateID reads .rex/workspace.yaml and returns
+// extra.default_template_id when set. Best-effort; never blocks.
+func workspaceDefaultTemplateID(root string) string {
+	body, err := os.ReadFile(filepath.Join(root, metaDirName, "workspace.yaml"))
+	if err != nil {
+		return ""
+	}
+	// Minimal extraction — workspace.yaml is small and we only
+	// need this one key. Avoid pulling in a structured decoder.
+	var raw map[string]any
+	if err := yaml.Unmarshal(body, &raw); err != nil {
+		return ""
+	}
+	extra, ok := raw[ExtraKey].(map[string]any)
+	if !ok {
+		return ""
+	}
+	v, _ := extra[specfmt.ExtraDefaultTemplateID].(string)
+	return v
+}
+
+// ExtraKey is the workspace.yaml top-level key that mirrors a
+// spec's extra block. Same name; different document type.
+const ExtraKey = "extra"
 
 func newSpecValidateCmd() *cobra.Command {
 	var lenient bool
