@@ -1,0 +1,34 @@
+{{define "title"}}rex — specs{{end}}
+
+{{define "content"}}
+<section class="overview">
+  <h1>specs</h1>
+  <p class="muted">
+    {{len .Specs}} spec{{if ne (len .Specs) 1}}s{{end}} in
+    <code>.rex/specs/</code>
+  </p>
+</section>
+
+<section class="card">
+  {{if .Specs}}
+    <table class="table">
+      <thead>
+        <tr><th>id</th><th>name</th><th>state</th><th>tasks</th><th>components</th></tr>
+      </thead>
+      <tbody>
+        {{range .Specs}}
+        <tr>
+          <td><a href="/specs/{{.ID}}"><code>{{.ID}}</code></a></td>
+          <td>{{.Name}}</td>
+          <td><span class="pill pill-{{.State}}">{{.State}}</span></td>
+          <td>{{.TaskCount}}</td>
+          <td>{{.ComponentCount}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p class="muted">no specs yet — try <code>rex spec create &lt;id&gt;</code></p>
+  {{end}}
+</section>
+{{end}}

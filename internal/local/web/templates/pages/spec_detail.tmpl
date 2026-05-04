@@ -1,0 +1,75 @@
+{{define "title"}}rex — {{.Spec.ID}}{{end}}
+
+{{define "content"}}
+<section class="overview">
+  <h1>{{.Spec.Name}}</h1>
+  <dl class="kv">
+    <dt>id</dt><dd><code>{{.Spec.ID}}</code></dd>
+    <dt>state</dt><dd><span class="pill pill-{{.Spec.State}}">{{.Spec.State}}</span></dd>
+    {{if .Spec.UpdatedAt}}<dt>updated</dt><dd>{{.Spec.UpdatedAt}}</dd>{{end}}
+    {{if .Spec.CreatedAt}}<dt>created</dt><dd>{{.Spec.CreatedAt}}</dd>{{end}}
+  </dl>
+</section>
+
+<nav class="tabs" aria-label="spec view">
+  <a class="tab{{if eq .ActiveTab "rendered"}} tab-active{{end}}" href="?tab=rendered">rendered</a>
+  <a class="tab{{if eq .ActiveTab "source"}} tab-active{{end}}" href="?tab=source">yaml source</a>
+  <a class="tab{{if eq .ActiveTab "tasks"}} tab-active{{end}}" href="?tab=tasks">tasks ({{len .Spec.Tasks}})</a>
+</nav>
+
+<section class="card tab-panel">
+  {{if eq .ActiveTab "rendered"}}
+    {{if .Spec.Description}}
+      <pre class="markdown">{{.Spec.Description}}</pre>
+    {{else}}
+      <p class="muted">no description</p>
+    {{end}}
+    {{if .Spec.Components}}
+      <h3>components</h3>
+      {{range $cid := .Spec.ComponentOrder}}
+        {{$c := index $.Spec.Components $cid}}
+        <details class="component">
+          <summary><code>{{$cid}}</code> — {{$c.Name}} <span class="muted">({{len $c.Requirements}} reqs)</span></summary>
+          <table class="table req-table">
+            <tbody>
+              {{range $rid := $c.RequirementOrder}}
+              {{$r := index $c.Requirements $rid}}
+              <tr>
+                <td><a class="acid" data-acid="{{$.Spec.ID}}.{{$cid}}.{{$rid}}" href="#">{{$.Spec.ID}}.{{$cid}}.{{$rid}}</a></td>
+                <td>{{$r.Text}}</td>
+              </tr>
+              {{end}}
+            </tbody>
+          </table>
+        </details>
+      {{end}}
+    {{end}}
+  {{else if eq .ActiveTab "source"}}
+    <pre class="source"><code>{{.RawYAML}}</code></pre>
+  {{else if eq .ActiveTab "tasks"}}
+    {{if .Spec.Tasks}}
+      <table class="table">
+        <thead><tr><th>id</th><th>state</th><th>description</th><th>references</th></tr></thead>
+        <tbody>
+          {{range .Spec.Tasks}}
+          <tr>
+            <td><code>{{.ID}}</code></td>
+            <td><span class="pill pill-{{.State}}">{{.State}}</span></td>
+            <td>{{.Description}}</td>
+            <td>
+              {{range .References}}
+                <a class="acid" data-acid="{{.}}" href="#">{{.}}</a>
+              {{end}}
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    {{else}}
+      <p class="muted">no tasks</p>
+    {{end}}
+  {{end}}
+</section>
+
+<script src="/static/clipboard.js" defer></script>
+{{end}}

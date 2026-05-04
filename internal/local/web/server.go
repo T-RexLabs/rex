@@ -72,38 +72,31 @@ func (s *Server) Handler() http.Handler { return s.mux }
 func (s *Server) registerRoutes() {
 	staticSub, _ := fs.Sub(staticFS, "static")
 	s.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
-	s.mux.HandleFunc("/", s.handleHome)
+	s.mux.HandleFunc("GET /{$}", s.handleHome)
+	s.mux.HandleFunc("GET /specs", s.handleSpecsList)
+	s.mux.HandleFunc("GET /specs/{id}", s.handleSpecDetail)
 }
 
 // loadPages reads base.tmpl + every templates/pages/*.tmpl and
 // returns a map keyed by page basename ("home.tmpl" → composed
-// template). Each entry contains base.tmpl plus that page so
-// {{define "title"}} / {{define "content"}} from different pages
-// don't collide.
+// template). Each entry parses base.tmpl + that page in one
+// ParseFS call so html/template's contextual escaper analyzes the
+// combined tree once. Splitting it into two Parse calls leaves the
+// title-template escaper in an inconsistent state when later pages
+// reference different value paths in {{define "title"}}.
 func loadPages() (map[string]*template.Template, error) {
-	baseBody, err := fs.ReadFile(templateFS, "templates/base.tmpl")
-	if err != nil {
-		return nil, fmt.Errorf("web: read base.tmpl: %w", err)
-	}
-
 	pages, err := fs.Glob(templateFS, "templates/pages/*.tmpl")
 	if err != nil {
 		return nil, fmt.Errorf("web: glob pages: %w", err)
 	}
 	out := make(map[string]*template.Template, len(pages))
 	for _, p := range pages {
-		body, err := fs.ReadFile(templateFS, p)
+		name := filepath.Base(p)
+		t, err := template.New(name).ParseFS(templateFS, "templates/base.tmpl", p)
 		if err != nil {
-			return nil, fmt.Errorf("web: read %s: %w", p, err)
-		}
-		t := template.New(filepath.Base(p))
-		if _, err := t.Parse(string(baseBody)); err != nil {
-			return nil, fmt.Errorf("web: parse base for %s: %w", p, err)
-		}
-		if _, err := t.Parse(string(body)); err != nil {
 			return nil, fmt.Errorf("web: parse %s: %w", p, err)
 		}
-		out[filepath.Base(p)] = t
+		out[name] = t
 	}
 	return out, nil
 }
