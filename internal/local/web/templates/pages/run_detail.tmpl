@@ -32,10 +32,9 @@
     </tbody>
   </table>
   <p class="muted small">
-    live updates require htmx + htmx-ext-sse to be the real bytes;
-    skeleton ships placeholder JS — drop the upstream files into
-    <code>internal/local/web/static/</code> to enable the streaming
-    swap.
+    live updates stream from <code>/runs/{{.RunID}}/stream</code> via
+    Server-Sent Events. Disable JS for a static, page-reload-only view
+    (web-ui.ACCESS.3).
   </p>
 </section>
 
