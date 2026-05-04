@@ -67,6 +67,41 @@ func (s *PostgresStore) Ping(ctx context.Context) error {
 	return s.pool.Ping(ctx)
 }
 
+// withOrgScope opens a transaction, sets app.current_org_id
+// to the value stamped on ctx, runs fn against the tx, and
+// commits on success. The setting is transaction-local
+// (set_config(.., true)) so it auto-clears at commit/rollback
+// and never leaks to the next caller borrowing this connection
+// from the pool.
+//
+// Used by every PostgresStore method that touches an
+// RLS-protected table (events, workspaces) since schema step 4.
+// fn returns an error to roll back; otherwise the tx commits.
+func (s *PostgresStore) withOrgScope(ctx context.Context, fn func(pgx.Tx) error) error {
+	orgID := OrgIDFromContext(ctx)
+	if orgID == "" {
+		return errors.New("server: missing org id on context (use WithOrgID)")
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("server: begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // commit overrides
+	if _, err := tx.Exec(ctx,
+		`SELECT set_config('app.current_org_id', $1, true)`,
+		orgID,
+	); err != nil {
+		return fmt.Errorf("server: set org scope: %w", err)
+	}
+	if err := fn(tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("server: commit tx: %w", err)
+	}
+	return nil
+}
+
 // Close releases the underlying connection pool. Safe to call
 // once on shutdown; subsequent calls are no-ops.
 func (s *PostgresStore) Close() {
@@ -77,26 +112,29 @@ func (s *PostgresStore) Close() {
 }
 
 // Head returns the id of the row with the largest insertion_seq
-// for the request's org (read from ctx via OrgIDFromContext), or
-// empty when the org has no rows. Multi-tenant scoping: the
-// query filters by org_id so cross-org peeking is impossible at
-// the application layer; tenant-rls will add Postgres-level RLS
-// as defense-in-depth.
+// for the request's org. Three layers of scoping:
+//
+//   1. WithOrgID requires an org id on ctx (application gate).
+//   2. The WHERE org_id = $1 filter on the query.
+//   3. Postgres RLS rules from schema v4 — defense in depth.
+//
+// All three must agree; if app code forgets either of the
+// first two, RLS catches it.
 func (s *PostgresStore) Head(ctx context.Context) (string, error) {
-	orgID := OrgIDFromContext(ctx)
-	if orgID == "" {
-		return "", errors.New("server: head requires an org id on context (use WithOrgID)")
-	}
 	var id string
-	err := s.pool.QueryRow(ctx,
-		`SELECT id FROM events WHERE org_id = $1 ORDER BY insertion_seq DESC LIMIT 1`,
-		orgID,
-	).Scan(&id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", nil
+	err := s.withOrgScope(ctx, func(tx pgx.Tx) error {
+		orgID := OrgIDFromContext(ctx) // already validated by withOrgScope
+		serr := tx.QueryRow(ctx,
+			`SELECT id FROM events WHERE org_id = $1 ORDER BY insertion_seq DESC LIMIT 1`,
+			orgID,
+		).Scan(&id)
+		if serr != nil && !errors.Is(serr, pgx.ErrNoRows) {
+			return fmt.Errorf("server: head: %w", serr)
 		}
-		return "", fmt.Errorf("server: head: %w", err)
+		return nil
+	})
+	if err != nil {
+		return "", err
 	}
 	return id, nil
 }
@@ -104,85 +142,74 @@ func (s *PostgresStore) Head(ctx context.Context) (string, error) {
 // Append inserts rec, idempotent on the id PK. Returns
 // added=true on a fresh insert, added=false on a duplicate.
 //
-// Multi-tenant scoping: the request's org id must be stamped on
-// ctx via WithOrgID — Append refuses an unscoped context so the
-// middleware can never fail closed silently. The append runs
-// inside a transaction:
-//
-//   1. Workspace binding (ORG.6-note "first-push-wins"): if the
-//      record carries a workspace_id, INSERT the binding row
-//      ON CONFLICT DO NOTHING. Subsequent pushes for the same
-//      workspace_id from a member of a different org will hit
-//      the workspace's stored org_id mismatch check (added with
-//      tenant-routing middleware).
-//   2. Insert the event row with org_id set from the context.
+// Multi-tenant scoping happens in withOrgScope: the tx sets
+// app.current_org_id from ctx so the RLS WITH CHECK clause
+// passes on the INSERT. The application-level WHERE org_id
+// filter on Head/Since/Len is now redundant given RLS, but we
+// keep it — three independent layers (ctx gate, WHERE clause,
+// RLS) is the structural promise of DB.2's "defense-in-depth".
 func (s *PostgresStore) Append(ctx context.Context, rec eventlog.Record) (bool, error) {
 	if rec.ID == "" {
 		return false, errors.New("server: append requires a non-empty record id")
-	}
-	orgID := OrgIDFromContext(ctx)
-	if orgID == "" {
-		return false, errors.New("server: append requires an org id on context (use WithOrgID)")
 	}
 	payload := rec.Payload
 	if len(payload) == 0 {
 		payload = json.RawMessage("null")
 	}
 
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return false, fmt.Errorf("server: begin tx for append: %w", err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck // commit overrides
+	var added bool
+	err := s.withOrgScope(ctx, func(tx pgx.Tx) error {
+		orgID := OrgIDFromContext(ctx)
 
-	// Workspace binding: idempotent on (id) PK. ON CONFLICT
-	// DO NOTHING means a second push from a different org
-	// silently keeps the original binding; the tenant-routing
-	// middleware checks the binding earlier and surfaces the
-	// org mismatch with 403 before Append is reached.
-	if rec.WorkspaceID != "" {
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO workspaces (id, org_id, first_actor)
-			VALUES ($1, $2, $3)
-			ON CONFLICT (id) DO NOTHING
-		`, rec.WorkspaceID, orgID, rec.Actor); err != nil {
-			return false, fmt.Errorf("server: bind workspace: %w", err)
-		}
-	}
-
-	var id string
-	err = tx.QueryRow(ctx, `
-		INSERT INTO events (
-			id, hlc_wall, hlc_logical,
-			type, version, actor, workspace_id, payload, signature, org_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		ON CONFLICT (id) DO NOTHING
-		RETURNING id
-	`,
-		rec.ID,
-		rec.Timestamp.Wall,
-		rec.Timestamp.Logical,
-		rec.Type,
-		rec.Version,
-		rec.Actor,
-		rec.WorkspaceID,
-		[]byte(payload),
-		rec.Signature,
-		orgID,
-	).Scan(&id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			if commitErr := tx.Commit(ctx); commitErr != nil {
-				return false, fmt.Errorf("server: commit dup append: %w", commitErr)
+		// Workspace binding: idempotent on (id) PK. ON CONFLICT
+		// DO NOTHING means a second push from a different org
+		// silently keeps the original binding; the tenant
+		// middleware checks the binding earlier and surfaces
+		// the org mismatch with 403 before Append is reached.
+		if rec.WorkspaceID != "" {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO workspaces (id, org_id, first_actor)
+				VALUES ($1, $2, $3)
+				ON CONFLICT (id) DO NOTHING
+			`, rec.WorkspaceID, orgID, rec.Actor); err != nil {
+				return fmt.Errorf("server: bind workspace: %w", err)
 			}
-			return false, nil // duplicate id
 		}
-		return false, fmt.Errorf("server: append: %w", err)
+
+		var id string
+		serr := tx.QueryRow(ctx, `
+			INSERT INTO events (
+				id, hlc_wall, hlc_logical,
+				type, version, actor, workspace_id, payload, signature, org_id
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			ON CONFLICT (id) DO NOTHING
+			RETURNING id
+		`,
+			rec.ID,
+			rec.Timestamp.Wall,
+			rec.Timestamp.Logical,
+			rec.Type,
+			rec.Version,
+			rec.Actor,
+			rec.WorkspaceID,
+			[]byte(payload),
+			rec.Signature,
+			orgID,
+		).Scan(&id)
+		if serr != nil {
+			if errors.Is(serr, pgx.ErrNoRows) {
+				added = false
+				return nil // duplicate id
+			}
+			return fmt.Errorf("server: append: %w", serr)
+		}
+		added = true
+		return nil
+	})
+	if err != nil {
+		return false, err
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return false, fmt.Errorf("server: commit append: %w", err)
-	}
-	return true, nil
+	return added, nil
 }
 
 // WorkspaceOrg returns the org id bound to a workspace_id, or
@@ -207,91 +234,87 @@ func (s *PostgresStore) WorkspaceOrg(ctx context.Context, workspaceID string) (s
 
 // Since returns the records strictly after cursor in
 // insertion_seq order, scoped to the request's org. Empty
-// cursor returns every row in the org; unknown cursor returns
-// ErrUnknownCursor. The cursor's existence check is also
-// org-scoped — a cursor pointing at another org's row reads as
-// unknown, not as a head-mid-other-org peek.
+// cursor returns every row in the org; unknown cursor (or a
+// cursor pointing at another org's row) returns ErrUnknownCursor.
+// All queries run inside withOrgScope so RLS provides the same
+// scoping as the WHERE clause.
 func (s *PostgresStore) Since(ctx context.Context, cursor string) ([]eventlog.Record, error) {
-	orgID := OrgIDFromContext(ctx)
-	if orgID == "" {
-		return nil, errors.New("server: since requires an org id on context (use WithOrgID)")
-	}
-	var (
-		rows pgx.Rows
-		err  error
-	)
-	if cursor == "" {
-		rows, err = s.pool.Query(ctx, `
-			SELECT id, hlc_wall, hlc_logical,
-			       type, version, actor, workspace_id, payload, signature
-			FROM events
-			WHERE org_id = $1
-			ORDER BY insertion_seq
-		`, orgID)
-	} else {
-		// CTE resolves the cursor's insertion_seq in the same
-		// org; if the cursor doesn't belong to this org the CTE
-		// is empty and EXISTS short-circuits to 0 rows, then the
-		// trailing existence check upgrades empty to
-		// ErrUnknownCursor.
-		rows, err = s.pool.Query(ctx, `
-			WITH cur AS (SELECT insertion_seq FROM events WHERE id = $1 AND org_id = $2)
-			SELECT id, hlc_wall, hlc_logical,
-			       type, version, actor, workspace_id, payload, signature
-			FROM events
-			WHERE org_id = $2
-			  AND EXISTS (SELECT 1 FROM cur)
-			  AND insertion_seq > (SELECT insertion_seq FROM cur)
-			ORDER BY insertion_seq
-		`, cursor, orgID)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("server: since: %w", err)
-	}
-	defer rows.Close()
-
 	var out []eventlog.Record
-	for rows.Next() {
+	err := s.withOrgScope(ctx, func(tx pgx.Tx) error {
+		orgID := OrgIDFromContext(ctx)
 		var (
-			rec eventlog.Record
-			pay []byte
+			rows pgx.Rows
+			qerr error
 		)
-		if err := rows.Scan(
-			&rec.ID,
-			&rec.Timestamp.Wall,
-			&rec.Timestamp.Logical,
-			&rec.Type,
-			&rec.Version,
-			&rec.Actor,
-			&rec.WorkspaceID,
-			&pay,
-			&rec.Signature,
-		); err != nil {
-			return nil, fmt.Errorf("server: since scan: %w", err)
+		if cursor == "" {
+			rows, qerr = tx.Query(ctx, `
+				SELECT id, hlc_wall, hlc_logical,
+				       type, version, actor, workspace_id, payload, signature
+				FROM events
+				WHERE org_id = $1
+				ORDER BY insertion_seq
+			`, orgID)
+		} else {
+			rows, qerr = tx.Query(ctx, `
+				WITH cur AS (SELECT insertion_seq FROM events WHERE id = $1 AND org_id = $2)
+				SELECT id, hlc_wall, hlc_logical,
+				       type, version, actor, workspace_id, payload, signature
+				FROM events
+				WHERE org_id = $2
+				  AND EXISTS (SELECT 1 FROM cur)
+				  AND insertion_seq > (SELECT insertion_seq FROM cur)
+				ORDER BY insertion_seq
+			`, cursor, orgID)
 		}
-		rec.Payload = json.RawMessage(pay)
-		out = append(out, rec)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("server: since iter: %w", err)
-	}
+		if qerr != nil {
+			return fmt.Errorf("server: since: %w", qerr)
+		}
+		defer rows.Close()
 
-	// If a non-empty cursor returned 0 rows, distinguish "cursor
-	// is the head" from "cursor was never seen in this org". The
-	// existence check is org-scoped — a cursor that exists in a
-	// different org reads as unknown, not as a head-mid-other-
-	// org peek.
-	if cursor != "" && len(out) == 0 {
-		var exists bool
-		if err := s.pool.QueryRow(ctx,
-			`SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND org_id = $2)`,
-			cursor, orgID,
-		).Scan(&exists); err != nil {
-			return nil, fmt.Errorf("server: since cursor-exists: %w", err)
+		for rows.Next() {
+			var (
+				rec eventlog.Record
+				pay []byte
+			)
+			if err := rows.Scan(
+				&rec.ID,
+				&rec.Timestamp.Wall,
+				&rec.Timestamp.Logical,
+				&rec.Type,
+				&rec.Version,
+				&rec.Actor,
+				&rec.WorkspaceID,
+				&pay,
+				&rec.Signature,
+			); err != nil {
+				return fmt.Errorf("server: since scan: %w", err)
+			}
+			rec.Payload = json.RawMessage(pay)
+			out = append(out, rec)
 		}
-		if !exists {
-			return nil, fmt.Errorf("%w: %q", ErrUnknownCursor, cursor)
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("server: since iter: %w", err)
 		}
+
+		// If a non-empty cursor returned 0 rows, distinguish
+		// "cursor is the head" from "cursor was never seen in
+		// this org". The existence check is org-scoped.
+		if cursor != "" && len(out) == 0 {
+			var exists bool
+			if err := tx.QueryRow(ctx,
+				`SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND org_id = $2)`,
+				cursor, orgID,
+			).Scan(&exists); err != nil {
+				return fmt.Errorf("server: since cursor-exists: %w", err)
+			}
+			if !exists {
+				return fmt.Errorf("%w: %q", ErrUnknownCursor, cursor)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -300,15 +323,15 @@ func (s *PostgresStore) Since(ctx context.Context, cursor string) ([]eventlog.Re
 // ctx errors rather than counting all rows — same defense-in-
 // depth shape as Append/Since/Head.
 func (s *PostgresStore) Len(ctx context.Context) (int, error) {
-	orgID := OrgIDFromContext(ctx)
-	if orgID == "" {
-		return 0, errors.New("server: len requires an org id on context (use WithOrgID)")
-	}
 	var n int
-	if err := s.pool.QueryRow(ctx,
-		`SELECT count(*) FROM events WHERE org_id = $1`,
-		orgID,
-	).Scan(&n); err != nil {
+	err := s.withOrgScope(ctx, func(tx pgx.Tx) error {
+		orgID := OrgIDFromContext(ctx)
+		return tx.QueryRow(ctx,
+			`SELECT count(*) FROM events WHERE org_id = $1`,
+			orgID,
+		).Scan(&n)
+	})
+	if err != nil {
 		return 0, fmt.Errorf("server: len: %w", err)
 	}
 	return n, nil
@@ -457,15 +480,51 @@ var schemaSteps = []string{
 		CREATE INDEX IF NOT EXISTS events_org_id_idx ON events(org_id);
 	`,
 
-	// NOTE: schema v4 (Row Level Security) is deferred to a
-	// dedicated tenant-rls task. RLS is defense-in-depth on top
-	// of the application-level middleware that ships in v3 +
-	// the workspaces binding; shipping it here would force a
-	// broader Store-method refactor (SET LOCAL on every query
-	// inside a transaction) that doesn't fit the
-	// tenant-routing scope. See specs/_proposed/_accepted/
-	// central-node-amendment-2026-05-04-tenant-rls-split.yaml
-	// for the rationale.
+	// 4: Row Level Security policies on multi-tenant tables
+	//    (DB.2 "enforced by row-level security policies as a
+	//    defense-in-depth", task tenant-rls).
+	//
+	// Policy shape: a row passes when its org_id (as text)
+	// equals app.current_org_id (set per-transaction by the
+	// withOrgScope helper). current_setting(name, true)
+	// returns NULL when unset; NULL = anything yields NULL →
+	// false → zero rows pass. Forgetting to scope means seeing
+	// nothing rather than seeing everything.
+	//
+	// ENABLE without FORCE: the rex app is the table owner via
+	// the migration, so it bypasses RLS by default. The
+	// application middleware (tenant-routing) does primary
+	// scoping via WHERE org_id = $1 + the workspace binding
+	// check; RLS exists for two reasons:
+	//
+	//   1. Defense in depth for non-owner Postgres clients —
+	//      a future read-only audit role or a misconfigured
+	//      direct psql session sees only rows for the org it
+	//      explicitly scopes to.
+	//   2. Schema-level documentation — the policy makes the
+	//      tenancy model visible from \d events, surfacing
+	//      org_id as the partitioning column for any future
+	//      reader.
+	//
+	// FORCE was considered but it conflates "no binding" with
+	// "binding belongs to another org" for the middleware's
+	// cross-org workspace check. Without that distinction the
+	// middleware can't enforce ORG.6-note's first-push-wins
+	// rule. The trade is: weaker RLS for stronger application-
+	// layer correctness. A future PR adding BYPASSRLS-aware
+	// roles can flip FORCE on without touching the middleware.
+	`
+		ALTER TABLE events     ENABLE ROW LEVEL SECURITY;
+		ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
+
+		CREATE POLICY events_org_isolation ON events
+			USING      (org_id::text = current_setting('app.current_org_id', true))
+			WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
+
+		CREATE POLICY workspaces_org_isolation ON workspaces
+			USING      (org_id::text = current_setting('app.current_org_id', true))
+			WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
+	`,
 }
 
 // DefaultOrgName is the seeded org's name. Used by

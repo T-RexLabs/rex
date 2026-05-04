@@ -42,7 +42,8 @@ tasks:
 
   - id: tenant-rls
     description: "Add Postgres Row Level Security policies on the multi-tenant tables (events, workspaces) and refactor PostgresStore methods to set app.current_org_id per transaction; defense-in-depth on top of the middleware-level scoping that ships with tenant-routing"
-    state: todo
+    state: done
+    note: "Shipped with ENABLE without FORCE: the rex app role is the table owner so app reads bypass RLS (the application-layer WHERE clauses + middleware are the primary scoping). Non-owner Postgres readers (future read-only audit role) are subject to the policies. FORCE was considered but breaks the middleware's cross-org workspace-binding lookup."
     references: [DB.2]
 
   - id: admin-bootstrap
