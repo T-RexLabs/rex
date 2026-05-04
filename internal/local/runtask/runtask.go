@@ -18,11 +18,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/asabla/rex/internal/core/acp"
 	"github.com/asabla/rex/internal/core/hooks"
 	"github.com/asabla/rex/internal/core/runner"
+	"github.com/asabla/rex/internal/core/runner/adapter"
+	"github.com/asabla/rex/internal/core/runner/primharness"
 	"github.com/asabla/rex/internal/core/runner/primshell"
 	"github.com/asabla/rex/internal/core/search"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
@@ -171,6 +175,112 @@ func StartShellRun(ctx context.Context, ws *Workspace, req ShellRunRequest) (*Sh
 
 	reg := runner.NewPrimitiveRegistry()
 	reg.Register(primshell.PrimitiveType, primshell.New(primshell.Options{WorkspaceDir: ws.Root}))
+
+	exec, err := runner.NewExecutor(runner.ExecConfig{
+		RunID:    runID,
+		DAG:      dag,
+		Sink:     &writerSink{w: ws.Writer},
+		Registry: reg,
+	})
+	if err != nil {
+		return nil, err
+	}
+	state, err := exec.Run(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &ShellRunResult{RunID: runID, State: state}, nil
+}
+
+// HarnessRunRequest configures a single-harness-node DAG run
+// (execution.PRIM.1). The harness is resolved via the adapter
+// registry — supply Adapters explicitly to share a registry with
+// the test, or leave nil to use adapter.Default() (the production
+// path; cmd/rex registers every bundled adapter at startup).
+type HarnessRunRequest struct {
+	// Harness names a registered adapter. Required.
+	Harness string
+	// Prompt is the initial user message handed to session/new.
+	// Required.
+	Prompt string
+	// Model and Mode pass through to the adapter; empty means
+	// "harness default."
+	Model string
+	Mode  string
+	// MCPServers are forwarded to the harness via session/new
+	// (execution.ACP.5).
+	MCPServers []acp.MCPServer
+	// Dir overrides the harness's working directory. Default is
+	// the workspace root.
+	Dir string
+	// Env merges into the harness process environment.
+	Env map[string]string
+	// Timeout bounds the entire invocation. Zero = no timeout
+	// (harness exits on its own).
+	Timeout time.Duration
+	// NodeID is the id assigned to the harness node in the DAG.
+	// Defaults to "harness" when empty.
+	NodeID string
+	// RunID is the explicit run id. Defaults to clock.Now() when
+	// empty.
+	RunID string
+	// Adapters is the registry consulted for Harness; nil =
+	// adapter.Default().
+	Adapters *adapter.Registry
+}
+
+// StartHarnessRun executes a one-node harness DAG synchronously
+// against ws. Returns when the harness exits; events stream to
+// the workspace event log throughout. Single-shot interactive
+// shape — the CLI process is the run's lifetime.
+func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) (*ShellRunResult, error) {
+	if ws == nil {
+		return nil, fmt.Errorf("runtask: nil workspace")
+	}
+	if req.Harness == "" {
+		return nil, fmt.Errorf("runtask: harness is required")
+	}
+	if req.Prompt == "" {
+		return nil, fmt.Errorf("runtask: prompt is required")
+	}
+	nodeID := req.NodeID
+	if nodeID == "" {
+		nodeID = "harness"
+	}
+	dir := req.Dir
+	if dir == "" {
+		dir = ws.Root
+	}
+
+	cfg, err := json.Marshal(primharness.Config{
+		Harness:    req.Harness,
+		Prompt:     req.Prompt,
+		Model:      req.Model,
+		Mode:       req.Mode,
+		Dir:        dir,
+		Env:        req.Env,
+		MCPServers: req.MCPServers,
+		Timeout:    req.Timeout,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal harness config: %w", err)
+	}
+	dag := runner.DAG{
+		Nodes: []runner.Node{
+			{ID: runner.NodeID(nodeID), Type: primharness.PrimitiveType, Config: cfg},
+		},
+	}
+
+	runID := req.RunID
+	if runID == "" {
+		runID = ws.Clock.Now().String()
+	}
+
+	reg := runner.NewPrimitiveRegistry()
+	reg.Register(primharness.PrimitiveType, primharness.New(primharness.Options{
+		WorkspaceID: ws.ID,
+		Adapters:    req.Adapters,
+	}))
 
 	exec, err := runner.NewExecutor(runner.ExecConfig{
 		RunID:    runID,

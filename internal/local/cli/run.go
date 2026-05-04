@@ -16,6 +16,8 @@ import (
 
 	"github.com/asabla/rex/internal/core/event"
 	"github.com/asabla/rex/internal/core/runner"
+	"github.com/asabla/rex/internal/core/runner/adapter"
+	"github.com/asabla/rex/internal/core/runner/primharness"
 	"github.com/asabla/rex/internal/core/runner/primshell"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
 	"github.com/asabla/rex/internal/local/runtask"
@@ -58,21 +60,35 @@ func newRunStartCmd() *cobra.Command {
 	var (
 		workspaceFlag string
 		shellCommand  string
+		harnessFlag   string
+		promptFlag    string
+		modelFlag     string
+		modeFlag      string
+		timeoutFlag   time.Duration
 		nodeID        string
 		runIDFlag     string
 	)
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start a run",
-		Long: `Start a one-node DAG containing a shell_exec primitive (--shell). The
-run executes synchronously in the foreground; events stream to
-.rex/events.log and a final status is reported on stdout.
+		Long: `Start a single-node DAG run.
 
-Harness-driven runs (--harness, --prompt, --spec from cli.RUN.1) are
-deferred until execution.harness-adapter-registry lands.`,
+Two flavors:
+  --shell <cmd>             one-shot shell_exec (existing flow)
+  --harness <name> --prompt one-shot harness_invocation against an
+                            adapter registered via the harness adapter
+                            registry (cli.RUN.1, execution.ADAPT.*)
+
+The run executes synchronously in the foreground; events stream to
+.rex/events.log and a final status is reported on stdout.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if shellCommand == "" {
-				return errors.New("--shell is required (harness-driven runs land in a follow-up)")
+			shellMode := shellCommand != ""
+			harnessMode := harnessFlag != ""
+			if shellMode == harnessMode {
+				return errors.New("exactly one of --shell or --harness is required")
+			}
+			if harnessMode && promptFlag == "" {
+				return errors.New("--prompt is required with --harness")
 			}
 			root, err := workspaceRootFor(workspaceFlag)
 			if err != nil {
@@ -80,11 +96,6 @@ deferred until execution.harness-adapter-registry lands.`,
 			}
 			if root == "" {
 				return errNoWorkspace
-			}
-
-			argv, err := runtask.SplitShellCommand(shellCommand)
-			if err != nil {
-				return err
 			}
 
 			ws, err := runtask.Open(root)
@@ -97,6 +108,35 @@ deferred until execution.harness-adapter-registry lands.`,
 			if ctx == nil {
 				ctx = context.Background()
 			}
+
+			if harnessMode {
+				if _, ok := adapter.Default().Lookup(harnessFlag); !ok {
+					return fmt.Errorf("no adapter registered for %q (registered: %s)",
+						harnessFlag, strings.Join(adapter.Default().Names(), ", "))
+				}
+				node := nodeID
+				if node == "" || node == "shell" {
+					node = "harness"
+				}
+				res, err := runtask.StartHarnessRun(ctx, ws, runtask.HarnessRunRequest{
+					Harness: harnessFlag,
+					Prompt:  promptFlag,
+					Model:   modelFlag,
+					Mode:    modeFlag,
+					Timeout: timeoutFlag,
+					NodeID:  node,
+					RunID:   runIDFlag,
+				})
+				if err != nil {
+					return err
+				}
+				return reportHarnessRun(cmd, res, node)
+			}
+
+			argv, err := runtask.SplitShellCommand(shellCommand)
+			if err != nil {
+				return err
+			}
 			res, err := runtask.StartShellRun(ctx, ws, runtask.ShellRunRequest{
 				Command: argv,
 				NodeID:  nodeID,
@@ -105,47 +145,78 @@ deferred until execution.harness-adapter-registry lands.`,
 			if err != nil {
 				return err
 			}
-			runID := res.RunID
-			state := res.State
-
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
-					"run_id": runID,
-					"status": string(state.Status),
-				})
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "run %s: %s\n", runID, state.Status)
-			node := state.Nodes[runner.NodeID(nodeID)]
-			if node != nil && len(node.Output) > 0 {
-				var out primshell.Output
-				if err := json.Unmarshal(node.Output, &out); err == nil {
-					if strings.TrimSpace(out.Stdout) != "" {
-						fmt.Fprintf(cmd.OutOrStdout(), "stdout:\n%s", out.Stdout)
-						if !strings.HasSuffix(out.Stdout, "\n") {
-							fmt.Fprintln(cmd.OutOrStdout())
-						}
-					}
-					if strings.TrimSpace(out.Stderr) != "" {
-						fmt.Fprintf(cmd.ErrOrStderr(), "stderr:\n%s", out.Stderr)
-						if !strings.HasSuffix(out.Stderr, "\n") {
-							fmt.Fprintln(cmd.ErrOrStderr())
-						}
-					}
-					fmt.Fprintf(cmd.OutOrStdout(), "exit: %d  duration: %s\n", out.ExitCode, out.Duration)
-				}
-			}
-			if state.Status != runner.RunStatusCompleted {
-				return fmt.Errorf("run %s ended in status %s", runID, state.Status)
-			}
-			return nil
+			return reportShellRun(cmd, res, nodeID)
 		},
 	}
 	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
 	cmd.Flags().StringVar(&shellCommand, "shell", "", "shell command to execute as the only DAG node")
-	cmd.Flags().StringVar(&nodeID, "node-id", "shell", "id assigned to the shell node in the DAG")
+	cmd.Flags().StringVar(&harnessFlag, "harness", "", "registered harness adapter name (e.g. claude-code)")
+	cmd.Flags().StringVar(&promptFlag, "prompt", "", "initial user message for --harness")
+	cmd.Flags().StringVar(&modelFlag, "model", "", "model name (passed through to the adapter)")
+	cmd.Flags().StringVar(&modeFlag, "mode", "", "mode (passed through to the adapter)")
+	cmd.Flags().DurationVar(&timeoutFlag, "timeout", 0, "harness invocation timeout (default: no timeout)")
+	cmd.Flags().StringVar(&nodeID, "node-id", "shell", "id assigned to the only DAG node")
 	cmd.Flags().StringVar(&runIDFlag, "run-id", "", "explicit run id (default: HLC-derived; useful for tests)")
 	return cmd
+}
+
+// reportShellRun writes the human-friendly tail block for a shell
+// run; used to keep newRunStartCmd readable now that it branches.
+func reportShellRun(cmd *cobra.Command, res *runtask.ShellRunResult, nodeID string) error {
+	jsonOut, _ := cmd.Flags().GetBool("json")
+	if jsonOut {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+			"run_id": res.RunID,
+			"status": string(res.State.Status),
+		})
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "run %s: %s\n", res.RunID, res.State.Status)
+	node := res.State.Nodes[runner.NodeID(nodeID)]
+	if node != nil && len(node.Output) > 0 {
+		var out primshell.Output
+		if err := json.Unmarshal(node.Output, &out); err == nil {
+			if strings.TrimSpace(out.Stdout) != "" {
+				fmt.Fprintf(cmd.OutOrStdout(), "stdout:\n%s", out.Stdout)
+				if !strings.HasSuffix(out.Stdout, "\n") {
+					fmt.Fprintln(cmd.OutOrStdout())
+				}
+			}
+			if strings.TrimSpace(out.Stderr) != "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "stderr:\n%s", out.Stderr)
+				if !strings.HasSuffix(out.Stderr, "\n") {
+					fmt.Fprintln(cmd.ErrOrStderr())
+				}
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "exit: %d  duration: %s\n", out.ExitCode, out.Duration)
+		}
+	}
+	if res.State.Status != runner.RunStatusCompleted {
+		return fmt.Errorf("run %s ended in status %s", res.RunID, res.State.Status)
+	}
+	return nil
+}
+
+func reportHarnessRun(cmd *cobra.Command, res *runtask.ShellRunResult, nodeID string) error {
+	jsonOut, _ := cmd.Flags().GetBool("json")
+	if jsonOut {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+			"run_id": res.RunID,
+			"status": string(res.State.Status),
+		})
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "run %s: %s\n", res.RunID, res.State.Status)
+	node := res.State.Nodes[runner.NodeID(nodeID)]
+	if node != nil && len(node.Output) > 0 {
+		var out primharness.Output
+		if err := json.Unmarshal(node.Output, &out); err == nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "session: %s  frames: %d  exit: %d  duration: %s\n",
+				out.SessionID, out.FrameCount, out.ExitCode, time.Duration(out.Duration))
+		}
+	}
+	if res.State.Status != runner.RunStatusCompleted {
+		return fmt.Errorf("run %s ended in status %s", res.RunID, res.State.Status)
+	}
+	return nil
 }
 
 func newRunListCmd() *cobra.Command {

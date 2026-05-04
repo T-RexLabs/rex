@@ -77,6 +77,57 @@ func TestRunStartRequiresShell(t *testing.T) {
 	}
 }
 
+func TestRunStartRequiresExactlyOneFlavor(t *testing.T) {
+	t.Parallel()
+
+	dir := initWorkspaceForRunTest(t)
+	_, err := executeCommand(t, "run", "start",
+		"--workspace", dir,
+		"--shell", "echo hi",
+		"--harness", "claude-code",
+		"--prompt", "hi",
+	)
+	if err == nil {
+		t.Fatal("expected exclusivity error")
+	}
+	if !strings.Contains(err.Error(), "exactly one") {
+		t.Fatalf("error wording: %v", err)
+	}
+}
+
+func TestRunStartHarnessRequiresPrompt(t *testing.T) {
+	t.Parallel()
+
+	dir := initWorkspaceForRunTest(t)
+	_, err := executeCommand(t, "run", "start",
+		"--workspace", dir,
+		"--harness", "claude-code",
+	)
+	if err == nil {
+		t.Fatal("expected --prompt required error")
+	}
+	if !strings.Contains(err.Error(), "prompt") {
+		t.Fatalf("error wording: %v", err)
+	}
+}
+
+func TestRunStartHarnessRejectsUnknownAdapter(t *testing.T) {
+	t.Parallel()
+
+	dir := initWorkspaceForRunTest(t)
+	_, err := executeCommand(t, "run", "start",
+		"--workspace", dir,
+		"--harness", "no-such-harness",
+		"--prompt", "hi",
+	)
+	if err == nil {
+		t.Fatal("expected unknown-adapter error")
+	}
+	if !strings.Contains(err.Error(), "no adapter registered") {
+		t.Fatalf("error wording: %v", err)
+	}
+}
+
 func TestRunStartUnbalancedQuoteRejected(t *testing.T) {
 	t.Parallel()
 
