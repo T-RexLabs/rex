@@ -32,7 +32,7 @@
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: rex
@@ -66,6 +66,10 @@ services:
       # Bind on all interfaces so Caddy (or any other proxy) can
       # reach the binary from a sibling container.
       REX_CENTRAL_ADDR: 0.0.0.0:8080
+      # Backup destination inside the container (BACKUP.1).
+      # The matching named volume below mounts to the host so
+      # the dumps survive `docker compose down`.
+      REX_CENTRAL_BACKUP_DIR: /var/lib/rex/backups
     volumes:
       # central.toml holds non-secret defaults (DEPLOY.2). Bind
       # the operator's copy at the canonical /etc/rex path; the
@@ -76,6 +80,11 @@ services:
       # (DEPLOY.3). Named volume so docker compose down doesn't
       # delete it.
       - rex-state:/var/lib/rex
+      # rex-backups holds the scheduled pg_dump output (BACKUP.1).
+      # Operator backs THIS up to S3 / off-host storage with their
+      # standard tooling (BACKUP.2 leaves transcripts + dumps to
+      # the operator's backup pipeline).
+      - rex-backups:/var/lib/rex/backups
     expose:
       - "8080"
     healthcheck:
@@ -108,5 +117,6 @@ services:
 volumes:
   postgres-data:
   rex-state:
+  rex-backups:
   caddy-data:
   caddy-config:

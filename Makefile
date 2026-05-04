@@ -35,7 +35,7 @@ pg-up: ## Start a local Postgres container for test-pg / rex-central --db
 	docker rm -f rex-pg-test >/dev/null 2>&1 || true
 	docker run -d --name rex-pg-test \
 		-e POSTGRES_PASSWORD=dev -e POSTGRES_DB=rex_test \
-		-p 55432:5432 postgres:16-alpine >/dev/null
+		-p 55432:5432 postgres:17-alpine >/dev/null
 	@echo 'rex-pg-test started; DSN=$(PG_DSN)'
 
 pg-down: ## Stop and remove the local Postgres container

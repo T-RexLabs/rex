@@ -23,7 +23,7 @@ jobs:
       # Docker), so this services: block is what makes them
       # actually run in CI.
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_PASSWORD: ci
           POSTGRES_DB: rex_test

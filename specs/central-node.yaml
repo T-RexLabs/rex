@@ -47,7 +47,7 @@ tasks:
 
   - id: backups-and-restore
     description: "Implement scheduled Postgres dumps and a `rex-central restore` flow"
-    state: todo
+    state: done
     references: [BACKUP.1, BACKUP.2, BACKUP.3]
 
   - id: health-endpoints

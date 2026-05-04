@@ -36,3 +36,21 @@ level = "info"
 
 # json (HEALTH.3 default for production) | text (local dev).
 format = "json"
+
+[backup]
+# Where the scheduled pg_dump writes (BACKUP.1). Empty disables
+# the scheduler entirely; the bundled docker-compose mounts a
+# named volume here so dumps survive `docker compose down`.
+# `rex-central backup --output <path>` (one-shot) works whether
+# or not this is set.
+dir = "/var/lib/rex/backups"
+
+# How often the scheduler fires. Default 24h per BACKUP.1.
+# Anything <= 0 disables the scheduler.
+cadence = "24h"
+
+# Cap on the number of dumps kept on disk; older files are
+# deleted after each successful run. 0 means "keep forever" —
+# pair with an external retention policy (S3 lifecycle, etc.)
+# when you want unbounded history off-host.
+retention = 14

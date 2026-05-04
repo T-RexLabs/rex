@@ -39,6 +39,9 @@ func Default() Config {
 			Level:  "info",
 			Format: "json",
 		},
+		Backup: Backup{
+			Cadence: 24 * time.Hour,
+		},
 	}
 }
 
@@ -50,6 +53,7 @@ type Config struct {
 	DB     DB     `toml:"db"`
 	Auth   Auth   `toml:"auth"`
 	Log    Log    `toml:"log"`
+	Backup Backup `toml:"backup"`
 }
 
 // Server holds HTTP server settings.
@@ -90,6 +94,24 @@ type Log struct {
 	// Format is "json" (default, what HEALTH.3 requires) or
 	// "text" for local-dev readability.
 	Format string `toml:"format"`
+}
+
+// Backup configures the scheduled pg_dump (BACKUP.1) and the
+// restore validator (BACKUP.3).
+type Backup struct {
+	// Dir is the host-mounted directory the scheduler writes
+	// dumps to. Empty disables the scheduler entirely (one-shot
+	// `rex-central backup` still works with --output).
+	Dir string `toml:"dir"`
+
+	// Cadence is how often the scheduler fires; default 24h
+	// per BACKUP.1. Anything <= 0 disables the scheduler.
+	Cadence time.Duration `toml:"cadence"`
+
+	// Retention caps the number of dumps kept on disk; older
+	// files are deleted after each successful run. 0 means
+	// "keep forever" (an external retention policy applies).
+	Retention int `toml:"retention"`
 }
 
 // Load reads path as TOML and overlays REX_CENTRAL_* env vars on
@@ -154,6 +176,14 @@ func overlayEnv(c *Config) {
 	}
 	if v := os.Getenv("REX_CENTRAL_LOG_FORMAT"); v != "" {
 		c.Log.Format = v
+	}
+	if v := os.Getenv("REX_CENTRAL_BACKUP_DIR"); v != "" {
+		c.Backup.Dir = v
+	}
+	if v := os.Getenv("REX_CENTRAL_BACKUP_CADENCE"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			c.Backup.Cadence = d
+		}
 	}
 }
 

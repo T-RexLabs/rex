@@ -60,16 +60,49 @@ A local rex CLI can then attach the running central:
 rex remote add primary http://127.0.0.1:8080
 ```
 
+## Backups
+
+`rex-central serve` runs a scheduled `pg_dump` whenever
+`backup.dir` and `backup.cadence` are set in `central.toml`
+(or via the matching `REX_CENTRAL_BACKUP_*` env vars). The
+bundled compose file points the dump directory at the
+`rex-backups` named volume so dumps survive `docker compose
+down`.
+
+One-shot snapshot:
+
+```sh
+docker compose exec rex-central rex-central backup
+# → wrote /var/lib/rex/backups/rex-central-20260504T120000Z.dump in 250ms
+```
+
+Restore:
+
+```sh
+docker compose down
+docker compose exec rex-central rex-central restore \
+    --from /var/lib/rex/backups/rex-central-20260504T120000Z.dump
+docker compose up -d
+```
+
+The restore wraps `pg_restore --clean --if-exists` and
+validates the dump's PGDMP magic header before applying.
+Bare-metal deployments need `postgresql-client` on PATH for
+both `backup` and `restore` (the bundled image already has
+it).
+
+Per `BACKUP.2` only Postgres data is captured; transcript
+files on the binary's `rex-state` volume are the operator's
+responsibility — back them up alongside `rex-backups` with
+your standard tooling.
+
 ## What's NOT here yet
 
-Per `central-node.yaml`'s tasks block, the deployment recipe is
-the first central-node delivery; the following are separate
-PRs that build on top:
+Per `central-node.yaml`'s tasks block, the following are
+separate PRs that build on top of the deployment recipe:
 
 - **TENANT.\*** — multi-tenancy (`org_id` columns + RLS).
 - **BOOT.\*** — first-run admin bootstrap.
-- **BACKUP.\*** — scheduled `pg_dump` to a configured target.
-- **HEALTH.\*** — `/health`, `/ready`, `/metrics` endpoints.
 - **DB.4** — Postgres FTS index for the search surface.
 - **IDP-CENTRAL** — SSO/IdP bridging (deferred).
 

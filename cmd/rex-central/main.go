@@ -18,6 +18,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/asabla/rex/internal/central/backup"
 	"github.com/asabla/rex/internal/central/config"
 	"github.com/asabla/rex/internal/central/server"
 )
@@ -51,6 +52,8 @@ func newRootCmd(version string) *cobra.Command {
 		SilenceErrors: false,
 	}
 	root.AddCommand(newServeCmd())
+	root.AddCommand(newBackupCmd())
+	root.AddCommand(newRestoreCmd())
 	return root
 }
 
@@ -175,6 +178,19 @@ lost on restart.
 				"version", version,
 			)
 
+			// Backup scheduler: opt-in via [backup] config.
+			// Cancelled when serve's signal-bound context fires
+			// alongside the HTTP server's graceful shutdown.
+			schedCtx, schedCancel := context.WithCancel(cmd.Context())
+			defer schedCancel()
+			go backup.Schedule(schedCtx, backup.Options{
+				DSN:       cfg.DB.DSN,
+				Dir:       cfg.Backup.Dir,
+				Cadence:   cfg.Backup.Cadence,
+				Retention: cfg.Backup.Retention,
+				Logger:    logger,
+			})
+
 			errCh := make(chan error, 1)
 			go func() {
 				if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -209,5 +225,130 @@ lost on restart.
 	cmd.Flags().StringVar(&dbDSN, "db", "", "Postgres DSN (overrides config + REX_CENTRAL_DB_DSN); empty uses in-memory store")
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "log level: debug | info | warn | error (overrides config + REX_CENTRAL_LOG_LEVEL)")
 	cmd.Flags().StringVar(&logFormat, "log-format", "json", "log format: json | text (overrides config + REX_CENTRAL_LOG_FORMAT)")
+	return cmd
+}
+
+// loadConfigForCommand resolves the same defaults < file < env <
+// flags precedence the serve command uses, but for one-shot
+// subcommands that only need a subset of the config (DSN +
+// backup dir, typically). Centralized so backup and restore
+// don't duplicate the resolve dance.
+func loadConfigForCommand(cmd *cobra.Command, configPath string) (config.Config, error) {
+	cfgPath := config.PathOrDefault(configPath)
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.Resolve(cfgPath)
+	return cfg, nil
+}
+
+func newBackupCmd() *cobra.Command {
+	var (
+		configPath string
+		outputDir  string
+		dsn        string
+	)
+	cmd := &cobra.Command{
+		Use:   "backup",
+		Short: "Run a one-shot pg_dump against the configured database",
+		Long: `Writes a single Postgres dump to the configured backup
+directory (or --output) and exits. Useful for ad-hoc snapshots
+and CI smoke tests; the scheduled cadence runs only when serve
+is alive (BACKUP.1).
+
+Honours the same defaults < /etc/rex/central.toml < REX_CENTRAL_*
+env vars < CLI flags precedence as serve. The DSN must point at
+a reachable Postgres; pg_dump must be on PATH (the bundled image
+ships postgresql-client; bare-metal deployments must install it).
+`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfigForCommand(cmd, configPath)
+			if err != nil {
+				return err
+			}
+			if cmd.Flags().Changed("db") {
+				cfg.DB.DSN = dsn
+			}
+			if cmd.Flags().Changed("output") {
+				cfg.Backup.Dir = outputDir
+			}
+			if cfg.DB.DSN == "" {
+				return fmt.Errorf("backup: db dsn is required (set --db or db.dsn / REX_CENTRAL_DB_DSN)")
+			}
+			if cfg.Backup.Dir == "" {
+				return fmt.Errorf("backup: output dir is required (set --output or backup.dir / REX_CENTRAL_BACKUP_DIR)")
+			}
+			path, took, err := backup.Run(cmd.Context(), backup.Options{
+				DSN:       cfg.DB.DSN,
+				Dir:       cfg.Backup.Dir,
+				Retention: cfg.Backup.Retention,
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "wrote %s in %s\n", path, took)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&configPath, "config", "", "path to central.toml (default: /etc/rex/central.toml; missing file is OK)")
+	cmd.Flags().StringVar(&outputDir, "output", "", "directory to write the dump into (overrides backup.dir)")
+	cmd.Flags().StringVar(&dsn, "db", "", "Postgres DSN (overrides db.dsn / REX_CENTRAL_DB_DSN)")
+	return cmd
+}
+
+func newRestoreCmd() *cobra.Command {
+	var (
+		configPath string
+		fromPath   string
+		dsn        string
+	)
+	cmd := &cobra.Command{
+		Use:   "restore",
+		Short: "Restore a Postgres dump produced by `rex-central backup`",
+		Long: `Validates the dump file (BACKUP.3 — checks the PGDMP magic
+header and that pg_restore can list the contents-of-table) and
+applies it to the configured database with --clean --if-exists.
+
+Recommended workflow:
+
+  docker compose down
+  rex-central restore --from /backups/rex-central-20260504T120000Z.dump
+  docker compose up -d
+
+The destructive nature of --clean is intentional: a restore
+overwrites the existing schema with what the dump contained.
+Run against an empty database when in doubt.
+`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfigForCommand(cmd, configPath)
+			if err != nil {
+				return err
+			}
+			if cmd.Flags().Changed("db") {
+				cfg.DB.DSN = dsn
+			}
+			if cfg.DB.DSN == "" {
+				return fmt.Errorf("restore: db dsn is required (set --db or db.dsn / REX_CENTRAL_DB_DSN)")
+			}
+			if fromPath == "" {
+				return fmt.Errorf("restore: --from <path> is required")
+			}
+			if err := backup.Restore(cmd.Context(), cfg.DB.DSN, fromPath); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "restored from %s\n", fromPath)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&configPath, "config", "", "path to central.toml (default: /etc/rex/central.toml; missing file is OK)")
+	cmd.Flags().StringVar(&fromPath, "from", "", "path to the dump file produced by `rex-central backup`")
+	cmd.Flags().StringVar(&dsn, "db", "", "Postgres DSN (overrides db.dsn / REX_CENTRAL_DB_DSN)")
+	if err := cmd.MarkFlagRequired("from"); err != nil {
+		// MarkFlagRequired only errors if the flag is not
+		// registered; we just registered it. Keeps cobra happy
+		// without panicking.
+		_ = err
+	}
 	return cmd
 }

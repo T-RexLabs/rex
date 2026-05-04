@@ -1,0 +1,19 @@
+# Proposed amendment to specs/central-node.yaml.
+#
+# Status:    accepted
+# Folded:    2026-05-04 — single state flip applied to specs/central-node.yaml
+#                        alongside the implementation in the same commit.
+# Surfaced by:
+#   - Implementation of the backups-and-restore task landing
+#     (BACKUP.1 scheduled pg_dump, BACKUP.2 scope, BACKUP.3
+#     restore-with-validation). Task state flip closes the
+#     drift in the same commit instead of trailing behind.
+
+target: central-node
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: backups-and-restore
+    from: todo
+    to: done
