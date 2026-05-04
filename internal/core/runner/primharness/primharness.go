@@ -202,6 +202,17 @@ func run(ctx context.Context, opts Options, in runner.PrimitiveInput) (runner.Pr
 		return runner.PrimitiveOutput{}, fmt.Errorf("primharness: session/new: %w", err)
 	}
 
+	// Synthesize a user_message_chunk frame so the run timeline
+	// shows the prompt the operator sent. The harness adapter only
+	// observes inbound frames (responses + harness-sent
+	// notifications); without this, the user's input would never
+	// appear in events.log alongside the model's reply. Routed
+	// through the local observer so the frame counter ticks
+	// whether or not opts.OnFrame is configured.
+	if synth := buildUserPromptFrame(res.SessionID, cfg.Prompt); synth != nil {
+		observer(*synth)
+	}
+
 	// session/prompt delivers the user's message. The bridge
 	// streams session/update notifications throughout this call
 	// (captured via OnFrame above) and returns a stop_reason when
@@ -267,6 +278,40 @@ func run(ctx context.Context, opts Options, in runner.PrimitiveInput) (runner.Pr
 		return runner.PrimitiveOutput{Output: body}, fmt.Errorf("primharness: harness exit %d", exitCode)
 	}
 	return runner.PrimitiveOutput{Output: body}, nil
+}
+
+// buildUserPromptFrame fabricates an ACP-shaped session/update
+// notification carrying the user's prompt as a user_message_chunk
+// update. This is the only synthetic frame primharness emits;
+// every other frame is something the harness actually sent.
+// Returning nil silently skips emission (empty prompt, marshal
+// failure) — the run still works, the timeline just lacks the
+// "user" turn.
+func buildUserPromptFrame(sessionID, prompt string) *acp.RawMessage {
+	if prompt == "" {
+		return nil
+	}
+	params := map[string]any{
+		"sessionId": sessionID,
+		"update": map[string]any{
+			"sessionUpdate": "user_message_chunk",
+			"content":       map[string]any{"type": "text", "text": prompt},
+		},
+	}
+	rawParams, err := json.Marshal(params)
+	if err != nil {
+		return nil
+	}
+	msg := acp.Message{
+		JSONRPC: acp.Version,
+		Method:  "session/update",
+		Params:  rawParams,
+	}
+	body, err := json.Marshal(msg)
+	if err != nil {
+		return nil
+	}
+	return &acp.RawMessage{Message: msg, Raw: body}
 }
 
 // forwardStderr scans r line by line and invokes onLine for each.

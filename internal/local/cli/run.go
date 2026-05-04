@@ -225,6 +225,7 @@ type streamPrinter struct {
 	out         io.Writer
 	debug       bool
 	inAgentText bool
+	role        string
 }
 
 func newStreamPrinter(out io.Writer, debug bool) func(eventlog.Record) {
@@ -243,11 +244,18 @@ func (sp *streamPrinter) write(rec eventlog.Record) {
 	}
 
 	if rec.Type == runner.EventTypeHarnessFrame {
-		if text, ok := agentTextFromFrame(rec.Payload); ok {
+		if text, role, ok := agentTextFromFrame(rec.Payload); ok {
+			// Switch role mid-turn: close the previous role's
+			// line so the prompt and the assistant's reply land
+			// on separate rows even if they arrive back-to-back.
+			if sp.inAgentText && sp.role != role {
+				sp.closeAgentText()
+			}
 			if !sp.inAgentText {
 				fmt.Fprintf(sp.out, "%s  %-22s  ",
-					formatHLCTime(rec.Timestamp), "assistant")
+					formatHLCTime(rec.Timestamp), role)
 				sp.inAgentText = true
+				sp.role = role
 			}
 			fmt.Fprint(sp.out, text)
 			return
@@ -264,21 +272,21 @@ func (sp *streamPrinter) closeAgentText() {
 	}
 }
 
-// agentTextFromFrame returns the text content of an
-// agent_message_chunk frame. The bool is false for any other
-// frame shape, so the caller can fall through to its default
-// renderer.
-func agentTextFromFrame(payload json.RawMessage) (string, bool) {
+// agentTextFromFrame returns the text content of an agent or user
+// message_chunk frame plus the speaker's role ("assistant" or
+// "user"). The bool is false for any other frame shape, so the
+// caller can fall through to its default renderer.
+func agentTextFromFrame(payload json.RawMessage) (string, string, bool) {
 	var ev runner.HarnessFrameEvent
 	if err := json.Unmarshal(payload, &ev); err != nil {
-		return "", false
+		return "", "", false
 	}
 	var frame struct {
 		Method string          `json:"method"`
 		Params json.RawMessage `json:"params"`
 	}
 	if err := json.Unmarshal(ev.Frame, &frame); err != nil || frame.Method != "session/update" {
-		return "", false
+		return "", "", false
 	}
 	var p struct {
 		Update struct {
@@ -289,16 +297,22 @@ func agentTextFromFrame(payload json.RawMessage) (string, bool) {
 		} `json:"update"`
 	}
 	if err := json.Unmarshal(frame.Params, &p); err != nil {
-		return "", false
+		return "", "", false
 	}
 	kind := p.Update.SessionUpdate
 	if kind == "" {
 		kind = p.Update.Type
 	}
-	if kind != "agent_message_chunk" && kind != "agent_message" {
-		return "", false
+	role := ""
+	switch kind {
+	case "agent_message_chunk", "agent_message":
+		role = "assistant"
+	case "user_message_chunk", "user_message":
+		role = "user"
+	default:
+		return "", "", false
 	}
-	return extractFrameText(kind, p.Update.Text, p.Update.Content, ""), true
+	return extractFrameText(kind, p.Update.Text, p.Update.Content, ""), role, true
 }
 
 // writeEventLine renders one event for a terminal. Default mode

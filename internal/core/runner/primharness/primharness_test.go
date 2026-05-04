@@ -128,8 +128,8 @@ func TestHarnessInvocationCapturesFramesAndCompletes(t *testing.T) {
 	if out.SessionID != "mock-1" {
 		t.Fatalf("session: got %q", out.SessionID)
 	}
-	if out.FrameCount != 4 {
-		t.Fatalf("frame count: got %d want 4 (session/new resp + 2 updates + session/prompt resp)", out.FrameCount)
+	if out.FrameCount != 5 {
+		t.Fatalf("frame count: got %d want 5 (session/new resp + user prompt + 2 updates + session/prompt resp)", out.FrameCount)
 	}
 	if out.ExitCode != 0 {
 		t.Fatalf("exit: got %d", out.ExitCode)
@@ -138,8 +138,8 @@ func TestHarnessInvocationCapturesFramesAndCompletes(t *testing.T) {
 	mu.Lock()
 	got := len(frames)
 	mu.Unlock()
-	if got != 4 {
-		t.Fatalf("observer saw %d frames, want 4", got)
+	if got != 5 {
+		t.Fatalf("observer saw %d frames, want 5", got)
 	}
 }
 
@@ -266,8 +266,8 @@ func TestHarnessInvocationFrameObserverNotRequired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if out.FrameCount != 4 {
-		t.Fatalf("frame count: got %d want 4", out.FrameCount)
+	if out.FrameCount != 5 {
+		t.Fatalf("frame count: got %d want 5", out.FrameCount)
 	}
 }
 
@@ -288,7 +288,7 @@ func TestHarnessInvocationFrameObserverConcurrency(t *testing.T) {
 	if _, err := runPrim(t, cfg, Options{OnFrame: observer}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if calls.Load() != 4 {
-		t.Fatalf("observer calls: got %d want 4", calls.Load())
+	if calls.Load() != 5 {
+		t.Fatalf("observer calls: got %d want 5", calls.Load())
 	}
 }
