@@ -37,6 +37,7 @@ land once the harness adapter registry exists; cancel/watch/signal
 need a daemon model that v1 does not have.`,
 	}
 	cmd.AddCommand(newRunStartCmd())
+	cmd.AddCommand(newRunWatchCmd())
 	cmd.AddCommand(newRunListCmd())
 	cmd.AddCommand(newRunShowCmd())
 	return cmd
@@ -518,6 +519,210 @@ func openReaderForPath(path string) (*eventlog.Reader, error) {
 		return nil, err
 	}
 	return eventlog.OpenReader(path)
+}
+
+// runWatchPollInterval is the file-tail cadence for `rex run watch`.
+// Mirrors the web SSE handler so the two surfaces feel the same.
+const runWatchPollInterval = 100 * time.Millisecond
+
+func newRunWatchCmd() *cobra.Command {
+	var (
+		workspaceFlag string
+		jsonOutFlag   bool
+	)
+	cmd := &cobra.Command{
+		Use:   "watch <run-id>",
+		Short: "Stream events for a run as they land in the event log",
+		Long: `Tail-watch one run's events in the terminal. Replays every event
+already in events.log, then polls the file for new appends until
+the run reaches a terminal state (completed / cancelled / aborted)
+or the user interrupts with Ctrl-C.
+
+Run IDs accept the same git-style prefix matching as 'rex run show'.
+
+Output: one line per event of the form
+  <timestamp>  <event-type>  <one-line summary>
+With --json, one decoded event record per line.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := workspaceRootFor(workspaceFlag)
+			if err != nil {
+				return err
+			}
+			if root == "" {
+				return errNoWorkspace
+			}
+			runID, err := resolveRunID(root, args[0])
+			if err != nil {
+				return err
+			}
+			ctx := cmd.Context()
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			return tailRunEvents(ctx, cmd, root, runID, jsonOutFlag)
+		},
+	}
+	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
+	cmd.Flags().BoolVar(&jsonOutFlag, "json", false, "emit one decoded event record per line as JSON")
+	return cmd
+}
+
+// tailRunEvents drives the watch loop: scan-to-EOF, then poll for
+// new appends until a terminal event for runID lands or ctx fires.
+func tailRunEvents(ctx context.Context, cmd *cobra.Command, root, runID string, jsonOut bool) error {
+	logPath := eventLogPath(root)
+	reg := runDecoderRegistry()
+	out := cmd.OutOrStdout()
+
+	seen := make(map[string]struct{})
+	terminal := false
+
+	emit := func(rec eventlog.Record) error {
+		if jsonOut {
+			return json.NewEncoder(out).Encode(runRecord{
+				ID:          rec.ID,
+				Timestamp:   rec.Timestamp,
+				Type:        rec.Type,
+				Version:     rec.Version,
+				Actor:       rec.Actor,
+				WorkspaceID: rec.WorkspaceID,
+				Payload:     rec.Payload,
+			})
+		}
+		fmt.Fprintf(out, "%s  %-22s  %s\n",
+			rec.Timestamp.String(), rec.Type, summarizeEventPayload(rec.Type, rec.Payload))
+		return nil
+	}
+
+	scan := func() error {
+		f, err := openReaderForPath(logPath)
+		if err != nil {
+			return err
+		}
+		if f == nil {
+			return nil
+		}
+		defer f.Close()
+		for {
+			rec, err := f.Next()
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if !recordMatchesRun(reg, rec, runID) {
+				continue
+			}
+			if _, dup := seen[rec.ID]; dup {
+				continue
+			}
+			seen[rec.ID] = struct{}{}
+			if err := emit(rec); err != nil {
+				return err
+			}
+			switch rec.Type {
+			case runner.EventTypeRunCompleted,
+				runner.EventTypeRunCancelled,
+				runner.EventTypeRunAborted:
+				terminal = true
+				return nil
+			}
+		}
+	}
+
+	if err := scan(); err != nil {
+		return err
+	}
+	if terminal {
+		return nil
+	}
+
+	ticker := time.NewTicker(runWatchPollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			if err := scan(); err != nil {
+				return err
+			}
+			if terminal {
+				return nil
+			}
+		}
+	}
+}
+
+// recordMatchesRun decodes rec via the runner registry and asks
+// runner.MatchesRun whether the payload references runID. Local copy
+// of the web/runs.go helper to avoid importing internal/local/web
+// from the CLI; the implementations are intentionally identical so
+// CLI and web stay in lockstep.
+func recordMatchesRun(reg *event.Registry, rec eventlog.Record, runID string) bool {
+	decoded, err := reg.Decode(event.Envelope{
+		Type: rec.Type, Version: rec.Version, Payload: rec.Payload,
+	})
+	if err != nil {
+		return false
+	}
+	return runner.MatchesRun(decoded, runID)
+}
+
+// summarizeEventPayload turns a runner event payload into a one-line
+// summary suitable for terminal output. The cases mirror the runner
+// event-type constants; unknown types fall back to a length hint.
+func summarizeEventPayload(eventType string, payload json.RawMessage) string {
+	switch eventType {
+	case runner.EventTypeRunStarted:
+		var ev runner.RunStartedEvent
+		if err := json.Unmarshal(payload, &ev); err == nil {
+			return fmt.Sprintf("run=%s", ev.RunID)
+		}
+	case runner.EventTypeRunCompleted:
+		var ev runner.RunCompletedEvent
+		if err := json.Unmarshal(payload, &ev); err == nil {
+			return fmt.Sprintf("run=%s status=completed", ev.RunID)
+		}
+	case runner.EventTypeRunCancelled:
+		return "status=cancelled"
+	case runner.EventTypeRunAborted:
+		var ev struct {
+			RunID string `json:"run_id"`
+			Error string `json:"error,omitempty"`
+		}
+		if err := json.Unmarshal(payload, &ev); err == nil {
+			if ev.Error != "" {
+				return fmt.Sprintf("run=%s aborted: %s", ev.RunID, ev.Error)
+			}
+			return fmt.Sprintf("run=%s status=aborted", ev.RunID)
+		}
+	case runner.EventTypeNodeStarted, runner.EventTypeNodeSucceeded,
+		runner.EventTypeNodeFailed, runner.EventTypeNodeRetried:
+		var ev struct {
+			NodeID string `json:"node_id"`
+			Error  string `json:"error,omitempty"`
+		}
+		if err := json.Unmarshal(payload, &ev); err == nil {
+			if ev.Error != "" {
+				return fmt.Sprintf("node=%s err=%s", ev.NodeID, ev.Error)
+			}
+			return fmt.Sprintf("node=%s", ev.NodeID)
+		}
+	case runner.EventTypePermissionRequested,
+		runner.EventTypePermissionGranted,
+		runner.EventTypePermissionDenied:
+		var ev struct {
+			NodeID    string `json:"node_id"`
+			RequestID string `json:"request_id"`
+		}
+		if err := json.Unmarshal(payload, &ev); err == nil {
+			return fmt.Sprintf("node=%s request=%s", ev.NodeID, ev.RequestID)
+		}
+	}
+	return fmt.Sprintf("(%d bytes)", len(payload))
 }
 
 // splitShellCommand parses a --shell argument into argv. For v1 we

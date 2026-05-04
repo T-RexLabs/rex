@@ -128,6 +128,114 @@ func TestRunStartHarnessRejectsUnknownAdapter(t *testing.T) {
 	}
 }
 
+func TestRunWatchReplaysCompletedRun(t *testing.T) {
+	t.Parallel()
+
+	dir := initWorkspaceForRunTest(t)
+	if _, err := executeCommand(t, "run", "start",
+		"--workspace", dir,
+		"--shell", "echo watch-me",
+		"--run-id", "watch-1",
+	); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+
+	out, err := executeCommand(t, "run", "watch", "--workspace", dir, "watch-1")
+	if err != nil {
+		t.Fatalf("run watch: %v\n%s", err, out)
+	}
+	for _, want := range []string{"run.started", "node.started", "node.succeeded", "run.completed"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\n%s", want, out)
+		}
+	}
+}
+
+func TestRunWatchExitsOnTerminalEvent(t *testing.T) {
+	t.Parallel()
+
+	dir := initWorkspaceForRunTest(t)
+	if _, err := executeCommand(t, "run", "start",
+		"--workspace", dir,
+		"--shell", "true",
+		"--run-id", "watch-2",
+	); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+
+	// If the watch loop didn't exit on run.completed, this would
+	// hang and the test framework would time out the whole suite.
+	out, err := executeCommand(t, "run", "watch", "--workspace", dir, "watch-2")
+	if err != nil {
+		t.Fatalf("run watch: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "run.completed") {
+		t.Fatalf("expected run.completed in output\n%s", out)
+	}
+}
+
+func TestRunWatchAcceptsRunIDPrefix(t *testing.T) {
+	t.Parallel()
+
+	dir := initWorkspaceForRunTest(t)
+	if _, err := executeCommand(t, "run", "start",
+		"--workspace", dir,
+		"--shell", "echo prefix-test",
+		"--run-id", "prefix-test-12345",
+	); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+
+	out, err := executeCommand(t, "run", "watch", "--workspace", dir, "prefix-")
+	if err != nil {
+		t.Fatalf("run watch: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "run.completed") {
+		t.Fatalf("expected run.completed via prefix lookup\n%s", out)
+	}
+}
+
+func TestRunWatchUnknownRunErrors(t *testing.T) {
+	t.Parallel()
+
+	dir := initWorkspaceForRunTest(t)
+	_, err := executeCommand(t, "run", "watch", "--workspace", dir, "nope")
+	if err == nil {
+		t.Fatal("expected error for unknown run")
+	}
+}
+
+func TestRunWatchJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	dir := initWorkspaceForRunTest(t)
+	if _, err := executeCommand(t, "run", "start",
+		"--workspace", dir,
+		"--shell", "echo json-test",
+		"--run-id", "json-1",
+	); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+
+	out, err := executeCommand(t, "run", "watch", "--workspace", dir, "--json", "json-1")
+	if err != nil {
+		t.Fatalf("run watch --json: %v\n%s", err, out)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) < 4 {
+		t.Fatalf("expected >=4 JSON lines (run.started + node.* + run.completed), got %d:\n%s", len(lines), out)
+	}
+	for i, ln := range lines {
+		var rec map[string]any
+		if err := json.Unmarshal([]byte(ln), &rec); err != nil {
+			t.Fatalf("line %d not valid JSON: %v\n%s", i, err, ln)
+		}
+		if rec["type"] == "" {
+			t.Errorf("line %d missing type: %s", i, ln)
+		}
+	}
+}
+
 func TestRunStartUnbalancedQuoteRejected(t *testing.T) {
 	t.Parallel()
 
