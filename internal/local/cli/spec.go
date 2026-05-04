@@ -190,6 +190,12 @@ Per spec-format.VAL.5: exit 0 on success, 1 on any validation error,
 				return nil
 			}
 			ws, parseFailures, _ := loadWorkspace(paths)
+			// Wire the workspace's default template id (if any)
+			// so ValidateWorkspace's second pass enforces
+			// template conformance.
+			if root, _ := workspaceRootFor(workspaceFlag); root != "" {
+				ws.SetDefaultTemplateID(workspaceDefaultTemplateID(root))
+			}
 			res := specfmt.ValidateWorkspace(ws, mode)
 
 			// Surface parse failures alongside validate issues.

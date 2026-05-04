@@ -12,13 +12,28 @@ import (
 // adding two Documents with the same id is an error so the resolver
 // always has a unique target for any reference.
 type Workspace struct {
-	docs     map[string]*Document
-	docOrder []string
+	docs              map[string]*Document
+	docOrder          []string
+	defaultTemplateID string
 }
 
 // NewWorkspace returns an empty workspace.
 func NewWorkspace() *Workspace {
 	return &Workspace{docs: make(map[string]*Document)}
+}
+
+// SetDefaultTemplateID records the workspace's default template id
+// (typically extra.default_template_id from workspace.yaml).
+// ValidateWorkspace's second pass falls back to this id when a
+// non-template spec does not opt into one explicitly via
+// extra.template_id (spec-format.TMPL.4).
+func (w *Workspace) SetDefaultTemplateID(id string) {
+	w.defaultTemplateID = id
+}
+
+// DefaultTemplateID returns the previously-set default template id.
+func (w *Workspace) DefaultTemplateID() string {
+	return w.defaultTemplateID
 }
 
 // Add registers doc with the workspace. Returns an error if the
@@ -111,20 +126,20 @@ func (w *Workspace) Resolve(ref ACIDRef, fromSpecID string) Resolution {
 	return res
 }
 
-// ValidateWorkspace runs Validate against every document in w and adds
-// cross-spec ACID resolution checks: every parseable task reference
-// must resolve to an existing requirement (spec-format.VAL.3). Issues
-// from per-doc Validate runs carry the document's Path in Issue.File;
-// dangling-ACID issues do the same.
+// ValidateWorkspace runs the v1 schema validator against every
+// document in w (first pass) and adds cross-spec ACID resolution
+// (spec-format.VAL.3). When templates are present, a second pass
+// per spec-format.TMPL.3 checks each non-template spec against its
+// active template's required_extra keys.
 //
 // Mode follows Validate's strict/lenient convention. Lenient mode
-// downgrades the dangling-ACID category to warnings since a missing
-// cross-spec target may simply mean the workspace's spec set is
-// incomplete relative to what's been authored.
+// downgrades dangling-ACID and template-required-extra issues to
+// warnings since a missing cross-spec target or convention slip
+// often reflects an in-progress authoring pass.
 func ValidateWorkspace(w *Workspace, mode Mode) Result {
 	var issues []Issue
 	for _, doc := range w.Specs() {
-		// Per-doc structural validation.
+		// Per-doc structural validation (first pass).
 		res := Validate(doc, mode)
 		for _, issue := range res.Issues {
 			issue.File = doc.Path
@@ -160,6 +175,60 @@ func ValidateWorkspace(w *Workspace, mode Mode) Result {
 				})
 			}
 		}
+
+		// Second pass: template conformance (spec-format.TMPL.3).
+		if !IsTemplate(doc) {
+			template := activeTemplateFor(w, doc)
+			if template != nil {
+				issues = append(issues, validateAgainstTemplate(doc, template, mode)...)
+			}
+		}
 	}
 	return Result{Issues: issues}
+}
+
+// activeTemplateFor selects the template that governs doc per
+// spec-format.TMPL.4 precedence: explicit extra.template_id →
+// workspace's default → none. Returns nil when no template applies
+// or the resolved template is missing.
+func activeTemplateFor(w *Workspace, doc *Document) *Document {
+	id := templateID(doc)
+	if id == "" {
+		id = w.DefaultTemplateID()
+	}
+	if id == "" {
+		return nil
+	}
+	return w.Template(id)
+}
+
+// validateAgainstTemplate runs the second-pass conformance check.
+// v1 enforces required_extra: every key listed in the template's
+// extra.required_extra must be present in doc.Extra (any value,
+// including empty, satisfies presence — surfacing missing keys is
+// the value, not enforcing non-empty values).
+func validateAgainstTemplate(doc, template *Document, mode Mode) []Issue {
+	severity := SeverityError
+	if mode == ModeLenient {
+		severity = SeverityWarning
+	}
+	required := requiredExtraKeys(template)
+	if len(required) == 0 {
+		return nil
+	}
+	var out []Issue
+	for _, key := range required {
+		if _, ok := doc.Extra[key]; !ok {
+			out = append(out, Issue{
+				File:     doc.Path,
+				Path:     "extra." + key,
+				Category: "template-required-extra",
+				Message: fmt.Sprintf(
+					"template %q requires extra.%s but it is missing",
+					template.Metadata.ID, key),
+				Severity: severity,
+			})
+		}
+	}
+	return out
 }
