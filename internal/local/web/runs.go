@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"html/template"
 	"io"
 	"io/fs"
 	"net/http"
@@ -22,26 +23,35 @@ import (
 const ssePollInterval = 100 * time.Millisecond
 
 // runEventRow flattens an eventlog.Record into a render-friendly
-// shape for the run detail page. Snippet is the prettified JSON
-// payload truncated for table display.
+// shape for the run detail page. Payload is pre-formatted JSON
+// HTML (chroma-highlighted on the server) so the template can
+// drop it into a <pre> without further escaping. PayloadRaw is the
+// pretty-printed source string used by the JS-disabled fallback —
+// when JS is off the highlighted version still works (it's class
+// based + server rendered) but the fallback is kept for SSE wire
+// emission where we send pretty text only.
 type runEventRow struct {
 	ID        string
 	Timestamp string
 	Type      string
-	Snippet   string
+	Payload   template.HTML
 }
 
-func newRunEventRow(rec eventlog.Record) runEventRow {
-	snippet := string(rec.Payload)
-	if len(snippet) > 240 {
-		snippet = snippet[:237] + "..."
-	}
-	return runEventRow{
+// newRunEventRow builds a runEventRow with chroma-highlighted JSON
+// when hl is non-nil, falling back to the escaped raw bytes
+// otherwise (e.g. unit tests that don't construct a Server).
+func newRunEventRow(rec eventlog.Record, hl *Highlighter) runEventRow {
+	row := runEventRow{
 		ID:        rec.ID,
 		Timestamp: time.Unix(0, rec.Timestamp.Wall).UTC().Format(time.RFC3339Nano),
 		Type:      rec.Type,
-		Snippet:   snippet,
 	}
+	if hl != nil {
+		row.Payload = hl.HighlightJSON(rec.Payload)
+	} else {
+		row.Payload = template.HTML(html.EscapeString(PrettyJSON(rec.Payload)))
+	}
+	return row
 }
 
 // runsListData backs runs_list.tmpl.
@@ -72,8 +82,9 @@ type runDetailData struct {
 
 // loadRunDetail walks events.log and returns the records whose
 // decoded payload references runID. Found is false when the run
-// id matches no events at all.
-func loadRunDetail(opts Options, runID string) (runDetailData, bool, error) {
+// id matches no events at all. hl is used to pre-render each
+// payload as syntax-highlighted JSON.
+func loadRunDetail(opts Options, runID string, hl *Highlighter) (runDetailData, bool, error) {
 	base := pageData{BindAddr: opts.BindAddr, Version: opts.Version}
 	ws, _ := loadWorkspaceSummary(opts.WorkspaceRoot)
 	base.Workspace = ws
@@ -103,7 +114,7 @@ func loadRunDetail(opts Options, runID string) (runDetailData, bool, error) {
 		if !recordMatchesRun(reg, rec, runID) {
 			continue
 		}
-		d.Events = append(d.Events, newRunEventRow(rec))
+		d.Events = append(d.Events, newRunEventRow(rec, hl))
 		// Track terminal status for the badge.
 		switch rec.Type {
 		case runner.EventTypeRunStarted:
@@ -163,19 +174,26 @@ func (s *Server) streamRunEvents(w http.ResponseWriter, r *http.Request, runID s
 
 	seen := make(map[string]struct{})
 	emit := func(rec eventlog.Record) error {
-		row := newRunEventRow(rec)
-		// Render the row HTML so the htmx-sse extension can
-		// drop it directly into the live table. The format
-		// matches what's in the static initial-render.
+		row := newRunEventRow(rec, s.highlighter)
+		// Render the same timeline-card HTML the initial render
+		// uses so the SSE-appended cards are visually identical
+		// to the server-rendered ones.
 		body := fmt.Sprintf(
-			`<tr><td><code>%s</code></td><td>%s</td><td><code>%s</code></td><td><code>%s</code></td></tr>`,
-			html.EscapeString(row.ID),
-			html.EscapeString(row.Timestamp),
+			`<article class="event">`+
+				`<header class="event-head">`+
+				`<span class="event-type"><code>%s</code></span>`+
+				`<time class="event-time">%s</time>`+
+				`<span class="event-id"><code class="dim">%s</code></span>`+
+				`</header>`+
+				`<pre class="event-body chroma"><code class="language-json">%s</code></pre>`+
+				`</article>`,
 			html.EscapeString(row.Type),
-			html.EscapeString(row.Snippet),
+			html.EscapeString(row.Timestamp),
+			html.EscapeString(row.ID),
+			string(row.Payload), // already-rendered safe HTML
 		)
-		// SSE multi-line data must be prefixed per line, so
-		// flatten any embedded newlines.
+		// SSE multi-line data must prefix every line; flatten
+		// embedded newlines so the wire frame is a single data: line.
 		body = strings.ReplaceAll(body, "\n", " ")
 		_, err := fmt.Fprintf(w, "event: run-event\ndata: %s\n\n", body)
 		if err != nil {

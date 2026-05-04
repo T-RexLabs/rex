@@ -2,12 +2,13 @@
 
 {{define "content"}}
 <section class="overview">
+  <p class="eyebrow">workspace · spec</p>
   <h1>{{.Spec.Name}}</h1>
   <dl class="kv">
     <dt>id</dt><dd><code>{{.Spec.ID}}</code></dd>
-    <dt>state</dt><dd><span class="pill pill-{{.Spec.State}}">{{.Spec.State}}</span></dd>
-    {{if .Spec.UpdatedAt}}<dt>updated</dt><dd>{{.Spec.UpdatedAt}}</dd>{{end}}
-    {{if .Spec.CreatedAt}}<dt>created</dt><dd>{{.Spec.CreatedAt}}</dd>{{end}}
+    <dt>state</dt><dd><span class="pill pill-{{.Spec.State}}"><i class="dot"></i>{{.Spec.State}}</span></dd>
+    {{if .Spec.UpdatedAt}}<dt>updated</dt><dd><time>{{.Spec.UpdatedAt}}</time></dd>{{end}}
+    {{if .Spec.CreatedAt}}<dt>created</dt><dd><time>{{.Spec.CreatedAt}}</time></dd>{{end}}
   </dl>
 </section>
 
@@ -45,7 +46,11 @@
       {{end}}
     {{end}}
   {{else if eq .ActiveTab "source"}}
-    <pre class="source"><code>{{.RawYAML}}</code></pre>
+    {{if .YAMLPretty}}
+      <pre class="source chroma"><code class="language-yaml">{{.YAMLPretty}}</code></pre>
+    {{else}}
+      <pre class="source"><code>{{.RawYAML}}</code></pre>
+    {{end}}
   {{else if eq .ActiveTab "tasks"}}
     {{if .Spec.Tasks}}
       <table class="table">
@@ -54,7 +59,7 @@
           {{range .Spec.Tasks}}
           <tr>
             <td><code>{{.ID}}</code></td>
-            <td><span class="pill pill-{{.State}}">{{.State}}</span></td>
+            <td><span class="pill pill-{{.State}}"><i class="dot"></i>{{.State}}</span></td>
             <td>{{.Description}}</td>
             <td>
               {{range .References}}

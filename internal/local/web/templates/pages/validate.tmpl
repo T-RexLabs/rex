@@ -1,0 +1,62 @@
+{{define "title"}}rex — validate{{end}}
+
+{{define "content"}}
+<section class="overview">
+  <p class="eyebrow">workspace · specs</p>
+  <h1>validation report</h1>
+  <p class="muted">
+    strict validation against <code>specs/spec-format.yaml</code>.
+    Mirrors <code>rex spec validate</code> from the CLI.
+  </p>
+</section>
+
+<section class="card">
+  <dl class="kv">
+    <dt>specs scanned</dt><dd>{{.SpecCount}}</dd>
+    <dt>errors</dt>
+      <dd>
+        {{if .Errors}}
+          <span class="pill pill-error">{{.Errors}}</span>
+        {{else}}
+          <span class="pill pill-ok">0</span>
+        {{end}}
+      </dd>
+    <dt>warnings</dt>
+      <dd>
+        {{if .Warnings}}
+          <span class="pill pill-warn">{{.Warnings}}</span>
+        {{else}}
+          <span class="pill pill-ok">0</span>
+        {{end}}
+      </dd>
+  </dl>
+</section>
+
+<section class="card">
+  <p class="card-eyebrow">issues</p>
+  {{if .Issues}}
+    <table class="table">
+      <thead>
+        <tr><th>severity</th><th>file</th><th>path</th><th>category</th><th>message</th></tr>
+      </thead>
+      <tbody>
+        {{range .Issues}}
+        <tr>
+          <td><span class="pill pill-{{if eq .Severity "error"}}error{{else}}warn{{end}}">{{.Severity}}</span></td>
+          <td><code>{{.File}}</code></td>
+          <td><code class="dim">{{if .Path}}{{.Path}}{{else}}—{{end}}</code></td>
+          <td><code>{{.Category}}</code></td>
+          <td>{{.Message}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p class="muted">no issues — the workspace's specs are clean.</p>
+  {{end}}
+</section>
+
+<p class="muted small">
+  <a href="/specs">← back to specs</a>
+</p>
+{{end}}

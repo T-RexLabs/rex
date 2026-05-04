@@ -3,6 +3,7 @@ package web
 import (
 	"errors"
 	"fmt"
+	"html/template"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -67,9 +68,10 @@ func newSpecView(doc *specfmt.Document) *specView {
 // specDetailData backs the spec_detail.tmpl page.
 type specDetailData struct {
 	pageData
-	Spec      *specView
-	RawYAML   string
-	ActiveTab string
+	Spec        *specView
+	RawYAML     string
+	YAMLPretty  template.HTML // chroma-highlighted view of RawYAML
+	ActiveTab   string
 }
 
 func loadSpecsList(opts Options) (specsListData, error) {
@@ -110,7 +112,11 @@ func loadSpecsList(opts Options) (specsListData, error) {
 
 // loadSpecDetail looks up the spec by its kebab id, parses it, and
 // reads the raw YAML so the source tab can render verbatim.
-func loadSpecDetail(opts Options, id, tab string) (specDetailData, bool, error) {
+//
+// hl is the chroma highlighter; when non-nil, RawYAML is also
+// rendered to YAMLPretty so the source tab can show the
+// highlighted view alongside (or instead of) the plain text.
+func loadSpecDetail(opts Options, id, tab string, hl *Highlighter) (specDetailData, bool, error) {
 	if !specfmt.IsKebab(id) {
 		return specDetailData{}, false, nil
 	}
@@ -140,10 +146,14 @@ func loadSpecDetail(opts Options, id, tab string) (specDetailData, bool, error) 
 	ws, _ := loadWorkspaceSummary(opts.WorkspaceRoot)
 	base.Workspace = ws
 
-	return specDetailData{
+	d := specDetailData{
 		pageData:  base,
 		Spec:      newSpecView(doc),
 		RawYAML:   string(raw),
 		ActiveTab: tab,
-	}, true, nil
+	}
+	if hl != nil {
+		d.YAMLPretty = hl.HighlightYAML(string(raw))
+	}
+	return d, true, nil
 }

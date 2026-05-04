@@ -121,11 +121,18 @@ metadata: {id: alpha, name: Alpha, state: draft}
 		t.Fatalf("GET: %v", err)
 	}
 	body := readBody(t, resp)
-	if !strings.Contains(body, "spec_version: 1") {
-		t.Fatalf("source tab missing raw YAML: %s", body)
+	// Chroma tokenizes the YAML so the raw substring no longer
+	// appears verbatim — assert on the tokens that survive
+	// highlighting plus the wrapper class so we still know the
+	// page is the source tab and not, say, the rendered tab.
+	if !strings.Contains(body, "spec_version") {
+		t.Fatalf("source tab missing spec_version token: %s", body)
 	}
-	if !strings.Contains(body, `class="source"`) {
-		t.Fatalf("source tab class missing: %s", body)
+	if !strings.Contains(body, `class="source chroma"`) {
+		t.Fatalf("source tab chroma wrapper missing: %s", body)
+	}
+	if !strings.Contains(body, `class="language-yaml"`) {
+		t.Fatalf("source tab language class missing: %s", body)
 	}
 }
 

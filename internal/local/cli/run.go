@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -16,11 +15,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/asabla/rex/internal/core/event"
-	"github.com/asabla/rex/internal/core/hooks"
 	"github.com/asabla/rex/internal/core/runner"
 	"github.com/asabla/rex/internal/core/runner/primshell"
-	"github.com/asabla/rex/internal/core/search"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
+	"github.com/asabla/rex/internal/local/runtask"
 )
 
 // newRunCmd returns the `rex run` parent and wires its leaves.
@@ -44,73 +42,7 @@ need a daemon model that v1 does not have.`,
 
 // eventLogPath returns the canonical events.log path for a workspace.
 func eventLogPath(workspaceRoot string) string {
-	return filepath.Join(workspaceRoot, metaDirName, "events.log")
-}
-
-// logSink adapts an eventlog.Writer to the runner.EventSink interface.
-type logSink struct {
-	w *eventlog.Writer
-}
-
-func (s *logSink) Append(eventType string, version uint32, payload json.RawMessage) error {
-	_, err := s.w.Append(eventType, version, payload)
-	return err
-}
-
-// newWorkspaceWriter builds an eventlog.Writer rooted at workspace
-// root, stamping the workspace's own id as the WorkspaceID, and
-// composing an OnAppend that fans events out to the hooks
-// dispatcher and the search indexer. The returned cleanup must be
-// called by the caller (typically via defer) to drain hook workers
-// and close the index handle.
-func newWorkspaceWriter(workspaceRoot string) (*eventlog.Writer, *eventlog.Clock, func(), error) {
-	settings, err := readWorkspaceSettings(workspaceRoot)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	clock := eventlog.NewClock()
-
-	global, _ := globalHooksDir()
-	disp := hooks.New(hooks.Options{
-		WorkspaceRoot:  workspaceRoot,
-		GlobalHooksDir: global,
-	})
-
-	idx, idxErr := search.Open(workspaceRoot)
-	indexerCB := search.EventIndexer(idx, nil)
-
-	onAppend := func(rec eventlog.Record) {
-		disp.OnAppend(rec)
-		indexerCB(rec)
-	}
-
-	w, err := eventlog.OpenWriter(eventlog.WriterConfig{
-		Path:        eventLogPath(workspaceRoot),
-		WorkspaceID: settings.ID,
-		Clock:       clock,
-		OnAppend:    onAppend,
-	})
-	if err != nil {
-		disp.Drain()
-		if idx != nil {
-			_ = idx.Close()
-		}
-		return nil, nil, nil, err
-	}
-
-	cleanup := func() {
-		disp.Drain()
-		if idx != nil {
-			_ = idx.Close()
-		}
-	}
-	if idxErr != nil {
-		// Surface the open failure but proceed without
-		// indexing; the user can `rex workspace reindex`
-		// afterwards.
-		_ = idxErr
-	}
-	return w, clock, cleanup, nil
+	return runtask.EventLogPath(workspaceRoot)
 }
 
 // runDecoderRegistry returns an event.Registry that knows how to
@@ -150,56 +82,31 @@ deferred until execution.harness-adapter-registry lands.`,
 				return errNoWorkspace
 			}
 
-			argv, err := splitShellCommand(shellCommand)
+			argv, err := runtask.SplitShellCommand(shellCommand)
 			if err != nil {
 				return err
 			}
-			if len(argv) == 0 {
-				return errors.New("--shell is empty")
-			}
 
-			cfg, err := json.Marshal(primshell.Config{Command: argv})
-			if err != nil {
-				return fmt.Errorf("marshal shell config: %w", err)
-			}
-			dag := runner.DAG{
-				Nodes: []runner.Node{
-					{ID: runner.NodeID(nodeID), Type: primshell.PrimitiveType, Config: cfg},
-				},
-			}
-
-			writer, clock, cleanup, err := newWorkspaceWriter(root)
+			ws, err := runtask.Open(root)
 			if err != nil {
 				return err
 			}
-			defer writer.Close()
-			defer cleanup()
+			defer ws.Close()
 
-			runID := runIDFlag
-			if runID == "" {
-				runID = clock.Now().String()
-			}
-
-			reg := runner.NewPrimitiveRegistry()
-			reg.Register(primshell.PrimitiveType, primshell.New(primshell.Options{WorkspaceDir: root}))
-
-			exec, err := runner.NewExecutor(runner.ExecConfig{
-				RunID:    runID,
-				DAG:      dag,
-				Sink:     &logSink{w: writer},
-				Registry: reg,
-			})
-			if err != nil {
-				return err
-			}
 			ctx := cmd.Context()
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			state, err := exec.Run(ctx)
+			res, err := runtask.StartShellRun(ctx, ws, runtask.ShellRunRequest{
+				Command: argv,
+				NodeID:  nodeID,
+				RunID:   runIDFlag,
+			})
 			if err != nil {
 				return err
 			}
+			runID := res.RunID
+			state := res.State
 
 			jsonOut, _ := cmd.Flags().GetBool("json")
 			if jsonOut {

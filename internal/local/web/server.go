@@ -34,9 +34,10 @@ type Options struct {
 // Server is the local web UI handler. Routes register on its mux;
 // templates and static assets come from the embed.FS.
 type Server struct {
-	opts  Options
-	mux   *http.ServeMux
-	pages map[string]*template.Template
+	opts        Options
+	mux         *http.ServeMux
+	pages       map[string]*template.Template
+	highlighter *Highlighter
 }
 
 // New constructs a Server, parses templates from the embed.FS, and
@@ -58,9 +59,10 @@ func New(opts Options) (*Server, error) {
 	}
 
 	s := &Server{
-		opts:  opts,
-		mux:   http.NewServeMux(),
-		pages: pages,
+		opts:        opts,
+		mux:         http.NewServeMux(),
+		pages:       pages,
+		highlighter: newHighlighter(),
 	}
 	s.registerRoutes()
 	return s, nil
@@ -72,10 +74,14 @@ func (s *Server) Handler() http.Handler { return s.mux }
 func (s *Server) registerRoutes() {
 	staticSub, _ := fs.Sub(staticFS, "static")
 	s.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
+	s.mux.HandleFunc("GET /static/chroma.css", s.handleChromaCSS)
 	s.mux.HandleFunc("GET /{$}", s.handleHome)
 	s.mux.HandleFunc("GET /specs", s.handleSpecsList)
 	s.mux.HandleFunc("GET /specs/{id}", s.handleSpecDetail)
+	s.mux.HandleFunc("POST /specs/validate", s.handleSpecsValidate)
 	s.mux.HandleFunc("GET /runs", s.handleRunsList)
+	s.mux.HandleFunc("GET /runs/new", s.handleRunNew)
+	s.mux.HandleFunc("POST /runs/start", s.handleRunStart)
 	s.mux.HandleFunc("GET /runs/{id}", s.handleRunDetail)
 	s.mux.HandleFunc("GET /runs/{id}/stream", s.handleRunStream)
 	s.mux.HandleFunc("GET /audit", s.handleAudit)

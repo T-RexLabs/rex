@@ -2,11 +2,13 @@
 
 {{define "content"}}
 <section class="overview">
+  <p class="eyebrow">workspace · audit</p>
   <h1>audit log</h1>
   <p class="muted">last {{.Limit}} audit-class entries from <code>.rex/events.log</code></p>
 </section>
 
 <section class="card">
+  <p class="card-eyebrow">entries</p>
   {{if .Rows}}
     <table class="table">
       <thead>

@@ -2,35 +2,36 @@
 
 {{define "content"}}
 <section class="overview">
-  <h1>run <code>{{.RunID}}</code></h1>
+  <p class="eyebrow">workspace · run</p>
+  <h1 class="run-id"><code>{{.RunID}}</code></h1>
   <dl class="kv">
-    <dt>status</dt><dd><span class="pill pill-{{.Status}}">{{.Status}}</span></dd>
+    <dt>status</dt><dd><span class="pill pill-{{.Status}}"><i class="dot"></i>{{.Status}}</span></dd>
     <dt>events</dt><dd>{{len .Events}}</dd>
   </dl>
+  <p class="muted small">
+    <a href="/runs">← all runs</a>
+  </p>
 </section>
 
-<section class="card"
+<section class="timeline-section"
          hx-ext="sse"
          sse-connect="/runs/{{.RunID}}/stream"
          sse-swap="run-event"
-         hx-target="#run-events tbody"
+         hx-target="#run-events"
          hx-swap="beforeend">
-  <h2>events <span class="muted">(live)</span></h2>
-  <table class="table" id="run-events">
-    <thead>
-      <tr><th>id</th><th>timestamp</th><th>type</th><th>payload</th></tr>
-    </thead>
-    <tbody>
-      {{range .Events}}
-      <tr>
-        <td><code>{{.ID}}</code></td>
-        <td>{{.Timestamp}}</td>
-        <td><code>{{.Type}}</code></td>
-        <td><code>{{.Snippet}}</code></td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
+  <p class="card-eyebrow">events <span class="muted">(live)</span></p>
+  <div class="timeline" id="run-events">
+    {{range .Events}}
+    <article class="event">
+      <header class="event-head">
+        <span class="event-type"><code>{{.Type}}</code></span>
+        <time class="event-time">{{.Timestamp}}</time>
+        <span class="event-id"><code class="dim">{{.ID}}</code></span>
+      </header>
+      <pre class="event-body chroma"><code class="language-json">{{.Payload}}</code></pre>
+    </article>
+    {{end}}
+  </div>
   <p class="muted small">
     live updates stream from <code>/runs/{{.RunID}}/stream</code> via
     Server-Sent Events. Disable JS for a static, page-reload-only view

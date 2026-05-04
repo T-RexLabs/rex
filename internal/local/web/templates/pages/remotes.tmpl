@@ -2,15 +2,17 @@
 
 {{define "content"}}
 <section class="overview">
+  <p class="eyebrow">workspace · remotes</p>
   <h1>remotes</h1>
   <p class="muted">
     registered in <code>~/.config/rex/remotes.toml</code> —
-    add / remove via <code>rex remote add</code> and
-    <code>rex remote remove</code>
+    add via <code>rex remote add &lt;name&gt; &lt;url&gt;</code>,
+    remove via <code>rex remote remove</code>
   </p>
 </section>
 
 <section class="card">
+  <p class="card-eyebrow">attached</p>
   {{if .Rows}}
     <table class="table">
       <thead>
@@ -26,14 +28,14 @@
           <td><code>{{.URL}}</code></td>
           <td>{{.Drafts}}</td>
           <td>{{if .Fingerprint}}<code>{{.Fingerprint}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
-          <td>{{if .AddedAt}}{{.AddedAt}}{{else}}<span class="muted">—</span>{{end}}</td>
-          <td>{{if .LastSeen}}{{.LastSeen}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{if .AddedAt}}<time>{{.AddedAt}}</time>{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{if .LastSeen}}<time>{{.LastSeen}}</time>{{else}}<span class="muted">—</span>{{end}}</td>
         </tr>
         {{end}}
       </tbody>
     </table>
   {{else}}
-    <p class="muted">no remotes registered — try <code>rex remote add &lt;name&gt; &lt;url&gt;</code></p>
+    <p class="muted">no remotes registered — <code>rex remote add &lt;name&gt; &lt;url&gt;</code></p>
   {{end}}
 </section>
 {{end}}

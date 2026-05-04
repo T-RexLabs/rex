@@ -30,7 +30,7 @@ func (s *Server) handleSpecsList(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSpecDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	tab := r.URL.Query().Get("tab")
-	data, ok, err := loadSpecDetail(s.opts, id, tab)
+	data, ok, err := loadSpecDetail(s.opts, id, tab, s.highlighter)
 	if err != nil {
 		http.Error(w, "web: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -55,7 +55,7 @@ func (s *Server) handleRunsList(w http.ResponseWriter, r *http.Request) {
 // handleRunDetail renders /runs/<id>.
 func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	data, ok, err := loadRunDetail(s.opts, id)
+	data, ok, err := loadRunDetail(s.opts, id, s.highlighter)
 	if err != nil {
 		http.Error(w, "web: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -102,6 +102,18 @@ func (s *Server) handleRemotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, r, "remotes.tmpl", data)
+}
+
+// handleChromaCSS serves the chroma stylesheet generated at startup.
+// Static-served because chroma's CSS is a function of the chosen
+// style and the formatter options, not a static file we can ship
+// alongside app.css. The headers tell browsers to cache it for the
+// process lifetime — the bytes don't change without a binary
+// rebuild.
+func (s *Server) handleChromaCSS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write([]byte(s.highlighter.HighlightCSS()))
 }
 
 // parsePositiveInt is a small stdlib-free integer parser used by
