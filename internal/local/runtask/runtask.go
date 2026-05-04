@@ -294,9 +294,11 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 	// frameWriter persists each ACP frame as a harness.frame event
 	// in the workspace log so `rex run watch`, `rex run show`, and
 	// the web run-detail page all see the actual transcript content
-	// — not just lifecycle events. Shipping the wire-shape verbatim
-	// keeps additive ACP evolution forward-compatible (overview.SYS.4).
-	frameWriter := buildHarnessFrameWriter(ws, runID, runner.NodeID(nodeID))
+	// — not just lifecycle events. Routes through the same sink
+	// the executor uses so OnEvent (the CLI's live stream) fires
+	// for harness.frame events too.
+	sink := &writerSink{w: ws.Writer, onEvent: req.OnEvent}
+	frameWriter := buildHarnessFrameWriter(sink, runID, runner.NodeID(nodeID))
 
 	reg := runner.NewPrimitiveRegistry()
 	reg.Register(primharness.PrimitiveType, primharness.New(primharness.Options{
@@ -309,7 +311,7 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 	exec, err := runner.NewExecutor(runner.ExecConfig{
 		RunID:    runID,
 		DAG:      dag,
-		Sink:     &writerSink{w: ws.Writer, onEvent: req.OnEvent},
+		Sink:     sink,
 		Registry: reg,
 	})
 	if err != nil {
@@ -324,16 +326,15 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 
 // buildHarnessFrameWriter returns a primharness.OnFrame callback
 // that translates each received ACP frame into a HarnessFrameEvent
-// and appends it to the workspace event log. The frame ends up in
-// events.log alongside the run/node lifecycle events, so every
-// downstream surface (cli watch, run show, web run-detail) sees it
-// without each having to know the ACP wire format.
+// and writes it through sink — the same sink the executor uses for
+// run/node lifecycle events, so OnEvent fires for harness frames
+// too and the CLI's live stream sees them.
 //
 // Append errors are swallowed: a stdout-write failure must not
 // abort an in-flight harness session. The frame count tracked by
 // primharness still increments either way, so the diagnostic in
 // node.succeeded.output stays accurate.
-func buildHarnessFrameWriter(ws *Workspace, runID string, nodeID runner.NodeID) func(acp.RawMessage) {
+func buildHarnessFrameWriter(sink *writerSink, runID string, nodeID runner.NodeID) func(acp.RawMessage) {
 	return func(raw acp.RawMessage) {
 		ev := runner.HarnessFrameEvent{
 			RunID:     runID,
@@ -348,7 +349,7 @@ func buildHarnessFrameWriter(ws *Workspace, runID string, nodeID runner.NodeID) 
 		if err != nil {
 			return
 		}
-		_, _ = ws.Writer.Append(runner.EventTypeHarnessFrame, runner.EventVersion, payload)
+		_ = sink.Append(runner.EventTypeHarnessFrame, runner.EventVersion, payload)
 	}
 }
 
