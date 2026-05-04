@@ -34,7 +34,21 @@
   </div>
   <div class="timeline" id="run-events">
     {{range .Events}}
-      {{if .Frame}}
+      {{if and .Compact (not $.Debug)}}
+        {{if .Frame}}
+          <div class="event-compact event-compact-meta" data-event-id="{{.ID}}">
+            <time class="event-time">{{.Timestamp}}</time>
+            <span class="compact-bullet">·</span>
+            <span class="compact-label">{{.Frame.Method}}{{if .Frame.Text}} · {{.Frame.Text}}{{end}}</span>
+          </div>
+        {{else}}
+          <div class="event-compact event-compact-lifecycle" data-event-id="{{.ID}}" data-run-id="{{$.RunID}}">
+            <time class="event-time">{{.Timestamp}}</time>
+            <span class="compact-bullet">●</span>
+            <span class="compact-label"><code>{{.Type}}</code> · {{.Summary}}</span>
+          </div>
+        {{end}}
+      {{else if .Frame}}
         <article class="event frame frame-{{.Frame.Kind}}" data-event-id="{{.ID}}" data-frame-kind="{{.Frame.Kind}}" data-frame-role="{{.Frame.Role}}">
           <header class="event-head">
             <span class="frame-role frame-role-{{.Frame.Role}}">{{.Frame.Role}}</span>

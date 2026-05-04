@@ -507,6 +507,36 @@ hr {
 
 .debug-toggle { margin-top: 8px; }
 
+/* Compact rows for low-signal events (lifecycle + meta frames).
+ * Single-line, dim, much smaller visual footprint than the full
+ * cards used for transcript content. ?debug=1 short-circuits the
+ * Compact branch in the template so operators see everything. */
+.event-compact {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 4px 12px;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  border-bottom: 1px dashed transparent;
+}
+.event-compact:hover { background: var(--surface-sunk); }
+.event-compact .event-time {
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.event-compact .compact-bullet {
+  color: var(--text-3);
+  width: 1ch;
+  text-align: center;
+  flex-shrink: 0;
+}
+.event-compact .compact-label code {
+  color: var(--text-2);
+  font-size: 0.95em;
+}
+.event-compact-lifecycle .compact-bullet { color: var(--accent); }
+
 /* ============================================================
  * 8. Inline code + dim text
  * ============================================================ */

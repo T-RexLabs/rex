@@ -212,10 +212,93 @@ func liveEventPrinter(cmd *cobra.Command, quiet bool) func(eventlog.Record) {
 		return nil
 	}
 	debug, _ := cmd.Flags().GetBool("debug")
-	out := cmd.OutOrStdout()
-	return func(rec eventlog.Record) {
-		writeEventLine(out, rec, debug)
+	return newStreamPrinter(cmd.OutOrStdout(), debug)
+}
+
+// streamPrinter coalesces consecutive agent_message_chunk frames
+// into a single growing line so a streaming model turn doesn't
+// produce N tiny rows mid-word. Same shape the web UI's JS shim
+// applies; the terminal version uses no-newline writes for the
+// growing turn and emits a closing newline when a non-agent_text
+// event arrives.
+type streamPrinter struct {
+	out         io.Writer
+	debug       bool
+	inAgentText bool
+}
+
+func newStreamPrinter(out io.Writer, debug bool) func(eventlog.Record) {
+	sp := &streamPrinter{out: out, debug: debug}
+	return sp.write
+}
+
+func (sp *streamPrinter) write(rec eventlog.Record) {
+	// Debug mode: every event renders as a full block, no
+	// coalescing — operators looking at debug output need to see
+	// the chunk boundaries.
+	if sp.debug {
+		sp.closeAgentText()
+		writeEventLine(sp.out, rec, true)
+		return
 	}
+
+	if rec.Type == runner.EventTypeHarnessFrame {
+		if text, ok := agentTextFromFrame(rec.Payload); ok {
+			if !sp.inAgentText {
+				fmt.Fprintf(sp.out, "%s  %-22s  ",
+					formatHLCTime(rec.Timestamp), "assistant")
+				sp.inAgentText = true
+			}
+			fmt.Fprint(sp.out, text)
+			return
+		}
+	}
+	sp.closeAgentText()
+	writeEventLine(sp.out, rec, false)
+}
+
+func (sp *streamPrinter) closeAgentText() {
+	if sp.inAgentText {
+		fmt.Fprintln(sp.out)
+		sp.inAgentText = false
+	}
+}
+
+// agentTextFromFrame returns the text content of an
+// agent_message_chunk frame. The bool is false for any other
+// frame shape, so the caller can fall through to its default
+// renderer.
+func agentTextFromFrame(payload json.RawMessage) (string, bool) {
+	var ev runner.HarnessFrameEvent
+	if err := json.Unmarshal(payload, &ev); err != nil {
+		return "", false
+	}
+	var frame struct {
+		Method string          `json:"method"`
+		Params json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal(ev.Frame, &frame); err != nil || frame.Method != "session/update" {
+		return "", false
+	}
+	var p struct {
+		Update struct {
+			SessionUpdate string          `json:"sessionUpdate"`
+			Type          string          `json:"type"`
+			Text          string          `json:"text"`
+			Content       json.RawMessage `json:"content"`
+		} `json:"update"`
+	}
+	if err := json.Unmarshal(frame.Params, &p); err != nil {
+		return "", false
+	}
+	kind := p.Update.SessionUpdate
+	if kind == "" {
+		kind = p.Update.Type
+	}
+	if kind != "agent_message_chunk" && kind != "agent_message" {
+		return "", false
+	}
+	return extractFrameText(kind, p.Update.Text, p.Update.Content, ""), true
 }
 
 // writeEventLine renders one event for a terminal. Default mode
@@ -694,6 +777,10 @@ func tailRunEvents(ctx context.Context, cmd *cobra.Command, root, runID string, 
 	seen := make(map[string]struct{})
 	terminal := false
 
+	// Default-mode emitter coalesces consecutive agent_message_chunk
+	// frames; --json emits one record per line; --debug shows full
+	// payloads under each summary line.
+	streamEmit := newStreamPrinter(out, debug)
 	emit := func(rec eventlog.Record) error {
 		if jsonOut {
 			return json.NewEncoder(out).Encode(runRecord{
@@ -706,7 +793,7 @@ func tailRunEvents(ctx context.Context, cmd *cobra.Command, root, runID string, 
 				Payload:     rec.Payload,
 			})
 		}
-		writeEventLine(out, rec, debug)
+		streamEmit(rec)
 		return nil
 	}
 

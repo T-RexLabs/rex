@@ -40,6 +40,14 @@ type runEventRow struct {
 	Payload    template.HTML
 	Permission *permissionView
 	Frame      *frameView
+	// Compact + Summary drive the dim single-line variant the
+	// template renders for low-signal events: run/node lifecycle,
+	// meta-class harness frames (usage updates, session boilerplate).
+	// The full-card branch is reserved for transcript content
+	// (agent_text, tool_call, tool_result) and events that need
+	// interaction (permission prompts).
+	Compact bool
+	Summary string
 }
 
 // frameView is the typed-render shape for harness.frame events.
@@ -205,7 +213,29 @@ func loadRunDetail(opts Options, runID string, hl *Highlighter) (runDetailData, 
 					}
 				}
 				row.Frame = fv
+				if fv.Kind == "meta" {
+					row.Compact = true
+				}
 			}
+		}
+		// Lifecycle events render as compact dim rows so they
+		// don't compete with transcript content visually. Failed
+		// nodes / aborted runs stay full cards so errors
+		// stay visible. Permission events keep the full card so
+		// the inline form has space to breathe.
+		switch ev := decoded.(type) {
+		case runner.RunStartedEvent:
+			row.Compact, row.Summary = true, "run started"
+		case runner.RunCompletedEvent:
+			row.Compact, row.Summary = true, "run completed"
+		case runner.RunCancelledEvent:
+			row.Compact, row.Summary = true, "run cancelled"
+		case runner.NodeStartedEvent:
+			row.Compact, row.Summary = true, "node started · "+string(ev.NodeID)
+		case runner.NodeSucceededEvent:
+			row.Compact, row.Summary = true, "node succeeded · "+string(ev.NodeID)
+		case runner.NodeRetriedEvent:
+			row.Compact, row.Summary = true, "node retried · "+string(ev.NodeID)
 		}
 		switch ev := decoded.(type) {
 		case runner.PermissionGrantedEvent:
@@ -318,6 +348,7 @@ func (s *Server) streamRunEvents(w http.ResponseWriter, r *http.Request, runID s
 
 	ctx := r.Context()
 	after := r.URL.Query().Get("after")
+	debug := r.URL.Query().Get("debug") == "1"
 	logPath := filepath.Join(s.opts.WorkspaceRoot, ".rex", "events.log")
 	reg := event.NewRegistry()
 	runner.RegisterEvents(reg)
@@ -327,14 +358,30 @@ func (s *Server) streamRunEvents(w http.ResponseWriter, r *http.Request, runID s
 		row := newRunEventRow(rec, s.highlighter)
 		var body string
 
+		// Lifecycle events render as compact dim rows (matches
+		// the initial server render's Compact branch). Debug
+		// mode short-circuits to the full raw card so operators
+		// can see everything.
+		if !debug {
+			if summary, ok := lifecycleSummary(decoded); ok {
+				body = renderCompactLifecycleHTML(row, rec.Type, summary, runID)
+			}
+		}
+
 		// harness.frame events get the typed card; the JS shim
 		// coalesces consecutive agent_text rows into one growing
 		// turn (same logic the initial server render uses, just
 		// applied DOM-side as new SSE frames arrive).
-		if hf, ok := decoded.(runner.HarnessFrameEvent); ok {
-			if fv := categorizeFrame(hf, s.highlighter); fv != nil {
-				row.Frame = fv
-				body = renderFrameCardHTML(row, fv)
+		if body == "" {
+			if hf, ok := decoded.(runner.HarnessFrameEvent); ok {
+				if fv := categorizeFrame(hf, s.highlighter); fv != nil {
+					row.Frame = fv
+					if fv.Kind == "meta" && !debug {
+						body = renderCompactMetaHTML(row, fv)
+					} else {
+						body = renderFrameCardHTML(row, fv)
+					}
+				}
 			}
 		}
 		if body == "" {

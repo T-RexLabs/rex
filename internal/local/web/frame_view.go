@@ -308,6 +308,60 @@ func renderFrameCardHTML(row runEventRow, fv *frameView) string {
 		header + body + debug + `</article>`
 }
 
+// lifecycleSummary returns ("run started · ...", true) for the
+// runner lifecycle events the run-detail page renders compactly,
+// (\"\", false) for everything else. Mirrors the loadRunDetail
+// lookup so initial render and SSE-streamed events agree.
+func lifecycleSummary(decoded any) (string, bool) {
+	switch ev := decoded.(type) {
+	case runner.RunStartedEvent:
+		return "run started", true
+	case runner.RunCompletedEvent:
+		return "run completed", true
+	case runner.RunCancelledEvent:
+		return "run cancelled", true
+	case runner.NodeStartedEvent:
+		return "node started · " + string(ev.NodeID), true
+	case runner.NodeSucceededEvent:
+		return "node succeeded · " + string(ev.NodeID), true
+	case runner.NodeRetriedEvent:
+		return "node retried · " + string(ev.NodeID), true
+	}
+	return "", false
+}
+
+// renderCompactLifecycleHTML produces the same single-line dim
+// row the initial server render uses for run.*/node.* events;
+// kept here so the SSE handler can emit identical markup. The
+// run id is plumbed through as a data attribute so DOM-side
+// filtering (and tests) can locate the row.
+func renderCompactLifecycleHTML(row runEventRow, eventType, summary, runID string) string {
+	return `<div class="event-compact event-compact-lifecycle" data-event-id="` +
+		html.EscapeString(row.ID) + `" data-run-id="` +
+		html.EscapeString(runID) + `">` +
+		`<time class="event-time">` + html.EscapeString(row.Timestamp) + `</time>` +
+		`<span class="compact-bullet">●</span>` +
+		`<span class="compact-label"><code>` + html.EscapeString(eventType) +
+		`</code> · ` + html.EscapeString(summary) + `</span></div>`
+}
+
+// renderCompactMetaHTML is the SSE-side compact row for meta-class
+// harness frames (usage updates, session boilerplate).
+func renderCompactMetaHTML(row runEventRow, fv *frameView) string {
+	label := fv.Method
+	if fv.Text != "" {
+		if label != "" {
+			label += " · "
+		}
+		label += fv.Text
+	}
+	return `<div class="event-compact event-compact-meta" data-event-id="` +
+		html.EscapeString(row.ID) + `">` +
+		`<time class="event-time">` + html.EscapeString(row.Timestamp) + `</time>` +
+		`<span class="compact-bullet">·</span>` +
+		`<span class="compact-label">` + html.EscapeString(label) + `</span></div>`
+}
+
 // jsonHTML renders a json.RawMessage either as chroma-highlighted
 // HTML (when hl is non-nil) or as plain escaped text. Empty input
 // returns an empty template.HTML so the template can {{if}} on it.
