@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os/signal"
 	"syscall"
@@ -48,10 +50,21 @@ request is treated as the workspace owner.`,
 				return fmt.Errorf("build server: %w", err)
 			}
 
+			// serverCtx propagates "the server is shutting down" to
+			// every in-flight request via http.Server.BaseContext.
+			// Without this, long-lived handlers (the run-detail SSE
+			// stream is the obvious one) never see ctx.Done() until
+			// the client disconnects, so srv.Shutdown blocks until
+			// its grace timer fires. Cancelling serverCtx on signal
+			// gives every handler a chance to exit cleanly first.
+			serverCtx, cancelServer := context.WithCancel(context.Background())
+			defer cancelServer()
+
 			srv := &http.Server{
 				Addr:              addr,
 				Handler:           s.Handler(),
 				ReadHeaderTimeout: 10 * time.Second,
+				BaseContext:       func(net.Listener) context.Context { return serverCtx },
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(),
@@ -76,9 +89,24 @@ request is treated as the workspace owner.`,
 				}
 			case <-ctx.Done():
 				fmt.Fprintln(cmd.OutOrStdout(), "shutting down")
+				// Cancel the server-level context first so SSE and
+				// other long-lived handlers exit before Shutdown's
+				// grace timer starts ticking.
+				cancelServer()
 				shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 				defer cancel()
 				if err := srv.Shutdown(shutdownCtx); err != nil {
+					if errors.Is(err, context.DeadlineExceeded) {
+						// A handler refused to exit within the
+						// grace window. Force-close so the binary
+						// doesn't hang; treat the timeout as
+						// informational rather than a failure
+						// (the user already pressed Ctrl-C).
+						_ = srv.Close()
+						fmt.Fprintln(cmd.OutOrStdout(),
+							"graceful shutdown timed out; force-closed")
+						return nil
+					}
 					return fmt.Errorf("shutdown: %w", err)
 				}
 			}
