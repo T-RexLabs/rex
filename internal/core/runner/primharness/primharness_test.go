@@ -35,27 +35,35 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// runEchoHarness pretends to be an ACP server that emits two
-// session/update notifications, responds to session/new, then exits.
+// runEchoHarness pretends to be an ACP server. It accepts the
+// session/new + session/prompt sequence the upstream ACP requires:
+// session/new opens a session and gets back the id; session/prompt
+// streams two updates and returns a stop_reason. After responding to
+// prompt the harness exits, which closes stdout and terminates the
+// run from the client's perspective.
 func runEchoHarness() {
 	r := acp.NewReader(os.Stdin)
 	w := acp.NewWriter(os.Stdout)
 
-	raw, err := r.Next()
-	if err != nil {
+	// session/new
+	newRaw, err := r.Next()
+	if err != nil || newRaw.Message.Method != acp.MethodSessionNew {
 		return
 	}
-	if raw.Message.Method != acp.MethodSessionNew {
+	newResp, _ := acp.NewResponse(newRaw.Message.ID, acp.SessionNewResult{SessionID: "mock-1"})
+	_ = w.Write(newResp)
+
+	// session/prompt
+	promptRaw, err := r.Next()
+	if err != nil || promptRaw.Message.Method != acp.MethodSessionPrompt {
 		return
 	}
 	for i := 0; i < 2; i++ {
 		n, _ := acp.NewNotification("session/update", map[string]int{"i": i})
 		_ = w.Write(n)
 	}
-	resp, _ := acp.NewResponse(raw.Message.ID, acp.SessionNewResult{SessionID: "mock-1"})
-	_ = w.Write(resp)
-	// Returning closes stdout, which signals end-of-session to the
-	// client.
+	promptResp, _ := acp.NewResponse(promptRaw.Message.ID, acp.SessionPromptResult{StopReason: "end_turn"})
+	_ = w.Write(promptResp)
 }
 
 // runSlowHarness ignores the prompt and never responds, so the
@@ -120,8 +128,8 @@ func TestHarnessInvocationCapturesFramesAndCompletes(t *testing.T) {
 	if out.SessionID != "mock-1" {
 		t.Fatalf("session: got %q", out.SessionID)
 	}
-	if out.FrameCount != 3 {
-		t.Fatalf("frame count: got %d want 3 (2 updates + 1 response)", out.FrameCount)
+	if out.FrameCount != 4 {
+		t.Fatalf("frame count: got %d want 4 (session/new resp + 2 updates + session/prompt resp)", out.FrameCount)
 	}
 	if out.ExitCode != 0 {
 		t.Fatalf("exit: got %d", out.ExitCode)
@@ -130,8 +138,8 @@ func TestHarnessInvocationCapturesFramesAndCompletes(t *testing.T) {
 	mu.Lock()
 	got := len(frames)
 	mu.Unlock()
-	if got != 3 {
-		t.Fatalf("observer saw %d frames, want 3", got)
+	if got != 4 {
+		t.Fatalf("observer saw %d frames, want 4", got)
 	}
 }
 
@@ -258,8 +266,8 @@ func TestHarnessInvocationFrameObserverNotRequired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if out.FrameCount != 3 {
-		t.Fatalf("frame count: got %d want 3", out.FrameCount)
+	if out.FrameCount != 4 {
+		t.Fatalf("frame count: got %d want 4", out.FrameCount)
 	}
 }
 
@@ -280,7 +288,7 @@ func TestHarnessInvocationFrameObserverConcurrency(t *testing.T) {
 	if _, err := runPrim(t, cfg, Options{OnFrame: observer}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if calls.Load() != 3 {
-		t.Fatalf("observer calls: got %d want 3", calls.Load())
+	if calls.Load() != 4 {
+		t.Fatalf("observer calls: got %d want 4", calls.Load())
 	}
 }

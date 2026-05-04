@@ -133,14 +133,15 @@ To re-attach later, run 'rex run attach <run-id>'.`,
 					node = "harness"
 				}
 				res, err := runtask.StartHarnessRun(ctx, ws, runtask.HarnessRunRequest{
-					Harness: harnessFlag,
-					Prompt:  promptFlag,
-					Model:   modelFlag,
-					Mode:    modeFlag,
-					Timeout: timeoutFlag,
-					NodeID:  node,
-					RunID:   runIDFlag,
-					OnEvent: onEvent,
+					Harness:  harnessFlag,
+					Prompt:   promptFlag,
+					Model:    modelFlag,
+					Mode:     modeFlag,
+					Timeout:  timeoutFlag,
+					NodeID:   node,
+					RunID:    runIDFlag,
+					OnEvent:  onEvent,
+					OnStderr: harnessStderrPrinter(cmd, quietFlag),
 				})
 				if err != nil {
 					return err
@@ -178,6 +179,21 @@ To re-attach later, run 'rex run attach <run-id>'.`,
 	return cmd
 }
 
+// harnessStderrPrinter routes the harness's stderr lines to the
+// CLI's stderr, prefixed so the user can tell at a glance which
+// output came from the bridge versus rex itself. Returns nil in
+// --quiet so script-driven invocations stay clean; --json never
+// sees these lines.
+func harnessStderrPrinter(cmd *cobra.Command, quiet bool) func(string) {
+	if quiet {
+		return nil
+	}
+	errOut := cmd.ErrOrStderr()
+	return func(line string) {
+		fmt.Fprintf(errOut, "[harness stderr] %s\n", line)
+	}
+}
+
 // liveEventPrinter returns a runtask.OnEvent callback that renders
 // each event in the same one-line format `rex run attach` uses.
 // Returns nil when the JSON-output flag is set OR --quiet is in
@@ -194,7 +210,7 @@ func liveEventPrinter(cmd *cobra.Command, quiet bool) func(eventlog.Record) {
 	out := cmd.OutOrStdout()
 	return func(rec eventlog.Record) {
 		fmt.Fprintf(out, "%s  %-22s  %s\n",
-			rec.Timestamp.String(), rec.Type, summarizeEventPayload(rec.Type, rec.Payload))
+			formatHLCTime(rec.Timestamp), rec.Type, summarizeEventPayload(rec.Type, rec.Payload))
 	}
 }
 
@@ -647,7 +663,7 @@ func tailRunEvents(ctx context.Context, cmd *cobra.Command, root, runID string, 
 			})
 		}
 		fmt.Fprintf(out, "%s  %-22s  %s\n",
-			rec.Timestamp.String(), rec.Type, summarizeEventPayload(rec.Type, rec.Payload))
+			formatHLCTime(rec.Timestamp), rec.Type, summarizeEventPayload(rec.Type, rec.Payload))
 		return nil
 	}
 
@@ -710,6 +726,17 @@ func tailRunEvents(ctx context.Context, cmd *cobra.Command, root, runID string, 
 			}
 		}
 	}
+}
+
+// formatHLCTime renders the wall component of an HLC as a local-
+// timezone "2006-01-02 15:04:05.000" string. Falls back to the raw
+// HLC representation when the timestamp is zero so we never silently
+// emit a meaningless "1970-01-01" line.
+func formatHLCTime(h eventlog.HLC) string {
+	if h.Wall == 0 {
+		return h.String()
+	}
+	return h.Time().Local().Format("2006-01-02 15:04:05.000")
 }
 
 // recordMatchesRun decodes rec via the runner registry and asks

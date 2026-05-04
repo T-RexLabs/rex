@@ -237,6 +237,11 @@ type HarnessRunRequest struct {
 	// in attached mode (the default) to render events live as
 	// they happen. Nil = silent during execution.
 	OnEvent func(eventlog.Record)
+	// OnStderr is invoked once per line written to the harness's
+	// stderr (npx output, bridge diagnostics, crashes). Nil
+	// silently drops; the CLI typically wires this to its own
+	// os.Stderr so the user sees what the bridge is doing.
+	OnStderr func(line string)
 }
 
 // StartHarnessRun executes a one-node harness DAG synchronously
@@ -290,6 +295,7 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 	reg.Register(primharness.PrimitiveType, primharness.New(primharness.Options{
 		WorkspaceID: ws.ID,
 		Adapters:    req.Adapters,
+		OnStderr:    req.OnStderr,
 	}))
 
 	exec, err := runner.NewExecutor(runner.ExecConfig{

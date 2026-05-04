@@ -45,6 +45,17 @@ func (h HLC) String() string {
 	return fmt.Sprintf("%d.%d", h.Wall, h.Logical)
 }
 
+// Time returns the wall-clock instant the HLC was minted (not
+// monotonic — two HLCs with the same Time can still be Less-ordered
+// via Logical). Zero HLC returns the Go zero time so callers can
+// distinguish "no event" from "epoch event".
+func (h HLC) Time() time.Time {
+	if h.Wall == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, h.Wall)
+}
+
 // ParseHLC parses the format produced by HLC.String.
 func ParseHLC(s string) (HLC, error) {
 	dot := strings.IndexByte(s, '.')

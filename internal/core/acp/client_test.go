@@ -97,7 +97,7 @@ func TestClientNewSessionRoundTrip(t *testing.T) {
 		if err := json.Unmarshal(raw.Message.Params, &got); err != nil {
 			t.Errorf("unmarshal params: %v", err)
 		}
-		if got.WorkspaceID != "ws-1" || len(got.MCPServers) != 1 {
+		if got.Cwd != "/tmp/ws-1" || len(got.MCPServers) != 1 {
 			t.Errorf("params not delivered: %+v", got)
 		}
 		resp, _ := NewResponse(raw.Message.ID, SessionNewResult{SessionID: "sess-9"})
@@ -109,7 +109,7 @@ func TestClientNewSessionRoundTrip(t *testing.T) {
 	defer cancel()
 
 	res, err := c.NewSession(ctx, SessionNewParams{
-		WorkspaceID: "ws-1",
+		Cwd: "/tmp/ws-1",
 		MCPServers: []MCPServer{
 			{Name: "fs", Command: []string{"mcp-fs"}},
 		},
@@ -175,7 +175,7 @@ func TestClientFrameObserverCalledBeforeRouting(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	if _, err := c.NewSession(ctx, SessionNewParams{WorkspaceID: "ws"}); err != nil {
+	if _, err := c.NewSession(ctx, SessionNewParams{Cwd: "/tmp/ws"}); err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
 

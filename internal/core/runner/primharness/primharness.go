@@ -13,11 +13,13 @@
 package primharness
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sync/atomic"
 	"time"
@@ -83,6 +85,15 @@ type Options struct {
 	// Nil means "use adapter.Default()", which is what production
 	// callers want; tests pass a custom registry to stay isolated.
 	Adapters *adapter.Registry
+
+	// OnStderr is invoked once per line written to the harness's
+	// stderr — bridge diagnostics, npx warnings, anything the
+	// harness uses for human-readable output. Nil silently drops
+	// (the goroutine still consumes the pipe so the harness does
+	// not block on a full buffer). The CLI typically wires this
+	// to os.Stderr-prefixed; the web UI captures the lines as
+	// runner events.
+	OnStderr func(line string)
 }
 
 // New returns a Primitive bound to opts.
@@ -138,7 +149,12 @@ func run(ctx context.Context, opts Options, in runner.PrimitiveInput) (runner.Pr
 	if err := cmd.Start(); err != nil {
 		return runner.PrimitiveOutput{}, fmt.Errorf("primharness: start: %w", err)
 	}
-	go drainStderr(stderr) // discard but consume so the harness does not block
+	// Forward harness stderr to opts.OnStderr line-by-line so the
+	// CLI can surface bridge diagnostics (npx output, bridge crash
+	// traces, etc.) instead of silently swallowing them. When no
+	// hook is configured the goroutine still drains the pipe so
+	// the harness doesn't block on a full buffer.
+	go forwardStderr(stderr, opts.OnStderr)
 
 	var frameCount atomic.Int32
 	observer := func(raw acp.RawMessage) {
@@ -162,15 +178,22 @@ func run(ctx context.Context, opts Options, in runner.PrimitiveInput) (runner.Pr
 		return runner.PrimitiveOutput{}, fmt.Errorf("primharness: build client: %w", err)
 	}
 
-	// session/new carries the prompt directly so the harness has
-	// everything it needs to start work; the response gives us the
-	// session id and signals the harness has begun streaming updates.
+	// session/new opens the session; the bridge expects cwd
+	// (string) and mcpServers (array, may be empty). Send Dir
+	// when set, otherwise inherit the harness process's working
+	// directory by resolving cwd lazily.
+	cwd := cfg.Dir
+	if cwd == "" {
+		// os.Getwd() is the same dir os/exec inherits when
+		// cmd.Dir is empty; pass it explicitly so the bridge
+		// has a defined string rather than receiving "".
+		if wd, err := os.Getwd(); err == nil {
+			cwd = wd
+		}
+	}
 	res, err := client.NewSession(cmdCtx, acp.SessionNewParams{
-		WorkspaceID: opts.WorkspaceID,
-		Prompt:      cfg.Prompt,
-		Model:       cfg.Model,
-		Mode:        cfg.Mode,
-		MCPServers:  cfg.MCPServers,
+		Cwd:        cwd,
+		MCPServers: cfg.MCPServers,
 	})
 	if err != nil {
 		_ = client.Close()
@@ -179,19 +202,37 @@ func run(ctx context.Context, opts Options, in runner.PrimitiveInput) (runner.Pr
 		return runner.PrimitiveOutput{}, fmt.Errorf("primharness: session/new: %w", err)
 	}
 
-	// Wait for the harness to close its stdout (signalling end of
-	// session output) or for ctx/timeout to fire. Until the adapter
-	// layer pins down a "session/done" notification, EOF is the
-	// canonical end-of-session marker.
+	// session/prompt delivers the user's message. The bridge
+	// streams session/update notifications throughout this call
+	// (captured via OnFrame above) and returns a stop_reason when
+	// the model is done. The call is run in a goroutine so the
+	// select below can race it against ctx/timeout cancellation.
+	promptDone := make(chan error, 1)
+	go func() {
+		_, err := client.SendPrompt(cmdCtx, acp.SessionPromptParams{
+			SessionID: res.SessionID,
+			Prompt:    acp.TextPromptBlocks(cfg.Prompt),
+		})
+		promptDone <- err
+	}()
+
+	var promptErr error
 	select {
-	case <-client.Done():
+	case promptErr = <-promptDone:
 	case <-cmdCtx.Done():
 		// Cancel via the protocol first, then close transports.
 		cancelCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		_ = client.CancelSession(cancelCtx, res.SessionID)
 		cancel()
+		// Drain promptDone so the goroutine returns.
+		<-promptDone
 	}
 	_ = client.Close()
+	if promptErr != nil && !errors.Is(cmdCtx.Err(), context.Canceled) && !errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return runner.PrimitiveOutput{}, fmt.Errorf("primharness: session/prompt: %w", promptErr)
+	}
 
 	waitErr := cmd.Wait()
 	duration := time.Since(startedAt)
@@ -228,8 +269,22 @@ func run(ctx context.Context, opts Options, in runner.PrimitiveInput) (runner.Pr
 	return runner.PrimitiveOutput{Output: body}, nil
 }
 
-func drainStderr(r io.Reader) {
-	_, _ = io.Copy(io.Discard, r)
+// forwardStderr scans r line by line and invokes onLine for each.
+// When onLine is nil the lines are still consumed (so the harness
+// doesn't block on a full pipe buffer) but discarded. Any read
+// error terminates the loop silently — the caller already owns
+// the harness lifecycle.
+func forwardStderr(r io.Reader, onLine func(string)) {
+	if r == nil {
+		return
+	}
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		if onLine != nil {
+			onLine(scanner.Text())
+		}
+	}
 }
 
 // buildCmd resolves cfg.Harness to a registered adapter and asks it

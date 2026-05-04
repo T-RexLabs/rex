@@ -10,6 +10,7 @@ import (
 // corresponding capability is wired up.
 const (
 	MethodSessionNew               = "session/new"
+	MethodSessionPrompt            = "session/prompt"
 	MethodSessionCancel            = "session/cancel"
 	MethodSessionRequestPermission = "session/request_permission"
 )
@@ -23,22 +24,52 @@ type MCPServer struct {
 	Env     map[string]string `json:"env,omitempty"`
 }
 
-// SessionNewParams is the payload for session/new. Field names align
-// with what the @agentclientprotocol harness wrappers expect; if a
-// concrete harness adapter needs additional fields it can wrap this
-// struct with its own.
+// SessionNewParams is the payload for session/new. Mirrors the
+// upstream Agent Client Protocol shape: cwd is required (the harness
+// uses it as the working directory for tool calls); mcpServers is
+// required as an array (empty arrays must serialize as `[]`, not
+// `null` or `omitted`, so the field has no omitempty and the
+// constructor in NewSession ensures a non-nil slice goes on the
+// wire).
 type SessionNewParams struct {
-	WorkspaceID string      `json:"workspaceId"`
-	Prompt      string      `json:"prompt,omitempty"`
-	Model       string      `json:"model,omitempty"`
-	Mode        string      `json:"mode,omitempty"`
-	MCPServers  []MCPServer `json:"mcpServers,omitempty"`
+	Cwd        string      `json:"cwd"`
+	MCPServers []MCPServer `json:"mcpServers"`
 }
 
 // SessionNewResult is the response from session/new.
 type SessionNewResult struct {
 	SessionID string          `json:"sessionId"`
 	Extra     json.RawMessage `json:"-"`
+}
+
+// PromptContentBlock is one block of a session/prompt content array.
+// V1 only ships text blocks; image and resource blocks land if and
+// when a real use case demands them.
+type PromptContentBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+}
+
+// TextPromptBlocks builds the most common shape — a single text
+// block — so callers don't have to know the wire format.
+func TextPromptBlocks(text string) []PromptContentBlock {
+	return []PromptContentBlock{{Type: "text", Text: text}}
+}
+
+// SessionPromptParams is the payload for session/prompt: the user's
+// message, addressed to a session opened by session/new.
+type SessionPromptParams struct {
+	SessionID string               `json:"sessionId"`
+	Prompt    []PromptContentBlock `json:"prompt"`
+}
+
+// SessionPromptResult is the response to session/prompt. The bridge
+// returns metadata when the model finishes (e.g. stop_reason); we
+// keep the raw payload so adapter-specific extras stay accessible
+// without growing the struct.
+type SessionPromptResult struct {
+	StopReason string          `json:"stopReason,omitempty"`
+	Extra      json.RawMessage `json:"-"`
 }
 
 // SessionCancelParams is the payload for session/cancel.
@@ -70,7 +101,13 @@ type PermissionDecision struct {
 type PermissionHandler func(ctx context.Context, req PermissionRequest) (PermissionDecision, error)
 
 // NewSession is a typed wrapper over Call(MethodSessionNew, ...).
+// Ensures MCPServers serializes as `[]` rather than `null` when the
+// caller passes a nil slice — the upstream bridge rejects null with
+// a Zod-style "expected array" error.
 func (c *Client) NewSession(ctx context.Context, params SessionNewParams) (SessionNewResult, error) {
+	if params.MCPServers == nil {
+		params.MCPServers = []MCPServer{}
+	}
 	raw, err := c.Call(ctx, MethodSessionNew, params)
 	if err != nil {
 		return SessionNewResult{}, err
@@ -78,6 +115,24 @@ func (c *Client) NewSession(ctx context.Context, params SessionNewParams) (Sessi
 	var res SessionNewResult
 	if err := json.Unmarshal(raw, &res); err != nil {
 		return SessionNewResult{}, err
+	}
+	res.Extra = raw
+	return res, nil
+}
+
+// SendPrompt is a typed wrapper over Call(MethodSessionPrompt, ...).
+// Per the upstream ACP, the prompt is delivered after session/new
+// has returned a sessionId; the bridge streams session/update
+// notifications throughout this call's lifetime and returns a
+// terminal stop_reason when the model is done.
+func (c *Client) SendPrompt(ctx context.Context, params SessionPromptParams) (SessionPromptResult, error) {
+	raw, err := c.Call(ctx, MethodSessionPrompt, params)
+	if err != nil {
+		return SessionPromptResult{}, err
+	}
+	var res SessionPromptResult
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return SessionPromptResult{}, err
 	}
 	res.Extra = raw
 	return res, nil
