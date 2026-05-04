@@ -425,6 +425,89 @@ hr {
 }
 
 /* ============================================================
+ * Run-detail typed frame cards (harness.frame events)
+ * ============================================================ */
+
+.event.frame {
+  border-left: 3px solid var(--border);
+  padding-left: 12px;
+}
+.event.frame .event-head {
+  margin-bottom: 6px;
+}
+.frame-role {
+  display: inline-block;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--r);
+  background: var(--surface-sunk);
+  text-transform: lowercase;
+}
+.frame-role-assistant { color: var(--accent); border-left: 2px solid var(--accent); }
+.frame-role-user      { color: var(--text); }
+.frame-role-tool      { color: var(--text-2); }
+.frame-role-system    { color: var(--text-3); }
+
+.frame-kind code { color: var(--text-3); }
+
+.frame-body {
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
+.frame-text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 4px 0 8px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.frame-thought {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+.frame.frame-agent_text { border-left-color: var(--accent); }
+.frame.frame-tool_call,
+.frame.frame-tool_result { border-left-color: var(--text-3); }
+
+.frame-tool {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-family: ui-monospace, monospace;
+  font-size: var(--fs-sm);
+  margin: 4px 0;
+}
+.frame-tool .tool-arrow {
+  color: var(--text-3);
+  font-weight: 700;
+}
+.frame-tool .tool-name {
+  color: var(--text);
+  font-weight: 500;
+}
+.frame-tool .tool-args {
+  flex-basis: 100%;
+  margin-top: 4px;
+}
+.frame-tool .tool-args summary {
+  cursor: pointer;
+}
+
+.frame-debug {
+  margin-top: 6px;
+}
+.frame-debug summary { cursor: pointer; }
+.frame-debug pre { margin-top: 6px; }
+
+/* In default (non-debug) mode, hide the per-frame raw JSON disclosure;
+ * the user can still flip ?debug=1 to see everything. */
+.section:not(.run-debug) .frame-debug { display: none; }
+
+.debug-toggle { margin-top: 8px; }
+
+/* ============================================================
  * 8. Inline code + dim text
  * ============================================================ */
 

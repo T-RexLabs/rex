@@ -11,63 +11,120 @@
     <span>{{len .Events}} event{{if ne (len .Events) 1}}s{{end}}</span>
     <span class="back"><a href="/runs"><span aria-hidden="true">←</span> all runs</a></span>
   </div>
+  <div class="meta debug-toggle">
+    {{if .Debug}}
+      <span class="pill pill-warn"><i class="dot"></i>debug</span>
+      <a href="/runs/{{.RunID}}" class="muted small">disable raw frames</a>
+    {{else}}
+      <a href="/runs/{{.RunID}}?debug=1" class="muted small">show raw frames (debug)</a>
+    {{end}}
+  </div>
 </header>
 
-<section class="section"
+<section class="section{{if .Debug}} run-debug{{end}}"
          hx-ext="sse"
-         sse-connect="/runs/{{.RunID}}/stream{{if .LastEventID}}?after={{.LastEventID}}{{end}}"
+         sse-connect="/runs/{{.RunID}}/stream{{if .LastEventID}}?after={{.LastEventID}}{{end}}{{if .Debug}}{{if .LastEventID}}&{{else}}?{{end}}debug=1{{end}}"
          sse-swap="run-event"
          hx-target="#run-events"
-         hx-swap="beforeend">
+         hx-swap="beforeend"
+         data-debug="{{if .Debug}}1{{else}}0{{end}}">
   <div class="section-head">
     <h2>events</h2>
     <span class="section-meta">live · streaming from <code>/runs/{{.RunID}}/stream</code></span>
   </div>
   <div class="timeline" id="run-events">
     {{range .Events}}
-    <article class="event{{if .Permission}} event-permission{{end}}"{{if .Permission}} id="{{.Permission.RequestID}}"{{end}}>
-      <header class="event-head">
-        <span class="event-type" data-type="{{.Type}}"><code>{{.Type}}</code></span>
-        <time class="event-time">{{.Timestamp}}</time>
-        <span class="event-id"><code>{{.ID}}</code></span>
-      </header>
-      <pre class="event-body chroma"><code class="language-json">{{.Payload}}</code></pre>
-      {{with .Permission}}
-        {{if .Resolved}}
-          <div class="permission-resolution permission-{{.Decision}}">
-            <span class="permission-label">
-              <span class="pill pill-{{if eq .Decision "granted"}}ok{{else}}error{{end}}"><i class="dot"></i>{{.Decision}}</span>
-              <span class="muted small">request <code>{{.RequestID}}</code></span>
-            </span>
-            <span class="permission-meta muted small">
-              {{if .Resolver}}by <code>{{.Resolver}}</code> · {{end}}<time>{{.ResolvedAt}}</time>
-              {{if .Note}} · {{.Note}}{{end}}
-            </span>
+      {{if .Frame}}
+        <article class="event frame frame-{{.Frame.Kind}}" data-event-id="{{.ID}}" data-frame-kind="{{.Frame.Kind}}" data-frame-role="{{.Frame.Role}}">
+          <header class="event-head">
+            <span class="frame-role frame-role-{{.Frame.Role}}">{{.Frame.Role}}</span>
+            <span class="frame-kind muted small">{{.Frame.Kind}}{{if .Frame.Method}} · <code>{{.Frame.Method}}</code>{{end}}</span>
+            <time class="event-time">{{.Timestamp}}</time>
+          </header>
+          {{if eq .Frame.Kind "agent_text"}}
+            <div class="frame-body frame-text" data-frame-text>{{.Frame.Text}}</div>
+          {{else if eq .Frame.Kind "agent_thought"}}
+            <div class="frame-body frame-text frame-thought">{{.Frame.Text}}</div>
+          {{else if eq .Frame.Kind "tool_call"}}
+            <div class="frame-body frame-tool">
+              <span class="tool-arrow">→</span>
+              <code class="tool-name">{{.Frame.ToolName}}</code>
+              {{if .Frame.ToolArgs}}
+                <details class="tool-args">
+                  <summary class="muted small">args</summary>
+                  <pre class="chroma"><code class="language-json">{{.Frame.ToolArgs}}</code></pre>
+                </details>
+              {{end}}
+            </div>
+          {{else if eq .Frame.Kind "tool_result"}}
+            <div class="frame-body frame-tool">
+              <span class="tool-arrow">←</span>
+              <code class="tool-name">{{.Frame.ToolName}}</code>
+              <span class="pill pill-{{if eq .Frame.Status "ok"}}ok{{else}}error{{end}}">{{.Frame.Status}}</span>
+              {{if .Frame.ToolArgs}}
+                <details class="tool-args">
+                  <summary class="muted small">result</summary>
+                  <pre class="chroma"><code class="language-json">{{.Frame.ToolArgs}}</code></pre>
+                </details>
+              {{end}}
+            </div>
+          {{else if eq .Frame.Kind "plan"}}
+            <div class="frame-body frame-text">{{.Frame.Text}}</div>
+          {{else}}
+            <div class="frame-body muted small">{{.Frame.Text}}</div>
+          {{end}}
+          <div class="frame-debug">
+            <details>
+              <summary class="muted small">raw frame · <code>{{.ID}}</code></summary>
+              <pre class="event-body chroma"><code class="language-json">{{.Payload}}</code></pre>
+            </details>
           </div>
-        {{else}}
-          <form class="permission-form" method="post" action="/runs/{{$.RunID}}/permission">
-            <input type="hidden" name="request_id" value="{{.RequestID}}">
-            <div class="permission-row">
-              <span class="permission-label">
-                <span class="pill pill-warn"><i class="dot"></i>awaiting decision</span>
-                <span class="muted small">{{if .Tool}}<code>{{.Tool}}</code> · {{end}}request <code>{{.RequestID}}</code></span>
-              </span>
-            </div>
-            {{if .Reason}}
-              <p class="muted small">{{.Reason}}</p>
+        </article>
+      {{else}}
+        <article class="event{{if .Permission}} event-permission{{end}}"{{if .Permission}} id="{{.Permission.RequestID}}"{{end}}>
+          <header class="event-head">
+            <span class="event-type" data-type="{{.Type}}"><code>{{.Type}}</code></span>
+            <time class="event-time">{{.Timestamp}}</time>
+            <span class="event-id"><code>{{.ID}}</code></span>
+          </header>
+          <pre class="event-body chroma"><code class="language-json">{{.Payload}}</code></pre>
+          {{with .Permission}}
+            {{if .Resolved}}
+              <div class="permission-resolution permission-{{.Decision}}">
+                <span class="permission-label">
+                  <span class="pill pill-{{if eq .Decision "granted"}}ok{{else}}error{{end}}"><i class="dot"></i>{{.Decision}}</span>
+                  <span class="muted small">request <code>{{.RequestID}}</code></span>
+                </span>
+                <span class="permission-meta muted small">
+                  {{if .Resolver}}by <code>{{.Resolver}}</code> · {{end}}<time>{{.ResolvedAt}}</time>
+                  {{if .Note}} · {{.Note}}{{end}}
+                </span>
+              </div>
+            {{else}}
+              <form class="permission-form" method="post" action="/runs/{{$.RunID}}/permission">
+                <input type="hidden" name="request_id" value="{{.RequestID}}">
+                <div class="permission-row">
+                  <span class="permission-label">
+                    <span class="pill pill-warn"><i class="dot"></i>awaiting decision</span>
+                    <span class="muted small">{{if .Tool}}<code>{{.Tool}}</code> · {{end}}request <code>{{.RequestID}}</code></span>
+                  </span>
+                </div>
+                {{if .Reason}}
+                  <p class="muted small">{{.Reason}}</p>
+                {{end}}
+                <div class="permission-row">
+                  <input class="field-input"
+                         type="text"
+                         name="note"
+                         placeholder="optional note for the audit log">
+                  <button class="btn btn-primary" type="submit" name="decision" value="grant">approve</button>
+                  <button class="btn" type="submit" name="decision" value="deny">deny</button>
+                </div>
+              </form>
             {{end}}
-            <div class="permission-row">
-              <input class="field-input"
-                     type="text"
-                     name="note"
-                     placeholder="optional note for the audit log">
-              <button class="btn btn-primary" type="submit" name="decision" value="grant">approve</button>
-              <button class="btn" type="submit" name="decision" value="deny">deny</button>
-            </div>
-          </form>
-        {{end}}
+          {{end}}
+        </article>
       {{end}}
-    </article>
     {{end}}
   </div>
   <p class="muted small">disable js for a static, page-reload-only view (web-ui.access.3).</p>
@@ -75,4 +132,5 @@
 
 <script src="/static/htmx.min.js" defer></script>
 <script src="/static/htmx-ext-sse.js" defer></script>
+<script src="/static/run-stream.js" defer></script>
 {{end}}

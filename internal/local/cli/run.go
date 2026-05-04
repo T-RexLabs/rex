@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -176,6 +177,7 @@ To re-attach later, run 'rex run attach <run-id>'.`,
 	cmd.Flags().StringVar(&runIDFlag, "run-id", "", "explicit run id (default: HLC-derived; useful for tests)")
 	cmd.Flags().BoolVar(&quietFlag, "quiet", false, "suppress the live event stream; print only the final summary")
 	cmd.Flags().BoolVarP(&detachFlag, "detach", "d", false, "(reserved) kick off the run and return immediately — not yet wired")
+	cmd.Flags().Bool("debug", false, "render full event payloads instead of one-line summaries")
 	return cmd
 }
 
@@ -198,7 +200,9 @@ func harnessStderrPrinter(cmd *cobra.Command, quiet bool) func(string) {
 // each event in the same one-line format `rex run attach` uses.
 // Returns nil when the JSON-output flag is set OR --quiet is in
 // effect, so the final summary is the only thing on stdout in
-// those modes.
+// those modes. In --debug mode the full payload is printed
+// indented under each event header instead of the one-line
+// summary, matching the web UI's debug toggle (web-ui.LIVE.*).
 func liveEventPrinter(cmd *cobra.Command, quiet bool) func(eventlog.Record) {
 	if quiet {
 		return nil
@@ -207,10 +211,25 @@ func liveEventPrinter(cmd *cobra.Command, quiet bool) func(eventlog.Record) {
 	if jsonOut {
 		return nil
 	}
+	debug, _ := cmd.Flags().GetBool("debug")
 	out := cmd.OutOrStdout()
 	return func(rec eventlog.Record) {
-		fmt.Fprintf(out, "%s  %-22s  %s\n",
-			formatHLCTime(rec.Timestamp), rec.Type, summarizeEventPayload(rec.Type, rec.Payload))
+		writeEventLine(out, rec, debug)
+	}
+}
+
+// writeEventLine renders one event for a terminal. Default mode
+// is the one-line "<time>  <type>  <summary>" shape; debug mode
+// adds a pretty-printed payload indented under the header.
+func writeEventLine(out io.Writer, rec eventlog.Record, debug bool) {
+	fmt.Fprintf(out, "%s  %-22s  %s\n",
+		formatHLCTime(rec.Timestamp), rec.Type, summarizeEventPayload(rec.Type, rec.Payload))
+	if !debug {
+		return
+	}
+	var pretty bytes.Buffer
+	if err := json.Indent(&pretty, rec.Payload, "    ", "  "); err == nil {
+		fmt.Fprintf(out, "    %s\n", pretty.String())
 	}
 }
 
@@ -642,6 +661,7 @@ With --json, one decoded event record per line.`,
 	}
 	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
 	cmd.Flags().BoolVar(&jsonOutFlag, "json", false, "emit one decoded event record per line as JSON")
+	cmd.Flags().Bool("debug", false, "include full event payloads under each line")
 	return cmd
 }
 
@@ -669,6 +689,7 @@ func tailRunEvents(ctx context.Context, cmd *cobra.Command, root, runID string, 
 	logPath := eventLogPath(root)
 	reg := runDecoderRegistry()
 	out := cmd.OutOrStdout()
+	debug, _ := cmd.Flags().GetBool("debug")
 
 	seen := make(map[string]struct{})
 	terminal := false
@@ -685,8 +706,7 @@ func tailRunEvents(ctx context.Context, cmd *cobra.Command, root, runID string, 
 				Payload:     rec.Payload,
 			})
 		}
-		fmt.Fprintf(out, "%s  %-22s  %s\n",
-			formatHLCTime(rec.Timestamp), rec.Type, summarizeEventPayload(rec.Type, rec.Payload))
+		writeEventLine(out, rec, debug)
 		return nil
 	}
 

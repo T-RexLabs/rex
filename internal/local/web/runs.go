@@ -39,6 +39,34 @@ type runEventRow struct {
 	Type       string
 	Payload    template.HTML
 	Permission *permissionView
+	Frame      *frameView
+}
+
+// frameView is the typed-render shape for harness.frame events.
+// When Kind is non-empty the template renders a typed card
+// (assistant text, tool call, tool result, …) instead of the raw
+// JSON payload. The raw payload is still available behind a
+// debug toggle (?debug=1).
+//
+// Kind values:
+//
+//	"agent_text"    — text from the model (groups consecutive
+//	                  agent_message_chunk frames into one card)
+//	"agent_thought" — chain-of-thought, when the harness emits it
+//	"tool_call"     — start of a tool invocation
+//	"tool_result"   — completion of a tool invocation
+//	"plan"          — plan_change updates
+//	"meta"          — session/new, session/prompt and other ACP
+//	                  protocol-level frames; rendered as a one-
+//	                  liner with the method name
+type frameView struct {
+	Kind     string
+	Role     string
+	Method   string
+	Text     string
+	ToolName string
+	ToolArgs template.HTML
+	Status   string
 }
 
 // permissionView is the per-row shape behind LIVE.3's permission
@@ -106,6 +134,7 @@ type runDetailData struct {
 	Status      runner.RunStatus
 	Events      []runEventRow
 	LastEventID string
+	Debug       bool
 }
 
 // loadRunDetail walks events.log and returns the records whose
@@ -160,6 +189,24 @@ func loadRunDetail(opts Options, runID string, hl *Highlighter) (runDetailData, 
 			continue
 		}
 		row := newRunEventRow(rec, hl)
+		// harness.frame events get a typed view; consecutive
+		// agent_text frames coalesce into one row so a model's
+		// chunked turn doesn't bloat the timeline. The grouping
+		// logic only activates when the frame parses cleanly —
+		// if categorizeFrame returns nil we fall back to the
+		// raw JSON view alongside every other event.
+		if hf, ok := decoded.(runner.HarnessFrameEvent); ok {
+			if fv := categorizeFrame(hf, hl); fv != nil {
+				if fv.Kind == "agent_text" && len(collected) > 0 {
+					prev := &collected[len(collected)-1]
+					if pf := prev.row.Frame; pf != nil && pf.Kind == "agent_text" && pf.Role == fv.Role {
+						pf.Text += fv.Text
+						continue
+					}
+				}
+				row.Frame = fv
+			}
+		}
 		switch ev := decoded.(type) {
 		case runner.PermissionGrantedEvent:
 			resolutions[ev.RequestID] = &permissionView{
@@ -276,26 +323,37 @@ func (s *Server) streamRunEvents(w http.ResponseWriter, r *http.Request, runID s
 	runner.RegisterEvents(reg)
 
 	seen := make(map[string]struct{})
-	emit := func(rec eventlog.Record) error {
+	emit := func(rec eventlog.Record, decoded any) error {
 		row := newRunEventRow(rec, s.highlighter)
-		// Render the same timeline-card HTML the initial render
-		// uses so the SSE-appended cards are visually identical
-		// to the server-rendered ones.
-		body := fmt.Sprintf(
-			`<article class="event">`+
-				`<header class="event-head">`+
-				`<span class="event-type" data-type="%s"><code>%s</code></span>`+
-				`<time class="event-time">%s</time>`+
-				`<span class="event-id"><code>%s</code></span>`+
-				`</header>`+
-				`<pre class="event-body chroma"><code class="language-json">%s</code></pre>`+
-				`</article>`,
-			html.EscapeString(row.Type),
-			html.EscapeString(row.Type),
-			html.EscapeString(row.Timestamp),
-			html.EscapeString(row.ID),
-			string(row.Payload), // already-rendered safe HTML
-		)
+		var body string
+
+		// harness.frame events get the typed card; the JS shim
+		// coalesces consecutive agent_text rows into one growing
+		// turn (same logic the initial server render uses, just
+		// applied DOM-side as new SSE frames arrive).
+		if hf, ok := decoded.(runner.HarnessFrameEvent); ok {
+			if fv := categorizeFrame(hf, s.highlighter); fv != nil {
+				row.Frame = fv
+				body = renderFrameCardHTML(row, fv)
+			}
+		}
+		if body == "" {
+			body = fmt.Sprintf(
+				`<article class="event">`+
+					`<header class="event-head">`+
+					`<span class="event-type" data-type="%s"><code>%s</code></span>`+
+					`<time class="event-time">%s</time>`+
+					`<span class="event-id"><code>%s</code></span>`+
+					`</header>`+
+					`<pre class="event-body chroma"><code class="language-json">%s</code></pre>`+
+					`</article>`,
+				html.EscapeString(row.Type),
+				html.EscapeString(row.Type),
+				html.EscapeString(row.Timestamp),
+				html.EscapeString(row.ID),
+				string(row.Payload),
+			)
+		}
 		// SSE multi-line data must prefix every line; flatten
 		// embedded newlines so the wire frame is a single data: line.
 		body = strings.ReplaceAll(body, "\n", " ")
@@ -340,7 +398,13 @@ func (s *Server) streamRunEvents(w http.ResponseWriter, r *http.Request, runID s
 				continue
 			}
 			seen[rec.ID] = struct{}{}
-			if err := emit(rec); err != nil {
+			decoded, derr := reg.Decode(event.Envelope{
+				Type: rec.Type, Version: rec.Version, Payload: rec.Payload,
+			})
+			if derr != nil {
+				decoded = nil
+			}
+			if err := emit(rec, decoded); err != nil {
 				return err
 			}
 		}

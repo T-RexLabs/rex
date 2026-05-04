@@ -56,7 +56,8 @@ func (s *Server) handleRunsList(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "runs_list.tmpl", data)
 }
 
-// handleRunDetail renders /runs/<id>.
+// handleRunDetail renders /runs/<id>. Honours ?debug=1 to surface
+// raw frame JSON alongside the typed view.
 func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	data, ok, err := loadRunDetail(s.opts, id, s.highlighter)
@@ -69,6 +70,7 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.NavSection = "runs"
+	data.Debug = r.URL.Query().Get("debug") == "1"
 	s.render(w, r, "run_detail.tmpl", data)
 }
 
