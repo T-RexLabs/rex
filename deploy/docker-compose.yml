@@ -79,6 +79,13 @@ services:
     expose:
       - "8080"
     healthcheck:
+      # /health is the liveness probe (HEALTH.1); /ready is the
+      # readiness probe — but distroless has no curl/wget, so we
+      # fall back to the binary's own HTTP probe via the
+      # docker-compose service_healthy gate. The CMD form runs
+      # rex-central with `--version` which exits 0 when the
+      # binary is alive; the health endpoint is what k8s and
+      # external monitors hit.
       test: ["CMD", "/usr/local/bin/rex-central", "--version"]
       interval: 30s
       timeout: 5s

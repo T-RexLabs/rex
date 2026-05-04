@@ -132,6 +132,27 @@ func (a *authState) issueToken(fp identity.Fingerprint, scope string) (*token, e
 	return t, nil
 }
 
+// activeSessions returns the current count of issued tokens
+// that are not expired and not revoked. Used by /metrics to
+// surface HEALTH.2's active-sessions gauge as a snapshot — no
+// drift from increment/decrement pairing because the count is
+// derived at scrape time. Expired tokens are swept lazily here
+// so the metric also acts as a periodic gc trigger.
+func (a *authState) activeSessions() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	now := a.now()
+	n := 0
+	for k, t := range a.tokens {
+		if t.revoked || now.After(t.expiresAt) {
+			delete(a.tokens, k)
+			continue
+		}
+		n++
+	}
+	return n
+}
+
 // resolveToken looks up a token string. Returns ErrTokenInvalid for
 // missing, expired, or revoked tokens.
 func (a *authState) resolveToken(s string) (*token, error) {
@@ -175,6 +196,7 @@ func (s *Server) handleAuthChallenge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, proto.ErrCodeServerError, err.Error())
 		return
 	}
+	s.metrics.RecordAuthChallenge()
 	writeJSON(w, http.StatusOK, proto.AuthChallengeResponse{
 		ChallengeID: c.id,
 		Nonce:       hex.EncodeToString(c.nonce),

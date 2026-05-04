@@ -52,6 +52,7 @@ type Server struct {
 	auth     *authState
 	mux      *http.ServeMux
 	stateRes proto.StateResponse
+	metrics  *Metrics
 }
 
 // New returns a Server ready to serve via Handler().
@@ -91,13 +92,22 @@ func New(opts Options) (*Server, error) {
 			Actor:           central.String(),
 			ProtocolVersion: proto.ProtocolVersion,
 		},
+		metrics: NewMetrics(),
 	}
+	s.metrics.SetActiveSessionsSource(s.auth.activeSessions)
 	s.mux.HandleFunc("/sync/state", s.handleState)
 	s.mux.HandleFunc("/sync/events", s.handleEvents)
 	s.mux.HandleFunc(authChallengePath, s.handleAuthChallenge)
 	s.mux.HandleFunc(authVerifyPath, s.handleAuthVerify)
+	s.mux.HandleFunc("/health", s.handleHealth)
+	s.mux.HandleFunc("/ready", s.handleReady)
+	s.mux.HandleFunc("/metrics", s.handleMetrics)
 	return s, nil
 }
+
+// Metrics returns the server's in-process metric registry. Tests
+// use it to assert recording behavior without scraping /metrics.
+func (s *Server) Metrics() *Metrics { return s.metrics }
 
 // Handler returns the HTTP handler the server registered.
 func (s *Server) Handler() http.Handler { return s.mux }
@@ -155,6 +165,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 // batch and acknowledge with the new HEAD. Idempotent: events the
 // server already has are skipped (sync.API.6).
 func (s *Server) handleEventsPost(w http.ResponseWriter, r *http.Request) {
+	s.metrics.RecordPushRequest()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, proto.ErrCodeBadRequest, "read body: "+err.Error())
@@ -200,6 +211,7 @@ func (s *Server) handleEventsPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Since != currentHead {
+		s.metrics.RecordPushConflict()
 		tail, err := s.store.Since(r.Context(), req.Since)
 		if err != nil {
 			// The client's cursor is unknown to us; surface as a
@@ -229,6 +241,7 @@ func (s *Server) handleEventsPost(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, proto.ErrCodeServerError, err.Error())
 			return
 		}
+		s.recordEvent(rec.Type, added)
 		if added {
 			res.Accepted++
 		} else {

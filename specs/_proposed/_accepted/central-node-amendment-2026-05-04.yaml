@@ -1,0 +1,114 @@
+# Proposed amendment to specs/central-node.yaml.
+#
+# Status:    accepted
+# Folded:    2026-05-04 — applied to specs/central-node.yaml; updated_at
+#            bumped to 2026-05-04T00:00:00Z. Kept under _accepted/
+#            for traceability.
+# Date:      2026-05-04
+# Surfaced by:
+#   - Pre-implementation review for the HEALTH component:
+#     central-node.yaml's tasks block has no entry covering
+#     HEALTH.* and the requirement set names metrics that
+#     structurally depend on TENANT.* (orgs) which are still
+#     unimplemented.
+#
+# Two issues addressed:
+#
+#   1. Missing task entries.
+#      The components block lists HEALTH (3 reqs) but no task
+#      references those requirements, so implementation has been
+#      in spec limbo. Two new tasks are added to the tasks
+#      block — kept separate so each can ship as one focused PR
+#      rather than bundling all three HEALTH requirements
+#      together: health-endpoints (HEALTH.1 + the org-
+#      independent subset of HEALTH.2) and structured-logging
+#      (HEALTH.3). Splitting along that line is honest about
+#      the scope: HEALTH.3 is a logging-infrastructure change
+#      (slog wiring, redaction, JSON-line emit at every
+#      significant operation) that doesn't share code with the
+#      endpoint surface.
+#
+#   2. HEALTH.2's metric set names org-dependent metrics.
+#      "RBAC-deny-rate" and "per-org row counts" cannot exist
+#      before TENANT.* (multi-tenancy + RBAC server-side) ships.
+#      Adding HEALTH."2-note" makes that dependency explicit so
+#      v1 can ship the org-independent metrics now without
+#      drifting from the contract.
+#
+# Also flipping task states for completed tasks so the spec
+# reflects implementation reality:
+#
+#   docker-compose-base   todo -> done   (commit d93b88e)
+#   postgres-schema       todo -> done   (commit de5e3a3,
+#                                         single-tenant subset;
+#                                         multi-tenant org_id
+#                                         columns land with
+#                                         tenant-routing)
+#
+# All other task states unchanged. The tenant-routing /
+# admin-bootstrap / backups-and-restore tasks remain todo.
+
+target: central-node
+amendment_kind: additive
+
+changes:
+  - kind: add-task
+    task:
+      id: health-endpoints
+      description: "Implement /health, /ready, and /metrics (Prometheus format) plus the org-independent metric subset"
+      state: todo
+      references: [HEALTH.1, HEALTH.2]
+
+  - kind: add-task
+    task:
+      id: structured-logging
+      description: "Migrate the central-node binary to structured JSON logs on stdout; one log line per significant operation; redact secrets at the logger boundary"
+      state: todo
+      references: [HEALTH.3]
+
+  - kind: add-requirement-note
+    component: HEALTH
+    requirement: "2"
+    note_id: "2-note"
+    text: |
+      The metric set as written includes RBAC-deny-rate and
+      per-org row counts; both depend on TENANT.* (multi-
+      tenancy + RBAC server-side) landing first. v1 ships
+      sync-events-per-second, active-sessions, and
+      audit-write-rate with the health-endpoints task; the
+      org-scoped metrics ship alongside tenant-routing and
+      cross-reference HEALTH.2 from there. The full surface
+      named in HEALTH.2 remains the v1 contract; this note
+      documents the implementation order.
+
+  - kind: update-task-state
+    task_id: docker-compose-base
+    from: todo
+    to: done
+
+  - kind: update-task-state
+    task_id: postgres-schema
+    from: todo
+    to: done
+    note: |
+      Single-tenant subset shipped in commit de5e3a3. The
+      org_id columns + Row Level Security policies named in
+      DB.2 land with the tenant-routing task; the bring-up
+      schema (events table mirroring eventlog.Record) is
+      complete.
+
+# Folding instructions (when accepted):
+#
+#   1. Append both new tasks to specs/central-node.yaml's tasks
+#      block in the order above.
+#   2. Add HEALTH."2-note" to the HEALTH component's
+#      requirements map.
+#   3. Flip the two task states. For postgres-schema add a
+#      `note:` field to the task documenting the partial-
+#      completion semantics; do NOT delete the task (the
+#      org-scoped half is still todo, but it falls under
+#      tenant-routing now).
+#   4. Bump metadata.updated_at to 2026-05-04.
+#   5. Move this file to specs/_proposed/_accepted/.
+#   6. Run `go run ./cmd/rex spec validate specs/*.yaml` and
+#      confirm 0 errors / 0 warnings before committing.

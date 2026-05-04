@@ -5,7 +5,7 @@ metadata:
   name: Central node deployment
   state: draft
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-04T00:00:00Z
 
 description: |
   A central node is the same Go binary as the local node, plus a Postgres
@@ -26,12 +26,13 @@ description: |
 tasks:
   - id: docker-compose-base
     description: "Author the v1 docker-compose.yml with the binary container, Postgres container, and configuration via env vars + mounted config file"
-    state: todo
+    state: done
     references: [DEPLOY.1, DEPLOY.2, DEPLOY.3]
 
   - id: postgres-schema
     description: "Author the Postgres schema (mirroring the local SQLite schema where applicable, plus multi-tenancy scoping columns)"
-    state: todo
+    state: done
+    note: "Single-tenant subset shipped; the org_id columns + Row Level Security policies named in DB.2 land with the tenant-routing task."
     references: [DB.1, DB.2, DB.3]
 
   - id: tenant-routing
@@ -48,6 +49,16 @@ tasks:
     description: "Implement scheduled Postgres dumps and a `rex-central restore` flow"
     state: todo
     references: [BACKUP.1, BACKUP.2, BACKUP.3]
+
+  - id: health-endpoints
+    description: "Implement /health, /ready, and /metrics (Prometheus format) plus the org-independent metric subset"
+    state: todo
+    references: [HEALTH.1, HEALTH.2]
+
+  - id: structured-logging
+    description: "Migrate the central-node binary to structured JSON logs on stdout; one log line per significant operation; redact secrets at the logger boundary"
+    state: todo
+    references: [HEALTH.3]
 
 components:
 
@@ -102,6 +113,7 @@ components:
     requirements:
       "1": "The central node exposes `/health` (liveness), `/ready` (database reachable + migrations applied), and `/metrics` (Prometheus format) endpoints"
       "2": "Metrics include sync-events-per-second, active-sessions, RBAC-deny-rate, audit-write-rate, and per-org row counts"
+      "2-note": "RBAC-deny-rate and per-org row counts depend on TENANT.* (multi-tenancy + RBAC server-side) landing first. v1's health-endpoints task ships the org-independent subset (sync-events-per-second, active-sessions, audit-write-rate); the org-scoped metrics ship alongside tenant-routing and cross-reference HEALTH.2 from there. The full surface named in HEALTH.2 remains the v1 contract; this note documents the implementation order."
       "3": "Structured JSON logs are written to stdout; one log line per significant operation; no logs contain secrets"
 
   IDP-CENTRAL:

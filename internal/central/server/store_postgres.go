@@ -57,6 +57,16 @@ func NewPostgresStore(ctx context.Context, dsn string) (*PostgresStore, error) {
 	return &PostgresStore{pool: pool}, nil
 }
 
+// Ping verifies the connection pool can still reach the
+// database. Used by /ready to back the HEALTH.1 readiness probe;
+// returns nil when the database answers and an error otherwise.
+func (s *PostgresStore) Ping(ctx context.Context) error {
+	if s.pool == nil {
+		return fmt.Errorf("server: postgres store is closed")
+	}
+	return s.pool.Ping(ctx)
+}
+
 // Close releases the underlying connection pool. Safe to call
 // once on shutdown; subsequent calls are no-ops.
 func (s *PostgresStore) Close() {
