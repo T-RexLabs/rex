@@ -132,6 +132,11 @@ type ShellRunRequest struct {
 	// RunID is the explicit run id. Defaults to clock.Now() when
 	// empty.
 	RunID string
+	// OnEvent is invoked with every event the run emits, AFTER it
+	// has been written to the event log. Used by `rex run start`
+	// in attached mode (the default) to render events live as
+	// they happen. Nil = silent during execution.
+	OnEvent func(eventlog.Record)
 }
 
 // ShellRunResult is the outcome of StartShellRun: the assigned run
@@ -179,7 +184,7 @@ func StartShellRun(ctx context.Context, ws *Workspace, req ShellRunRequest) (*Sh
 	exec, err := runner.NewExecutor(runner.ExecConfig{
 		RunID:    runID,
 		DAG:      dag,
-		Sink:     &writerSink{w: ws.Writer},
+		Sink:     &writerSink{w: ws.Writer, onEvent: req.OnEvent},
 		Registry: reg,
 	})
 	if err != nil {
@@ -227,6 +232,11 @@ type HarnessRunRequest struct {
 	// Adapters is the registry consulted for Harness; nil =
 	// adapter.Default().
 	Adapters *adapter.Registry
+	// OnEvent is invoked with every event the run emits, AFTER it
+	// has been written to the event log. Used by `rex run start`
+	// in attached mode (the default) to render events live as
+	// they happen. Nil = silent during execution.
+	OnEvent func(eventlog.Record)
 }
 
 // StartHarnessRun executes a one-node harness DAG synchronously
@@ -285,7 +295,7 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 	exec, err := runner.NewExecutor(runner.ExecConfig{
 		RunID:    runID,
 		DAG:      dag,
-		Sink:     &writerSink{w: ws.Writer},
+		Sink:     &writerSink{w: ws.Writer, onEvent: req.OnEvent},
 		Registry: reg,
 	})
 	if err != nil {
@@ -333,14 +343,26 @@ func SplitShellCommand(cmd string) ([]string, error) {
 	return out, nil
 }
 
-// writerSink adapts an eventlog.Writer to runner.EventSink.
+// writerSink adapts an eventlog.Writer to runner.EventSink. When
+// OnEvent is non-nil it fires after the underlying append so the
+// caller (e.g. attached `rex run start`) can render the event in
+// real time. The hook receives the populated Record (id +
+// timestamp filled in by the writer); errors are not propagated
+// because a stdout-print failure must not abort a run.
 type writerSink struct {
-	w *eventlog.Writer
+	w       *eventlog.Writer
+	onEvent func(eventlog.Record)
 }
 
 func (s *writerSink) Append(eventType string, version uint32, payload json.RawMessage) error {
-	_, err := s.w.Append(eventType, version, payload)
-	return err
+	rec, err := s.w.Append(eventType, version, payload)
+	if err != nil {
+		return err
+	}
+	if s.onEvent != nil {
+		s.onEvent(rec)
+	}
+	return nil
 }
 
 // settings is the minimal subset of workspace.yaml runtask needs to

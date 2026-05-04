@@ -128,7 +128,7 @@ func TestRunStartHarnessRejectsUnknownAdapter(t *testing.T) {
 	}
 }
 
-func TestRunWatchReplaysCompletedRun(t *testing.T) {
+func TestRunAttachReplaysCompletedRun(t *testing.T) {
 	t.Parallel()
 
 	dir := initWorkspaceForRunTest(t)
@@ -140,7 +140,7 @@ func TestRunWatchReplaysCompletedRun(t *testing.T) {
 		t.Fatalf("seed run: %v", err)
 	}
 
-	out, err := executeCommand(t, "run", "watch", "--workspace", dir, "watch-1")
+	out, err := executeCommand(t, "run", "attach", "--workspace", dir, "watch-1")
 	if err != nil {
 		t.Fatalf("run watch: %v\n%s", err, out)
 	}
@@ -151,7 +151,7 @@ func TestRunWatchReplaysCompletedRun(t *testing.T) {
 	}
 }
 
-func TestRunWatchExitsOnTerminalEvent(t *testing.T) {
+func TestRunAttachExitsOnTerminalEvent(t *testing.T) {
 	t.Parallel()
 
 	dir := initWorkspaceForRunTest(t)
@@ -165,7 +165,7 @@ func TestRunWatchExitsOnTerminalEvent(t *testing.T) {
 
 	// If the watch loop didn't exit on run.completed, this would
 	// hang and the test framework would time out the whole suite.
-	out, err := executeCommand(t, "run", "watch", "--workspace", dir, "watch-2")
+	out, err := executeCommand(t, "run", "attach", "--workspace", dir, "watch-2")
 	if err != nil {
 		t.Fatalf("run watch: %v\n%s", err, out)
 	}
@@ -174,7 +174,7 @@ func TestRunWatchExitsOnTerminalEvent(t *testing.T) {
 	}
 }
 
-func TestRunWatchAcceptsRunIDPrefix(t *testing.T) {
+func TestRunAttachAcceptsRunIDPrefix(t *testing.T) {
 	t.Parallel()
 
 	dir := initWorkspaceForRunTest(t)
@@ -186,7 +186,7 @@ func TestRunWatchAcceptsRunIDPrefix(t *testing.T) {
 		t.Fatalf("seed run: %v", err)
 	}
 
-	out, err := executeCommand(t, "run", "watch", "--workspace", dir, "prefix-")
+	out, err := executeCommand(t, "run", "attach", "--workspace", dir, "prefix-")
 	if err != nil {
 		t.Fatalf("run watch: %v\n%s", err, out)
 	}
@@ -195,17 +195,17 @@ func TestRunWatchAcceptsRunIDPrefix(t *testing.T) {
 	}
 }
 
-func TestRunWatchUnknownRunErrors(t *testing.T) {
+func TestRunAttachUnknownRunErrors(t *testing.T) {
 	t.Parallel()
 
 	dir := initWorkspaceForRunTest(t)
-	_, err := executeCommand(t, "run", "watch", "--workspace", dir, "nope")
+	_, err := executeCommand(t, "run", "attach", "--workspace", dir, "nope")
 	if err == nil {
 		t.Fatal("expected error for unknown run")
 	}
 }
 
-func TestRunWatchJSONOutput(t *testing.T) {
+func TestRunAttachJSONOutput(t *testing.T) {
 	t.Parallel()
 
 	dir := initWorkspaceForRunTest(t)
@@ -217,7 +217,7 @@ func TestRunWatchJSONOutput(t *testing.T) {
 		t.Fatalf("seed run: %v", err)
 	}
 
-	out, err := executeCommand(t, "run", "watch", "--workspace", dir, "--json", "json-1")
+	out, err := executeCommand(t, "run", "attach", "--workspace", dir, "--json", "json-1")
 	if err != nil {
 		t.Fatalf("run watch --json: %v\n%s", err, out)
 	}
@@ -233,6 +233,85 @@ func TestRunWatchJSONOutput(t *testing.T) {
 		if rec["type"] == "" {
 			t.Errorf("line %d missing type: %s", i, ln)
 		}
+	}
+}
+
+func TestRunWatchAliasStillWorks(t *testing.T) {
+	t.Parallel()
+
+	dir := initWorkspaceForRunTest(t)
+	if _, err := executeCommand(t, "run", "start",
+		"--workspace", dir,
+		"--shell", "echo alias",
+		"--run-id", "alias-1",
+		"--quiet",
+	); err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	out, err := executeCommand(t, "run", "watch", "--workspace", dir, "alias-1")
+	if err != nil {
+		t.Fatalf("run watch (alias): %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "run.completed") {
+		t.Fatalf("alias did not stream events: %s", out)
+	}
+}
+
+func TestRunStartQuietSuppressesLiveStream(t *testing.T) {
+	t.Parallel()
+
+	dir := initWorkspaceForRunTest(t)
+	out, err := executeCommand(t, "run", "start",
+		"--workspace", dir,
+		"--shell", "echo quiet-test",
+		"--run-id", "quiet-1",
+		"--quiet",
+	)
+	if err != nil {
+		t.Fatalf("run start --quiet: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "run.started") || strings.Contains(out, "node.started") {
+		t.Fatalf("--quiet should suppress event stream:\n%s", out)
+	}
+	// final summary still surfaces
+	if !strings.Contains(out, "completed") {
+		t.Fatalf("expected final summary in --quiet mode:\n%s", out)
+	}
+}
+
+func TestRunStartAttachedStreamsLiveEvents(t *testing.T) {
+	t.Parallel()
+
+	dir := initWorkspaceForRunTest(t)
+	out, err := executeCommand(t, "run", "start",
+		"--workspace", dir,
+		"--shell", "echo attached-test",
+		"--run-id", "attached-1",
+	)
+	if err != nil {
+		t.Fatalf("run start: %v\n%s", err, out)
+	}
+	for _, want := range []string{"run.started", "node.started", "node.succeeded", "run.completed"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("default-attached output missing %q\n%s", want, out)
+		}
+	}
+}
+
+func TestRunStartDetachIsDeferred(t *testing.T) {
+	t.Parallel()
+
+	dir := initWorkspaceForRunTest(t)
+	_, err := executeCommand(t, "run", "start",
+		"--workspace", dir,
+		"--shell", "echo nope",
+		"--detach",
+	)
+	if err == nil {
+		t.Fatal("expected --detach to be rejected as deferred")
+	}
+	if !strings.Contains(err.Error(), "deferred") {
+		t.Fatalf("error wording: %v", err)
 	}
 }
 

@@ -37,7 +37,8 @@ land once the harness adapter registry exists; cancel/watch/signal
 need a daemon model that v1 does not have.`,
 	}
 	cmd.AddCommand(newRunStartCmd())
-	cmd.AddCommand(newRunWatchCmd())
+	cmd.AddCommand(newRunAttachCmd())
+	cmd.AddCommand(newRunWatchAliasCmd())
 	cmd.AddCommand(newRunListCmd())
 	cmd.AddCommand(newRunShowCmd())
 	return cmd
@@ -68,6 +69,8 @@ func newRunStartCmd() *cobra.Command {
 		timeoutFlag   time.Duration
 		nodeID        string
 		runIDFlag     string
+		quietFlag     bool
+		detachFlag    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -75,14 +78,22 @@ func newRunStartCmd() *cobra.Command {
 		Long: `Start a single-node DAG run.
 
 Two flavors:
-  --shell <cmd>             one-shot shell_exec (existing flow)
+  --shell <cmd>             one-shot shell_exec
   --harness <name> --prompt one-shot harness_invocation against an
                             adapter registered via the harness adapter
                             registry (cli.RUN.1, execution.ADAPT.*)
 
-The run executes synchronously in the foreground; events stream to
-.rex/events.log and a final status is reported on stdout.`,
+The default invocation is attached: events stream to the terminal
+during execution and the command exits when the run terminates.
+--quiet suppresses the live stream (final summary only).
+--detach is reserved for backgrounded runs and is not yet wired —
+v1 has no daemon model, so the run's lifetime is the CLI process.
+
+To re-attach later, run 'rex run attach <run-id>'.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if detachFlag {
+				return errors.New("--detach is deferred until backgrounding/daemon support lands (cli.RUN.1)")
+			}
 			shellMode := shellCommand != ""
 			harnessMode := harnessFlag != ""
 			if shellMode == harnessMode {
@@ -110,6 +121,8 @@ The run executes synchronously in the foreground; events stream to
 				ctx = context.Background()
 			}
 
+			onEvent := liveEventPrinter(cmd, quietFlag)
+
 			if harnessMode {
 				if _, ok := adapter.Default().Lookup(harnessFlag); !ok {
 					return fmt.Errorf("no adapter registered for %q (registered: %s)",
@@ -127,6 +140,7 @@ The run executes synchronously in the foreground; events stream to
 					Timeout: timeoutFlag,
 					NodeID:  node,
 					RunID:   runIDFlag,
+					OnEvent: onEvent,
 				})
 				if err != nil {
 					return err
@@ -142,6 +156,7 @@ The run executes synchronously in the foreground; events stream to
 				Command: argv,
 				NodeID:  nodeID,
 				RunID:   runIDFlag,
+				OnEvent: onEvent,
 			})
 			if err != nil {
 				return err
@@ -158,7 +173,29 @@ The run executes synchronously in the foreground; events stream to
 	cmd.Flags().DurationVar(&timeoutFlag, "timeout", 0, "harness invocation timeout (default: no timeout)")
 	cmd.Flags().StringVar(&nodeID, "node-id", "shell", "id assigned to the only DAG node")
 	cmd.Flags().StringVar(&runIDFlag, "run-id", "", "explicit run id (default: HLC-derived; useful for tests)")
+	cmd.Flags().BoolVar(&quietFlag, "quiet", false, "suppress the live event stream; print only the final summary")
+	cmd.Flags().BoolVarP(&detachFlag, "detach", "d", false, "(reserved) kick off the run and return immediately — not yet wired")
 	return cmd
+}
+
+// liveEventPrinter returns a runtask.OnEvent callback that renders
+// each event in the same one-line format `rex run attach` uses.
+// Returns nil when the JSON-output flag is set OR --quiet is in
+// effect, so the final summary is the only thing on stdout in
+// those modes.
+func liveEventPrinter(cmd *cobra.Command, quiet bool) func(eventlog.Record) {
+	if quiet {
+		return nil
+	}
+	jsonOut, _ := cmd.Flags().GetBool("json")
+	if jsonOut {
+		return nil
+	}
+	out := cmd.OutOrStdout()
+	return func(rec eventlog.Record) {
+		fmt.Fprintf(out, "%s  %-22s  %s\n",
+			rec.Timestamp.String(), rec.Type, summarizeEventPayload(rec.Type, rec.Payload))
+	}
 }
 
 // reportShellRun writes the human-friendly tail block for a shell
@@ -521,22 +558,23 @@ func openReaderForPath(path string) (*eventlog.Reader, error) {
 	return eventlog.OpenReader(path)
 }
 
-// runWatchPollInterval is the file-tail cadence for `rex run watch`.
-// Mirrors the web SSE handler so the two surfaces feel the same.
+// runWatchPollInterval is the file-tail cadence for attach + the
+// post-run drain in attached mode. Mirrors the web SSE handler so
+// the two surfaces feel the same.
 const runWatchPollInterval = 100 * time.Millisecond
 
-func newRunWatchCmd() *cobra.Command {
+func newRunAttachCmd() *cobra.Command {
 	var (
 		workspaceFlag string
 		jsonOutFlag   bool
 	)
 	cmd := &cobra.Command{
-		Use:   "watch <run-id>",
-		Short: "Stream events for a run as they land in the event log",
-		Long: `Tail-watch one run's events in the terminal. Replays every event
-already in events.log, then polls the file for new appends until
-the run reaches a terminal state (completed / cancelled / aborted)
-or the user interrupts with Ctrl-C.
+		Use:   "attach <run-id>",
+		Short: "Re-attach to an in-flight or completed run and stream its events",
+		Long: `Re-attach to one run's event stream in the terminal. Replays every
+event already in events.log for the run, then polls the file for
+new appends until the run reaches a terminal state (completed /
+cancelled / aborted) or the user interrupts with Ctrl-C.
 
 Run IDs accept the same git-style prefix matching as 'rex run show'.
 
@@ -565,6 +603,24 @@ With --json, one decoded event record per line.`,
 	}
 	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
 	cmd.Flags().BoolVar(&jsonOutFlag, "json", false, "emit one decoded event record per line as JSON")
+	return cmd
+}
+
+// newRunWatchAliasCmd is the deprecated alias for `rex run attach`,
+// kept so existing scripts keep working through one release. It
+// dispatches into newRunAttachCmd's RunE rather than duplicating
+// the logic; cli.RUN.2 calls out the deprecation explicitly.
+func newRunWatchAliasCmd() *cobra.Command {
+	inner := newRunAttachCmd()
+	cmd := &cobra.Command{
+		Use:        "watch <run-id>",
+		Short:      "Deprecated alias for `rex run attach`",
+		Hidden:     true,
+		Deprecated: "use `rex run attach` instead",
+		Args:       cobra.ExactArgs(1),
+		RunE:       inner.RunE,
+	}
+	cmd.Flags().AddFlagSet(inner.Flags())
 	return cmd
 }
 

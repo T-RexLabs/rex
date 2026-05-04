@@ -46,7 +46,7 @@ tasks:
     references: [PRIM.1, PRIM.2, PRIM.3, PRIM.4, PRIM.5, PRIM.6, PRIM.7, PRIM.8, PRIM.9]
 
   - id: run-lifecycle-cli
-    description: "Implement `rex run start`, `rex run watch`, `rex run cancel`, `rex run show`, `rex run list`"
+    description: "Implement `rex run start` (attached by default), `rex run attach`, `rex run cancel`, `rex run show`, `rex run list`"
     state: todo
     references: [RUN.1, RUN.2, RUN.3, RUN.4, RUN.5]
 
@@ -104,8 +104,8 @@ components:
   RUN:
     name: Run lifecycle and CLI
     requirements:
-      "1": "`rex run start [--spec <id>] [--harness <name>] [--prompt <text>]` initiates a run; the prompt and spec context are fed to the harness as the initial message"
-      "2": "`rex run watch <run-id>` streams events live via SSE; supports `--since-start` to replay from the beginning"
+      "1": "`rex run start [--spec <id>] [--harness <name>] [--prompt <text>]` initiates a run; the prompt and spec context are fed to the harness as the initial message. The default invocation is attached: events stream to the terminal during execution. `--detach` returns once the run is registered and is deferred until backgrounding/daemon support lands."
+      "2": "`rex run attach <run-id>` streams events live via the same file-tail mechanism the web UI uses; replays every existing matching event then tails new ones. `--since-start` is implicit (every prior event is replayed). `rex run watch` is kept as a deprecated alias."
       "3": "`rex run show <run-id>` displays the full transcript and DAG status, working offline"
       "4": "`rex run list` shows recent runs with status, harness, spec, duration"
       "5": "`rex run cancel <run-id>` requests cancellation; the engine sends `session/cancel` to the harness and waits up to 10s before forcing termination"

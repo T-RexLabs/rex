@@ -1,0 +1,58 @@
+# Proposed amendment to specs/cli.yaml and specs/execution.yaml.
+#
+# Status: proposed (folded in same commit per the in-commit
+#                  amendment convention).
+# Surfaced by:
+#   - The current `rex run start` runs synchronously, suppresses
+#     output, and prints a final summary at the end. `rex run
+#     watch` is a separate command for the live view. The two
+#     commands together don't have a coherent mental model — a
+#     user has to know to background start + run watch in
+#     another terminal to see what's happening live.
+#   - Docker's attached/detached invocation framing fits the
+#     same shape: by default `rex run start` is attached
+#     (events stream to the terminal during execution); a
+#     future --detach kicks off and returns immediately. The
+#     "watch" verb maps cleanly onto "attach" (re-attaching to
+#     an already-running or completed run). This amendment
+#     adopts that framing without committing to backgrounding
+#     until a daemon model exists.
+
+target: cli
+amendment_kind: additive
+
+changes:
+  - kind: update-requirement
+    component: RUN
+    requirement_id: "1"
+    from: "`rex run start [--spec <id>] [--harness <name>] [--prompt <text>] [--work-type <type>]` — initiate a run"
+    to: "`rex run start [--spec <id>] [--harness <name>] [--prompt <text>] [--work-type <type>]` — initiate a run; defaults to attached (events stream to the terminal during execution and the command exits when the run terminates). `--quiet` suppresses the live stream and prints only the final summary. `--detach` (deferred until backgrounding/daemon support lands) returns immediately after the run is registered."
+
+  - kind: update-requirement
+    component: RUN
+    requirement_id: "2"
+    from: "`rex run watch <run-id>` — stream events live; `--since-start` to replay from the beginning"
+    to: "`rex run attach <run-id>` — re-attach to an in-flight or completed run; replays every existing event for the run, then streams new ones until a terminal event lands. `rex run watch` is kept as a deprecated alias."
+
+---
+
+target: execution
+amendment_kind: additive
+
+changes:
+  - kind: update-requirement
+    component: RUN
+    requirement_id: "1"
+    from: "`rex run start [--spec <id>] [--harness <name>] [--prompt <text>]` initiates a run; the prompt and spec context are fed to the harness as the initial message"
+    to: "`rex run start [--spec <id>] [--harness <name>] [--prompt <text>]` initiates a run; the prompt and spec context are fed to the harness as the initial message. The default invocation is attached: events stream to the terminal during execution. `--detach` returns once the run is registered and is deferred until backgrounding/daemon support lands."
+
+  - kind: update-requirement
+    component: RUN
+    requirement_id: "2"
+    from: "`rex run watch <run-id>` streams events live via SSE; supports `--since-start` to replay from the beginning"
+    to: "`rex run attach <run-id>` streams events live via the same file-tail mechanism the web UI uses; replays every existing matching event then tails new ones. `--since-start` is implicit (every prior event is replayed). `rex run watch` is kept as a deprecated alias."
+
+  - kind: update-task-description
+    task_id: run-lifecycle-cli
+    from: "Implement `rex run start`, `rex run watch`, `rex run cancel`, `rex run show`, `rex run list`"
+    to: "Implement `rex run start` (attached by default), `rex run attach`, `rex run cancel`, `rex run show`, `rex run list`"

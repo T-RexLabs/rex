@@ -96,8 +96,8 @@ components:
   RUN:
     name: Run subcommands
     requirements:
-      "1": "`rex run start [--spec <id>] [--harness <name>] [--prompt <text>] [--work-type <type>]` — initiate a run"
-      "2": "`rex run watch <run-id>` — stream events live; `--since-start` to replay from the beginning"
+      "1": "`rex run start [--spec <id>] [--harness <name>] [--prompt <text>] [--work-type <type>]` — initiate a run; defaults to attached (events stream to the terminal during execution and the command exits when the run terminates). `--quiet` suppresses the live stream and prints only the final summary. `--detach` (deferred until backgrounding/daemon support lands) returns immediately after the run is registered."
+      "2": "`rex run attach <run-id>` — re-attach to an in-flight or completed run; replays every existing event for the run, then streams new ones until a terminal event lands. `rex run watch` is kept as a deprecated alias."
       "3": "`rex run show <run-id>` — show full transcript and DAG status"
       "4": "`rex run list [--workspace <id>] [--status <status>]` — list recent runs"
       "5": "`rex run cancel <run-id>` — request cancellation"
