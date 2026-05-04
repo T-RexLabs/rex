@@ -108,3 +108,43 @@ func TestSummarizeHarnessFrameMethodOnly(t *testing.T) {
 		t.Errorf("expected 'session/new', got %q", got)
 	}
 }
+
+// TestSummarizeHarnessFrameSessionUpdateField asserts the
+// Anthropic claude-agent-acp wire shape (sessionUpdate as the
+// discriminator) is recognized — regression from the original
+// release that only read `type`.
+func TestSummarizeHarnessFrameSessionUpdateField(t *testing.T) {
+	t.Parallel()
+	p := frameEvent(t, "session/update", map[string]any{
+		"sessionId": "s1",
+		"update": map[string]any{
+			"sessionUpdate": "agent_message_chunk",
+			"content":       map[string]any{"type": "text", "text": "OK"},
+		},
+	})
+	got := summarizeHarnessFrame(p)
+	if !strings.Contains(got, "agent_message_chunk") {
+		t.Errorf("missing kind: %q", got)
+	}
+	if !strings.Contains(got, "OK") {
+		t.Errorf("missing text: %q", got)
+	}
+}
+
+// TestSummarizeHarnessFrameUsageUpdate asserts the Claude-specific
+// usage_update meter renders as a useful one-liner instead of
+// just the raw kind name.
+func TestSummarizeHarnessFrameUsageUpdate(t *testing.T) {
+	t.Parallel()
+	p := frameEvent(t, "session/update", map[string]any{
+		"update": map[string]any{
+			"sessionUpdate": "usage_update",
+			"used":          30265,
+			"size":          200000,
+		},
+	})
+	got := summarizeHarnessFrame(p)
+	if !strings.Contains(got, "30265/200000") {
+		t.Errorf("expected token meter, got %q", got)
+	}
+}

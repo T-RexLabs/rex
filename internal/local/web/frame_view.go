@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"html"
 	"html/template"
 
@@ -60,31 +61,49 @@ func categorizeFrame(ev runner.HarnessFrameEvent, hl *Highlighter) *frameView {
 	return nil
 }
 
-// decodeUpdate parses a session/update params payload. The shape
-// varies per update type, so we probe known fields without
-// committing to a single struct.
+// decodeUpdate parses a session/update params payload. The Anthropic
+// ACP bridge uses `sessionUpdate` as the discriminator (the broader
+// ACP spec uses `type` in some versions); we accept both so a future
+// bridge bump in either direction stays forward-compatible.
 func decodeUpdate(params json.RawMessage, hl *Highlighter) *frameView {
 	var p struct {
 		Update struct {
-			Type      string          `json:"type"`
-			Text      string          `json:"text"`
-			Content   json.RawMessage `json:"content"`
+			SessionUpdate string `json:"sessionUpdate"`
+			Type          string `json:"type"`
+
+			// Agent text variants. The Claude bridge nests text
+			// under `content` (single object); other ACP variants
+			// put it directly in `text` or in `content[]`.
+			Text    string          `json:"text"`
+			Content json.RawMessage `json:"content"`
+
+			// Tool calls.
 			Tool      json.RawMessage `json:"tool"`
 			ToolCall  json.RawMessage `json:"toolCall"`
 			ToolName  string          `json:"toolName"`
 			Arguments json.RawMessage `json:"arguments"`
 			Status    string          `json:"status"`
+
+			// Claude-specific meters / hints we surface as a
+			// muted info row rather than agent text.
+			Used             int64           `json:"used"`
+			Size             int64           `json:"size"`
+			AvailableCommands json.RawMessage `json:"availableCommands"`
 		} `json:"update"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil
 	}
-	switch p.Update.Type {
+	kind := p.Update.SessionUpdate
+	if kind == "" {
+		kind = p.Update.Type
+	}
+	switch kind {
 	case "":
 		return nil
 	case "agent_message_chunk", "agent_message", "user_message_chunk":
 		role := "assistant"
-		if p.Update.Type == "user_message_chunk" {
+		if kind == "user_message_chunk" {
 			role = "user"
 		}
 		text := extractText(p.Update.Text, p.Update.Content)
@@ -121,9 +140,34 @@ func decodeUpdate(params json.RawMessage, hl *Highlighter) *frameView {
 		}
 	case "plan_change", "plan":
 		return &frameView{Kind: "plan", Role: "assistant", Text: extractText(p.Update.Text, p.Update.Content)}
+	case "usage_update":
+		return &frameView{
+			Kind:   "meta",
+			Role:   "system",
+			Method: "usage",
+			Text:   formatUsage(p.Update.Used, p.Update.Size),
+		}
+	case "available_commands_update":
+		return &frameView{
+			Kind:   "meta",
+			Role:   "system",
+			Method: "commands",
+			Text:   "harness commands registered",
+		}
 	default:
-		return &frameView{Kind: "meta", Method: "session/update", Text: p.Update.Type}
+		return &frameView{Kind: "meta", Role: "system", Method: "session/update", Text: kind}
 	}
+}
+
+// formatUsage renders a token meter compactly: "30,265 / 200,000".
+func formatUsage(used, size int64) string {
+	if size <= 0 {
+		if used <= 0 {
+			return "usage"
+		}
+		return fmt.Sprintf("%d tokens", used)
+	}
+	return fmt.Sprintf("%d / %d tokens", used, size)
 }
 
 func extractText(plain string, content json.RawMessage) string {

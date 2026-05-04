@@ -858,14 +858,17 @@ func summarizeEventPayload(eventType string, payload json.RawMessage) string {
 //   1. an agent_message_chunk text — the actual model output
 //   2. a tool call name — when the harness invokes a tool
 //   3. the bare ACP method name as a fallback
+//
 // Length is capped so a long agent message doesn't blow out one
-// terminal line; full content is in `rex run show <id>`.
+// terminal line; full content is in `rex run show <id>`. The
+// discriminator field can be either `sessionUpdate` (Anthropic's
+// claude-agent-acp bridge) or `type` (broader ACP spec); both
+// are accepted so this stays forward-compatible.
 func summarizeHarnessFrame(payload json.RawMessage) string {
 	var ev runner.HarnessFrameEvent
 	if err := json.Unmarshal(payload, &ev); err != nil {
 		return fmt.Sprintf("(%d bytes)", len(payload))
 	}
-	// Try the typed update path first.
 	var frame struct {
 		Method string          `json:"method"`
 		Params json.RawMessage `json:"params"`
@@ -876,20 +879,32 @@ func summarizeHarnessFrame(payload json.RawMessage) string {
 	if len(frame.Params) > 0 {
 		var p struct {
 			Update struct {
-				Type    string          `json:"type"`
-				Content json.RawMessage `json:"content"`
-				Text    string          `json:"text,omitempty"`
-				Tool    struct {
+				SessionUpdate string          `json:"sessionUpdate"`
+				Type          string          `json:"type"`
+				Content       json.RawMessage `json:"content"`
+				Text          string          `json:"text,omitempty"`
+				Tool          struct {
 					Name string `json:"name"`
 				} `json:"tool"`
+				Used int64 `json:"used"`
+				Size int64 `json:"size"`
 			} `json:"update"`
 		}
-		if err := json.Unmarshal(frame.Params, &p); err == nil && p.Update.Type != "" {
-			text := extractFrameText(p.Update.Type, p.Update.Text, p.Update.Content, p.Update.Tool.Name)
-			if text != "" {
-				return fmt.Sprintf("%s %s", p.Update.Type, truncate(text, 80))
+		if err := json.Unmarshal(frame.Params, &p); err == nil {
+			kind := p.Update.SessionUpdate
+			if kind == "" {
+				kind = p.Update.Type
 			}
-			return p.Update.Type
+			if kind != "" {
+				text := extractFrameText(kind, p.Update.Text, p.Update.Content, p.Update.Tool.Name)
+				if text != "" {
+					return fmt.Sprintf("%s %s", kind, truncate(text, 80))
+				}
+				if kind == "usage_update" && p.Update.Size > 0 {
+					return fmt.Sprintf("usage_update %d/%d tokens", p.Update.Used, p.Update.Size)
+				}
+				return kind
+			}
 		}
 	}
 	if ev.Method != "" {
