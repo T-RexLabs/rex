@@ -8,7 +8,11 @@
     <span>·</span>
     <span class="pill pill-{{.Spec.State}}"><i class="dot"></i>{{.Spec.State}}</span>
     {{if .Spec.UpdatedAt}}<span>·</span><span>updated <time>{{.Spec.UpdatedAt}}</time></span>{{end}}
-    <span class="back"><a href="/specs"><span aria-hidden="true">←</span> all specs</a></span>
+    <span class="back">
+      <a href="/specs/{{.Spec.ID}}/edit">edit</a>
+      <span aria-hidden="true"> · </span>
+      <a href="/specs"><span aria-hidden="true">←</span> all specs</a>
+    </span>
   </div>
 </header>
 

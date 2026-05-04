@@ -525,6 +525,26 @@ kbd {
   transition: border-color 80ms ease, box-shadow 80ms ease;
 }
 .field-input.mono { font-family: var(--font-mono); }
+
+/* Textarea editor — used by spec edit. We keep it deliberately
+ * plain (no syntax highlighting overlay): chroma can't paint a
+ * native textarea, and shipping CodeMirror/Monaco breaks the
+ * no-build-step constraint. The user gets monospace, generous
+ * height, tab handling, and that's enough for a workspace-local
+ * editor. The visual feedback is the validation banner that
+ * appears above the form when saving fails. */
+textarea.editor {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  min-height: 480px;
+  resize: vertical;
+  white-space: pre;
+  /* Mono with whitespace preserved; horizontal scroll on long
+   * lines so the textarea width never blows out the form grid. */
+  overflow-x: auto;
+  tab-size: 2;
+}
 .field-input:focus,
 .field-select:focus {
   outline: none;

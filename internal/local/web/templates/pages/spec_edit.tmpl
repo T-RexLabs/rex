@@ -1,0 +1,40 @@
+{{define "title"}}rex — edit {{.SpecID}}{{end}}
+
+{{define "content"}}
+<header class="page-header">
+  <h1>edit <code>{{.SpecID}}</code></h1>
+  <div class="meta">
+    <span>strict validation runs on save</span>
+    <span class="back"><a href="/specs/{{.SpecID}}"><span aria-hidden="true">←</span> cancel</a></span>
+  </div>
+</header>
+
+{{if .Error}}
+<aside class="banner banner-error" role="alert">
+  <span><strong>could not save.</strong> {{.Error}}</span>
+</aside>
+{{end}}
+
+<section class="section">
+  <div class="card">
+    <form method="post" action="/specs/{{.SpecID}}/edit" class="form">
+      <label class="field full">
+        <span class="field-label">yaml body</span>
+        <textarea class="field-input mono editor"
+                  name="body"
+                  rows="32"
+                  spellcheck="false"
+                  autocomplete="off"
+                  autofocus
+                  required>{{.Body}}</textarea>
+        <span class="field-hint"><code>metadata.id</code> must equal <code>{{.SpecID}}</code> on save. Renames need a dedicated flow.</span>
+      </label>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">save</button>
+        <a class="btn btn-ghost" href="/specs/{{.SpecID}}">cancel</a>
+      </div>
+    </form>
+  </div>
+</section>
+{{end}}

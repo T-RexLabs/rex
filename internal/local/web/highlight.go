@@ -23,15 +23,25 @@ import (
 // content; chroma escapes them on the way through, so the only
 // way unsafe HTML reaches the page is if chroma itself were
 // compromised.
+//
+// Two chroma styles are held: a light one for the default palette
+// and a dark one wrapped in @media (prefers-color-scheme: dark)
+// so the highlighter colors track the system color scheme.
+// Without this, the keys/values in JSON and YAML render in the
+// light theme's blues and reds against the dark UI surface,
+// where they're nearly invisible.
 type Highlighter struct {
 	formatter *chromahtml.Formatter
-	style     *chroma.Style
+	styleLight *chroma.Style
+	styleDark  *chroma.Style
 }
 
 // newHighlighter constructs the package-wide Highlighter. The
 // formatter omits inline style attributes so colors come from
-// app.css class rules — that lets the dark/light parchment palette
-// stay in one place and follow prefers-color-scheme.
+// app.css class rules — that lets the dark/light palette swap
+// follow prefers-color-scheme. The light style is `github` (high
+// contrast, calm); the dark style is `github-dark` (same palette
+// family, designed for dark backgrounds).
 func newHighlighter() *Highlighter {
 	return &Highlighter{
 		formatter: chromahtml.New(
@@ -39,7 +49,8 @@ func newHighlighter() *Highlighter {
 			chromahtml.PreventSurroundingPre(true),
 			chromahtml.TabWidth(2),
 		),
-		style: styles.Get("github"),
+		styleLight: styles.Get("github"),
+		styleDark:  styles.Get("github-dark"),
 	}
 }
 
@@ -72,6 +83,12 @@ func (h *Highlighter) HighlightJSON(src []byte) template.HTML {
 // land inside a <pre><code class="chroma">...</code></pre> wrapper
 // in the template; the template adds the wrapper so the formatter's
 // PreventSurroundingPre option keeps the inner output clean.
+//
+// Tokenisation uses the light style as the formatting reference;
+// since chroma's class-based output records token *kinds* (e.g.
+// `nt`, `s2`, `mi`) rather than literal colors, the same HTML
+// works for both palettes and the @media-scoped dark CSS swaps
+// the colors at render time.
 func (h *Highlighter) highlight(src, lang string) template.HTML {
 	lexer := lexers.Get(lang)
 	if lexer == nil {
@@ -84,7 +101,7 @@ func (h *Highlighter) highlight(src, lang string) template.HTML {
 		return template.HTML(template.HTMLEscapeString(src))
 	}
 	var buf bytes.Buffer
-	if err := h.formatter.Format(&buf, h.style, iter); err != nil {
+	if err := h.formatter.Format(&buf, h.styleLight, iter); err != nil {
 		return template.HTML(template.HTMLEscapeString(src))
 	}
 	return template.HTML(buf.String())
@@ -103,15 +120,24 @@ func PrettyJSON(src []byte) string {
 	return buf.String()
 }
 
-// HighlightCSS returns the chroma CSS for the configured style as
-// a CSS string. Embedded once into app.css via go:embed at startup
-// would be ideal, but chroma's stylesheet is generated from the
-// style table at runtime — so we expose it as a handler-served
-// /static/chroma.css that the base template links.
+// HighlightCSS returns the chroma CSS for both light and dark
+// styles. The light rules are top-level; the dark rules are
+// wrapped in @media (prefers-color-scheme: dark) so browsers in
+// dark mode use them automatically. Both palettes use the same
+// chroma class names so a single rendered HTML document works
+// for either.
 func (h *Highlighter) HighlightCSS() string {
 	var buf bytes.Buffer
-	if err := h.formatter.WriteCSS(&buf, h.style); err != nil {
-		return fmt.Sprintf("/* chroma css generation failed: %s */\n", err)
+
+	if err := h.formatter.WriteCSS(&buf, h.styleLight); err != nil {
+		return fmt.Sprintf("/* chroma light css failed: %s */\n", err)
 	}
+
+	buf.WriteString("\n@media (prefers-color-scheme: dark) {\n")
+	if err := h.formatter.WriteCSS(&buf, h.styleDark); err != nil {
+		buf.WriteString(fmt.Sprintf("/* chroma dark css failed: %s */\n", err))
+	}
+	buf.WriteString("}\n")
+
 	return buf.String()
 }

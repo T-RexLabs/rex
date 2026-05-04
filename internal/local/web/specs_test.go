@@ -212,3 +212,158 @@ func TestSpecDetailRejectsNonKebabID(t *testing.T) {
 		t.Fatalf("status: %d", resp.StatusCode)
 	}
 }
+
+func TestSpecEditFormShowsCurrentBody(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t, "ws-edit-show")
+	seedSpec(t, root, "alpha", `spec_version: 1
+metadata: {id: alpha, name: Alpha spec, state: draft}
+`)
+	hs := newTestServer(t, root)
+
+	resp, err := http.Get(hs.URL + "/specs/alpha/edit")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: %d", resp.StatusCode)
+	}
+	body := readBody(t, resp)
+	for _, want := range []string{
+		`<textarea`, `name="body"`, `Alpha spec`, `id: alpha`, `mono editor`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in edit form:\n%s", want, body[:minInt(len(body), 2000)])
+		}
+	}
+}
+
+func TestSpecEditSaveValidWritesAndRedirects(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t, "ws-edit-save")
+	seedSpec(t, root, "alpha", `spec_version: 1
+metadata: {id: alpha, name: Alpha, state: draft}
+`)
+	hs := newTestServer(t, root)
+
+	newBody := `spec_version: 1
+metadata: {id: alpha, name: Alpha v2, state: active}
+`
+	form := "body=" + urlEncode(newBody)
+	req, _ := http.NewRequest(http.MethodPost,
+		hs.URL+"/specs/alpha/edit",
+		strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status: %d (expected 303)", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Location"); got != "/specs/alpha" {
+		t.Fatalf("Location: %q", got)
+	}
+
+	on := readFile(t, filepath.Join(root, ".rex", "specs", "alpha.yaml"))
+	if !strings.Contains(on, "Alpha v2") {
+		t.Fatalf("file did not pick up the new name: %s", on)
+	}
+}
+
+func TestSpecEditRejectsIDMismatch(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t, "ws-edit-mismatch")
+	seedSpec(t, root, "alpha", `spec_version: 1
+metadata: {id: alpha, name: Alpha, state: draft}
+`)
+	hs := newTestServer(t, root)
+
+	// Body claims a different id.
+	form := "body=" + urlEncode(`spec_version: 1
+metadata: {id: beta, name: Beta, state: draft}
+`)
+	req, _ := http.NewRequest(http.MethodPost,
+		hs.URL+"/specs/alpha/edit",
+		strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status: %d (expected 400)", resp.StatusCode)
+	}
+	body := readBody(t, resp)
+	if !strings.Contains(body, "metadata.id is") {
+		t.Errorf("expected id-mismatch banner: %s", body[:minInt(len(body), 1500)])
+	}
+
+	// File on disk should still be the original.
+	on := readFile(t, filepath.Join(root, ".rex", "specs", "alpha.yaml"))
+	if !strings.Contains(on, "id: alpha") {
+		t.Fatalf("file was mutated despite id mismatch: %s", on)
+	}
+}
+
+func TestSpecEditRejectsInvalidYAML(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t, "ws-edit-bad-yaml")
+	seedSpec(t, root, "alpha", `spec_version: 1
+metadata: {id: alpha, name: Alpha, state: draft}
+`)
+	hs := newTestServer(t, root)
+
+	form := "body=" + urlEncode("not: valid: yaml: at: all")
+	req, _ := http.NewRequest(http.MethodPost,
+		hs.URL+"/specs/alpha/edit",
+		strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status: %d", resp.StatusCode)
+	}
+	body := readBody(t, resp)
+	if !strings.Contains(body, "could not save") {
+		t.Errorf("expected error banner: %s", body[:minInt(len(body), 1500)])
+	}
+}
+
+func urlEncode(s string) string {
+	// Tiny escape for application/x-www-form-urlencoded test bodies.
+	// We only need to cover the chars that appear in our YAML
+	// fixtures: space, newline, =, &.
+	r := strings.NewReplacer(
+		"%", "%25",
+		"+", "%2B",
+		" ", "+",
+		"\n", "%0A",
+		"=", "%3D",
+		"&", "%26",
+		"\"", "%22",
+		"'", "%27",
+	)
+	return r.Replace(s)
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(body)
+}
