@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-The Go module `github.com/asabla/rex` is scaffolded. Two thin-shell binaries exist as stubs: `cmd/rex` (local CLI) and `cmd/rex-central` (central server). No domain logic is implemented yet — the next task is `overview.shared-core-package`, then the build order below.
+The Go module `github.com/asabla/rex` is built out to a v1 daily-driveable shape. All six build-order steps below have shipped; the local node is usable end-to-end (workspace bootstrap → spec author/validate → run with shell + spec_validate + harness primitives → audit log → sync push/pull against a central node → snapshots). Two binaries: `cmd/rex` (local CLI + embedded web UI via `rex serve`) and `cmd/rex-central` (in-process central node).
+
+Major shipped post-trunk pieces beyond the build order: hooks dispatcher, log tail, spec template scaffolding, FTS5 search across events + specs, embedded web UI (`/`, `/specs`, `/specs/<id>`, `/runs`, `/runs/<id>` with SSE live tail, `/audit`, `/remotes`).
 
 ### Common commands
 
@@ -16,6 +18,8 @@ The Go module `github.com/asabla/rex` is scaffolded. Two thin-shell binaries exi
 - Sync modules: `make tidy`
 - Run a single test: `go test -run TestName ./path/to/pkg` (e.g. `go test -run TestRunVersion ./cmd/rex`)
 - Run a single binary directly: `go run ./cmd/rex --version`
+- Validate every spec strictly: `go run ./cmd/rex spec validate specs/*.yaml` (zero errors, zero warnings is the bar)
+- Start the local web UI: `go run ./cmd/rex serve` (binds 127.0.0.1:7474 by default; loopback-only)
 
 CI lives in `.github/workflows/ci.yml` and runs build, vet, race tests, `go mod tidy` drift check, and golangci-lint on every push and PR.
 
@@ -44,16 +48,23 @@ The specs are the contract. They use ACID references of the form `<spec-id>.<COM
 
 - **No new external runtime dependencies.** `overview.ENG.1` forbids runtime services beyond SQLite (local) / Postgres (central). Adding a Go module dep is fine when justified — surface it in the PR description.
 
-## Build order — do not deviate without asking
+## Build order — done
 
-1. **ACP client layer + minimal SQLite event store.** Covers `execution.ACP.*`, `storage.EVENTS.*`. Goal: open a Claude Code session, capture every ACP frame as an event-log row, replay them. Target under 500 LOC.
-2. **Workflow runner skeleton.** Three node types (`harness_invocation`, `shell_exec`, `spec_validate`). Single-tenant, single-workspace, no sync. Covers `execution.DAG.*`, `execution.PRIM.1-3`. Target under 1k LOC.
-3. **Spec format + validator.** Implement `rex spec validate`. Then write three real specs against the format and revise the schema based on what breaks (this is `spec-format.write-three-real-specs`). Lock the v1 schema only after this step. Covers `spec-format.*`.
-4. **Local CLI + hooks.** `rex workspace`, `rex spec`, `rex run`, `rex status`, `rex hooks list`. Daily-driveable for one human, no remote. Covers `cli.WS.*`, `cli.SPEC.*`, `cli.RUN.*`, `cli.STATUS.*`, `hooks.*`.
-5. **Sync protocol.** Only after steps 1–4 are solid. Covers `sync.*`.
-6. **Snapshots.** After sync. Covers `storage.SNAP.*`.
+All six trunk steps shipped. Listed here as the read order if you're navigating the codebase for the first time:
 
-Web UI, multi-remote, scheduled work, connected tools, central node — all post-step-6. Do not start them earlier.
+1. **ACP client layer + minimal event-log store.** `internal/core/acp/`, `internal/core/storage/eventlog/`. Covers `execution.ACP.*`, `storage.EVENTS.*`.
+2. **Workflow runner skeleton.** `internal/core/runner/` with `primshell`, `primspec`, `primharness` packages. Three node types, event-sourced. Covers `execution.DAG.*`, `execution.PRIM.1-3`.
+3. **Spec format + validator.** `internal/core/specfmt/`. `rex spec validate` is wired and 14 real specs in `specs/` pass strict validation. Covers `spec-format.*`.
+4. **Local CLI + hooks.** Cobra commands under `internal/local/cli/`; hooks dispatcher under `internal/core/hooks/`. Covers `cli.*`, `hooks.*`.
+5. **Sync protocol.** `internal/core/sync/proto/` (wire types) + `internal/local/sync/` (client + watermarks) + `internal/central/server/` (in-process server + auth). Push-first ordering with conflict semantics. Covers `sync.*`.
+6. **Snapshots.** `internal/core/snapshot/`. Covers `storage.SNAP.*`.
+
+Post-trunk shipped pieces (do not re-derive — read the existing code):
+
+- **Search:** FTS5 index over events + specs in `internal/core/search/`.
+- **Identity + audit:** `internal/core/identity/` (ed25519 keypairs, signer, actor), `internal/core/audit/` (audit registry + appender).
+- **Web UI:** `internal/local/web/` — embedded templates (`html/template`) + static assets via `embed.FS`. Routes: `/`, `/specs`, `/specs/<id>`, `/runs`, `/runs/<id>` (live SSE), `/audit`, `/remotes`. Vanilla-JS `htmx-ext-sse` shim at `static/htmx-ext-sse.js` is purpose-built for the run-detail live tail; swap in upstream htmx-ext-sse@2.2.x bytes for richer behaviour without changing template attributes. JS-disabled view degrades gracefully (web-ui.ACCESS.3).
+- **Remotes registry:** `internal/local/remotes/` (`~/.config/rex/remotes.toml`).
 
 ## High-level architecture
 
@@ -103,11 +114,20 @@ Captured in `readme.md` and `overview.SCOPE.*` — do not implement:
 ## Project conventions
 
 - **Go module path:** `github.com/asabla/rex`.
-- **Go version:** pinned via `go.mod` (currently 1.22.1); CI uses `go-version-file: go.mod`. Bump in `go.mod` and CI follows.
+- **Go version:** pinned via `go.mod` (currently 1.23.0 — bumped from 1.22.1 to avoid a macOS 26 LC_UUID linker incompatibility); CI uses `go-version-file: go.mod`. Bump in `go.mod` and CI follows.
+- **No-cgo guarantee:** `overview.ENG.2` forbids cgo in the local binary. SQLite goes through `modernc.org/sqlite` (pure Go). Do not add cgo deps.
 - **Linter:** `golangci-lint` with config at `.golangci.yml`.
 - **Tests:** stdlib `testing`. Determinism is required for sync, executor, and audit-log tests — inject time and randomness, never read the environment in test bodies (`overview.ENG.4`).
 - **Commit format:** Conventional Commits with ACID citations.
 - **Branches:** trunk-based, short-lived feature branches, PRs into `main`.
+
+### Spec amendments
+
+When a spec needs to change:
+
+1. Write the proposed amendment to `specs/_proposed/<spec-id>-amendment-<YYYY-MM-DD>.yaml` and surface it for human signoff. Do not edit the spec yet.
+2. After approval, fold the change into the spec and move the proposed file to `specs/_accepted/` (preserves the audit trail). Do not delete it.
+3. Re-run `go run ./cmd/rex spec validate specs/*.yaml` and confirm 0 errors / 0 warnings before committing.
 
 ## When in doubt
 
