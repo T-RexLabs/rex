@@ -1,7 +1,10 @@
 # Proposed amendment to specs/web-ui.yaml.
 #
-# Status:    proposed
+# Status:    accepted
 # Date:      2026-05-04
+# Folded:    2026-05-04 — applied to specs/web-ui.yaml; updated_at
+#            bumped to 2026-05-04T01:00:00Z. Kept under _accepted/
+#            for traceability.
 # Surfaced by:
 #   - Pre-implementation review of LIVE.1 against the v1 process
 #     model (rex serve and rex run start are separate processes
@@ -14,7 +17,7 @@
 
 amendment_for: web-ui
 amendment_date: 2026-05-04
-state: proposed
+state: accepted
 
 summary: |
   v1's rex serve cannot intercept events from rex run start because

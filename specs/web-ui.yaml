@@ -5,7 +5,7 @@ metadata:
   name: Web UIs (local + central)
   state: draft
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-04T01:00:00Z
 
 description: |
   Rex ships two web UIs from day one: a local UI served by the local
@@ -92,6 +92,7 @@ components:
     name: Live run watching
     requirements:
       "1": "An SSE endpoint at `/workspaces/<id>/runs/<run-id>/stream` emits run events as they happen; events include node lifecycle, transcript chunks, and permission prompts"
+      "1-note": "v1 mechanism: file-tail polling of .rex/events.log at ~100ms cadence. The SSE handler replays the prior events for the run on connect (filtered by run_id), then polls past EOF for new records. Push-style notification (one writer broadcasting over an in-process bus) is deferred until a daemon model exists; v1 ships rex serve and rex run start as separate processes with no shared bus. Latency on localhost stays within PERF.1."
       "2": "The run detail page subscribes via `hx-ext=\"sse\"` and renders incoming chunks; the page works correctly when first opened mid-run (all prior events are replayed before new ones)"
       "3": "Permission prompts render as inline cards with approve/deny buttons; click triggers a POST to `/workspaces/<id>/runs/<run-id>/permission` that resolves the prompt"
 
