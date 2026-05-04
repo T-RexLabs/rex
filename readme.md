@@ -1,8 +1,37 @@
-# Rex — v1 specifications
+# Rex
 
 Rex is a management portal for agentic coding harnesses (Claude Code, Codex, OpenCode, etc.). It is a decentralized application: local-first nodes that can connect to one or more central nodes for shared auditability, search, and dispatch.
 
-This directory contains the v1 specifications. Each `.yaml` file is a self-contained spec that follows Rex's own spec format (see `specs/spec-format.yaml` — the format describes itself). Specs cross-reference each other via `extra.related_specs` and via ACID references like `sync.GIT.3` (meaning: spec `sync`, component `GIT`, requirement `3`).
+The repository ships v1 today: a daily-driveable local CLI (`rex`), an embedded web UI (`rex serve`), and an in-process central node (`rex-central`). The full set of v1 specs in `specs/` describes the contract; the rest of this readme is the spec index.
+
+## Quick start
+
+```sh
+# Build both binaries into ./bin (cgo-free, pure Go).
+make build
+
+# Or install into $GOBIN / $GOPATH/bin so `rex` is on PATH.
+make install
+
+# Bootstrap a workspace, scaffold a spec, validate it, run a one-shot
+# shell node, browse it in the web UI.
+rex workspace init my-workspace
+cd my-workspace
+rex spec create my-feature
+rex spec validate
+rex run start --shell "echo hello rex"
+rex run list
+rex log                   # last 50 audit-class events
+rex serve                 # http://127.0.0.1:7474, loopback-only
+```
+
+To attach to a central node, register the remote and push:
+
+```sh
+rex remote add primary https://central.example.invalid
+rex push                  # pushes drafts past the per-remote watermark
+rex pull                  # pulls authoritative events from primary
+```
 
 ## Read order
 

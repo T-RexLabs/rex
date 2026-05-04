@@ -1,4 +1,4 @@
-.PHONY: help all build test test-race lint lint-strict vet fmt tidy clean
+.PHONY: help all build install test test-race lint lint-strict vet fmt tidy clean
 
 GO       ?= go
 BIN_DIR  ?= bin
@@ -13,6 +13,9 @@ build: ## Build all binaries into $(BIN_DIR)
 	@mkdir -p $(BIN_DIR)
 	$(GO) build -o $(BIN_DIR)/rex ./cmd/rex
 	$(GO) build -o $(BIN_DIR)/rex-central ./cmd/rex-central
+
+install: ## Install binaries into $$GOBIN (or $$GOPATH/bin) so they are on PATH
+	$(GO) install ./cmd/rex ./cmd/rex-central
 
 test: ## Run all tests
 	$(GO) test $(PKGS)
