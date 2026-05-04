@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/asabla/rex/internal/core/audit"
+	"github.com/asabla/rex/internal/core/hooks"
 	"github.com/asabla/rex/internal/core/identity"
 	"github.com/asabla/rex/internal/core/specfmt"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
@@ -165,11 +166,24 @@ mean it.`,
 			// than through newWorkspaceWriter (which reads back
 			// workspace.yaml) — the file we just wrote is the
 			// reality we want to record.
+			//
+			// A hook dispatcher is wired so hooks installed under
+			// .rex/hooks/ (per-workspace) and the global hooks
+			// dir fire after each event. Drain ensures hooks
+			// finish before init returns.
+			global, _ := globalHooksDir()
+			disp := hooks.New(hooks.Options{
+				WorkspaceRoot:  abs,
+				GlobalHooksDir: global,
+			})
+			defer disp.Drain()
+
 			writer, err := eventlog.OpenWriter(eventlog.WriterConfig{
 				Path:        eventLogPath(abs),
 				WorkspaceID: id,
 				Actor:       signer.Actor().String(),
 				Sign:        identity.SignFunc(signer),
+				OnAppend:    disp.OnAppend,
 			})
 			if err != nil {
 				return fmt.Errorf("open events.log: %w", err)

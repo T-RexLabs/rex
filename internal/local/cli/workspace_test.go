@@ -205,6 +205,54 @@ func TestWorkspaceInitEmitsWorkspaceCreatedAuditEvent(t *testing.T) {
 	}
 }
 
+func TestWorkspaceInitFiresInstalledHook(t *testing.T) {
+	t.Parallel()
+
+	// rex workspace init bootstraps .rex/hooks/ as part of the
+	// skeleton. We can't pre-install a hook there before init
+	// runs, so we run init twice: first to scaffold, then install
+	// the hook, then re-init with --force which fires
+	// workspace.created again.
+	dir := t.TempDir()
+	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "hk", "--name", "HK"); err != nil {
+		t.Fatalf("first init: %v", err)
+	}
+
+	hookPath := filepath.Join(dir, ".rex", "hooks", "post-workspace-created")
+	body := "#!/bin/sh\necho fired-on-$REX_EVENT_ID\n"
+	if err := os.WriteFile(hookPath, []byte(body), 0o755); err != nil {
+		t.Fatalf("write hook: %v", err)
+	}
+
+	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "hk", "--name", "HK", "--force"); err != nil {
+		t.Fatalf("second init --force: %v", err)
+	}
+
+	// .rex/hook-log/ now contains a captured-output file.
+	logDir := filepath.Join(dir, ".rex", "hook-log")
+	entries, err := os.ReadDir(logDir)
+	if err != nil {
+		t.Fatalf("read hook-log dir: %v", err)
+	}
+	var matched bool
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".post-workspace-created.log") {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(logDir, e.Name()))
+		if err != nil {
+			t.Fatalf("read hook log: %v", err)
+		}
+		if !strings.HasPrefix(string(body), "fired-on-") {
+			t.Fatalf("hook log content: %q", body)
+		}
+		matched = true
+	}
+	if !matched {
+		t.Fatalf("no post-workspace-created hook log found in %v", entries)
+	}
+}
+
 func TestWorkspaceListPlaceholder(t *testing.T) {
 	t.Parallel()
 

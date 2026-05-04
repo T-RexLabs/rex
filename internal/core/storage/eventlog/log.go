@@ -66,6 +66,12 @@ type WriterConfig struct {
 	// unsigned (the bootstrap-friendly path until identity is
 	// configured).
 	Sign SignFunc
+	// OnAppend is optional. When set, it runs synchronously after
+	// the record is fsynced to disk. The hook dispatcher
+	// (internal/core/hooks) wires its non-blocking enqueue here so
+	// every persisted event reaches user-installed hooks per
+	// hooks.EXEC.2.
+	OnAppend func(Record)
 }
 
 // Writer appends records to events.log. A Writer is safe for concurrent
@@ -169,6 +175,12 @@ func (w *Writer) Append(eventType string, version uint32, payload json.RawMessag
 	}
 	if err = w.f.Sync(); err != nil {
 		return Record{}, fmt.Errorf("eventlog: fsync: %w", err)
+	}
+	if w.cfg.OnAppend != nil {
+		// Synchronous from the writer's perspective; the typical
+		// consumer (hooks dispatcher) enqueues to a worker pool
+		// and returns immediately so this remains fast.
+		w.cfg.OnAppend(rec)
 	}
 	return rec, nil
 }
