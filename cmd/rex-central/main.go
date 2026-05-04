@@ -171,6 +171,16 @@ lost on restart.
 				ReadHeaderTimeout: 10 * time.Second,
 			}
 
+			// Announce / persist the admin bootstrap token if
+			// the central is in bootstrap mode (no admin yet).
+			// Logs at WARN with the token + writes to
+			// /var/lib/rex/bootstrap.token by default. After
+			// redemption the file is auto-cleaned on the next
+			// startup. Configurable via central.toml's
+			// [bootstrap] section if a different path fits the
+			// deployment.
+			s.AnnounceBootstrap(cmd.Context(), cfg.Bootstrap.TokenFile)
+
 			logger.Info("rex-central listening",
 				"op", "startup",
 				"addr", cfg.Server.Addr,

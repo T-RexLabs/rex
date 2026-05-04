@@ -54,3 +54,13 @@ cadence = "24h"
 # pair with an external retention policy (S3 lifecycle, etc.)
 # when you want unbounded history off-host.
 retention = 14
+
+[bootstrap]
+# Where to drop the one-time admin claim token (BOOT.1) on
+# startup, before any admin has redeemed it. The server also
+# logs the token at WARN on every startup until redemption, so
+# operators who don't want a token file on disk can leave this
+# empty and read it from the logs instead. The bundled compose
+# mounts the rex-state volume here so the token survives a
+# container restart.
+token_file = "/var/lib/rex/bootstrap.token"

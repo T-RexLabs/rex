@@ -48,7 +48,7 @@ tasks:
 
   - id: admin-bootstrap
     description: "Implement the first-run admin bootstrap flow (initial org, initial admin identity)"
-    state: todo
+    state: done
     references: [BOOT.1, BOOT.2]
 
   - id: backups-and-restore

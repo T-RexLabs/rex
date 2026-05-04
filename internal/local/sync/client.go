@@ -448,3 +448,42 @@ func decodeError(resp *http.Response) error {
 	}
 	return fmt.Errorf("sync: %s: %s", resp.Status, strings.TrimSpace(string(body)))
 }
+
+// Bootstrap redeems the central's one-time admin claim token
+// (central-node.BOOT.2). The flow:
+//
+//   1. Client makes sure it has a Bearer token (via its
+//      configured Signer running through the standard
+//      challenge/verify handshake — same as Push/Pull).
+//   2. POST /admin/bootstrap with the token in the body.
+//   3. On success the response is a proto.BootstrapResponse
+//      with the org id + name + the redeemer's fingerprint
+//      (echoed back for the client's audit log).
+//
+// Returns a typed error when the token is rejected so the CLI
+// can surface "token is invalid or already redeemed" without
+// guessing from the status code.
+func (c *Client) Bootstrap(ctx context.Context, token string) (proto.BootstrapResponse, error) {
+	if token == "" {
+		return proto.BootstrapResponse{}, fmt.Errorf("sync: bootstrap token is required")
+	}
+	body, err := json.Marshal(proto.BootstrapRequest{Token: token})
+	if err != nil {
+		return proto.BootstrapResponse{}, err
+	}
+	resp, err := c.doAuthorized(ctx, http.MethodPost, c.baseURL+"/admin/bootstrap", func() (io.Reader, error) {
+		return bytes.NewReader(body), nil
+	})
+	if err != nil {
+		return proto.BootstrapResponse{}, fmt.Errorf("sync: POST /admin/bootstrap: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return proto.BootstrapResponse{}, decodeError(resp)
+	}
+	var out proto.BootstrapResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return proto.BootstrapResponse{}, fmt.Errorf("sync: decode /admin/bootstrap response: %w", err)
+	}
+	return out, nil
+}

@@ -525,6 +525,42 @@ var schemaSteps = []string{
 			USING      (org_id::text = current_setting('app.current_org_id', true))
 			WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
 	`,
+
+	// 5: admin bootstrap (central-node.BOOT.1, BOOT.2).
+	//
+	// admin_bootstrap holds the one-time claim token that the
+	// first user redeems to become the founder admin of the
+	// default org. Exactly one row is seeded on the first
+	// migration where no admin exists; subsequent startups
+	// re-read the existing row rather than minting a new one
+	// (the token survives restarts so an operator who lost the
+	// log can still grab it).
+	//
+	// The seed uses gen_random_uuid()::text as the token —
+	// 36 chars of hex with hyphens, plenty of entropy for the
+	// "redeem once" flow. Production deployments that want
+	// tighter security can rotate via a separate ops command;
+	// not in scope for v1.
+	`
+		CREATE TABLE IF NOT EXISTS admin_bootstrap (
+			id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			token       TEXT NOT NULL UNIQUE,
+			created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+			redeemed_at TIMESTAMPTZ,
+			redeemed_by TEXT
+		);
+
+		-- Seed exactly one token row when no admin exists in
+		-- any org. The check is on org_memberships.role to be
+		-- robust against future "founder" or org-owner roles —
+		-- whatever role an admin holds, this looks for it.
+		INSERT INTO admin_bootstrap (token)
+		SELECT gen_random_uuid()::text
+		WHERE NOT EXISTS (
+			SELECT 1 FROM org_memberships WHERE role = 'admin'
+		)
+		AND NOT EXISTS (SELECT 1 FROM admin_bootstrap);
+	`,
 }
 
 // DefaultOrgName is the seeded org's name. Used by

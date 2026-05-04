@@ -28,6 +28,7 @@ via --remote <name> instead of typing --url every time.`,
 	cmd.AddCommand(newRemoteShowCmd())
 	cmd.AddCommand(newRemoteRemoveCmd())
 	cmd.AddCommand(newRemoteTestCmd())
+	cmd.AddCommand(newRemoteBootstrapCmd())
 	return cmd
 }
 
@@ -240,6 +241,82 @@ does not overwrite — the user must remove and re-add the remote.`,
 			return nil
 		},
 	}
+	addRemoteSharedFlags(cmd)
+	return cmd
+}
+
+// newRemoteBootstrapCmd implements `rex remote bootstrap` — the
+// one-shot client side of central-node.BOOT.2. It registers the
+// remote (if not already registered), runs the standard
+// auth-verify handshake (which auto-joins the caller into the
+// remote's default org), and POSTs the one-time admin claim
+// token. On success the redeemer's default-org membership is
+// upgraded to admin.
+//
+// Usage:
+//
+//	rex remote bootstrap <name> <url> --token <T>
+//
+// The token is the value the central node logs at WARN on
+// startup ("admin bootstrap: claim this central node …") and
+// also writes to /var/lib/rex/bootstrap.token (or the operator-
+// configured path) until it has been redeemed.
+func newRemoteBootstrapCmd() *cobra.Command {
+	var token string
+	cmd := &cobra.Command{
+		Use:   "bootstrap <name> <url>",
+		Short: "Register a remote and redeem its one-time admin token",
+		Long: `Registers <name> -> <url>, runs the auth handshake against the
+remote, and redeems the one-time admin claim token. After this
+succeeds the local node's identity is the admin of the remote's
+default org. Pair the token printed in the central node's
+startup logs with --token here; both sides should never need to
+do this again for that central node.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if token == "" {
+				return fmt.Errorf("--token is required (see the central node's startup logs)")
+			}
+			name, url := args[0], args[1]
+			reg, path, err := loadRegistry(cmd)
+			if err != nil {
+				return err
+			}
+			if _, exists := reg.Get(name); !exists {
+				if err := reg.Add(remotes.Remote{Name: name, URL: url}); err != nil {
+					return err
+				}
+				if err := remotes.Save(path, reg); err != nil {
+					return err
+				}
+			}
+
+			ctx := cmd.Context()
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			signer, err := loadOrCreateDefaultSigner(cmd)
+			if err != nil {
+				return fmt.Errorf("bootstrap %q: %w", name, err)
+			}
+			client := syncclient.NewClient(url).WithSigner(signer)
+			resp, err := client.Bootstrap(ctx, token)
+			if err != nil {
+				return fmt.Errorf("bootstrap %q: %w", name, err)
+			}
+
+			jsonOut, _ := cmd.Flags().GetBool("json")
+			if jsonOut {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(resp)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(),
+				"%s OK — admin granted in org %q (%s); redeemer fingerprint=%s\n",
+				name, resp.OrgName, emptyDash(resp.OrgID), resp.Fingerprint,
+			)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&token, "token", "", "the one-time admin claim token from the central node")
 	addRemoteSharedFlags(cmd)
 	return cmd
 }

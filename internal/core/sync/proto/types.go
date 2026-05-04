@@ -146,3 +146,26 @@ type ChallengeSigningInput struct {
 	Hostname string `json:"hostname"`
 	Scope    string `json:"scope"`
 }
+
+// BootstrapRequest is the body of POST /admin/bootstrap. The
+// caller must already hold a Bearer token from /auth/verify so
+// the server knows who to upgrade to admin.
+type BootstrapRequest struct {
+	// Token is the one-time admin claim token that the central
+	// node logs + persists to disk on first start with an
+	// empty database (central-node.BOOT.1).
+	Token string `json:"token"`
+}
+
+// BootstrapResponse is returned on a successful redeem.
+type BootstrapResponse struct {
+	// OrgID is the org the redeemer is now an admin of —
+	// always the default org for v1 since BOOT.* runs against
+	// the seeded default.
+	OrgID string `json:"org_id"`
+	// OrgName is the human-friendly name of the same org.
+	OrgName string `json:"org_name"`
+	// Fingerprint of the redeemer (echoes back the
+	// authenticated identity for the client's audit log).
+	Fingerprint string `json:"fingerprint"`
+}

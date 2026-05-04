@@ -42,6 +42,9 @@ func Default() Config {
 		Backup: Backup{
 			Cadence: 24 * time.Hour,
 		},
+		Bootstrap: Bootstrap{
+			TokenFile: "/var/lib/rex/bootstrap.token",
+		},
 	}
 }
 
@@ -49,11 +52,12 @@ func Default() Config {
 // Every field maps to a TOML key in the obvious way; embedded
 // structs become [section] tables.
 type Config struct {
-	Server Server `toml:"server"`
-	DB     DB     `toml:"db"`
-	Auth   Auth   `toml:"auth"`
-	Log    Log    `toml:"log"`
-	Backup Backup `toml:"backup"`
+	Server    Server    `toml:"server"`
+	DB        DB        `toml:"db"`
+	Auth      Auth      `toml:"auth"`
+	Log       Log       `toml:"log"`
+	Backup    Backup    `toml:"backup"`
+	Bootstrap Bootstrap `toml:"bootstrap"`
 }
 
 // Server holds HTTP server settings.
@@ -94,6 +98,17 @@ type Log struct {
 	// Format is "json" (default, what HEALTH.3 requires) or
 	// "text" for local-dev readability.
 	Format string `toml:"format"`
+}
+
+// Bootstrap configures where the admin bootstrap token (BOOT.1)
+// gets persisted to disk on first start with an empty database.
+type Bootstrap struct {
+	// TokenFile is the host-filesystem path the token is
+	// written to. Empty disables file persistence (the token
+	// is still logged at WARN level on each startup until
+	// redeemed). The bundled compose mounts the rex-state
+	// volume at /var/lib/rex so the default lands there.
+	TokenFile string `toml:"token_file"`
 }
 
 // Backup configures the scheduled pg_dump (BACKUP.1) and the
@@ -184,6 +199,9 @@ func overlayEnv(c *Config) {
 		if d, err := time.ParseDuration(v); err == nil {
 			c.Backup.Cadence = d
 		}
+	}
+	if v := os.Getenv("REX_CENTRAL_BOOTSTRAP_TOKEN_FILE"); v != "" {
+		c.Bootstrap.TokenFile = v
 	}
 }
 

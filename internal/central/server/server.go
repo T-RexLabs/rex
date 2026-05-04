@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -114,7 +115,17 @@ func New(opts Options) (*Server, error) {
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/ready", s.handleReady)
 	s.mux.HandleFunc("/metrics", s.handleMetrics)
+	s.mux.HandleFunc(adminBootstrapPath, s.handleAdminBootstrap)
 	return s, nil
+}
+
+// AnnounceBootstrap is called once at startup (after the store
+// is open, before the listener accepts traffic) to log + persist
+// the admin claim token when bootstrap mode is active.
+// tokenPath is the host-filesystem destination (bundled compose:
+// /var/lib/rex/bootstrap.token); empty means logs-only.
+func (s *Server) AnnounceBootstrap(ctx context.Context, tokenPath string) {
+	announceBootstrapToken(ctx, s.store, tokenPath, s.log)
 }
 
 // Metrics returns the server's in-process metric registry. Tests

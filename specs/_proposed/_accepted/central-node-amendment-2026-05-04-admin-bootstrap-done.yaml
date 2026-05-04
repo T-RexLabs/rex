@@ -1,0 +1,20 @@
+# Proposed amendment to specs/central-node.yaml.
+#
+# Status:    proposed (folded in the same commit per the
+#                    in-commit amendment convention).
+# Surfaced by:
+#   - Implementation of the admin-bootstrap task landing
+#     (BOOT.1 token seeded by schema migration; BOOT.2 redeem
+#     handler at POST /admin/bootstrap + announceBootstrapToken
+#     startup hook; CLI: `rex remote bootstrap <name> <url>
+#     --token <T>`). Task state flip closes the drift in the
+#     same commit instead of trailing behind.
+
+target: central-node
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: admin-bootstrap
+    from: todo
+    to: done
