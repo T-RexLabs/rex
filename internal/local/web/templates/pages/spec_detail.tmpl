@@ -1,77 +1,118 @@
 {{define "title"}}rex — {{.Spec.ID}}{{end}}
 
 {{define "content"}}
-<section class="overview">
-  <p class="eyebrow">workspace · spec</p>
+<header class="page-header">
   <h1>{{.Spec.Name}}</h1>
-  <dl class="kv">
-    <dt>id</dt><dd><code>{{.Spec.ID}}</code></dd>
-    <dt>state</dt><dd><span class="pill pill-{{.Spec.State}}"><i class="dot"></i>{{.Spec.State}}</span></dd>
-    {{if .Spec.UpdatedAt}}<dt>updated</dt><dd><time>{{.Spec.UpdatedAt}}</time></dd>{{end}}
-    {{if .Spec.CreatedAt}}<dt>created</dt><dd><time>{{.Spec.CreatedAt}}</time></dd>{{end}}
-  </dl>
-</section>
+  <div class="meta">
+    <code>{{.Spec.ID}}</code>
+    <span>·</span>
+    <span class="pill pill-{{.Spec.State}}"><i class="dot"></i>{{.Spec.State}}</span>
+    {{if .Spec.UpdatedAt}}<span>·</span><span>updated <time>{{.Spec.UpdatedAt}}</time></span>{{end}}
+    <span class="back"><a href="/specs">← all specs</a></span>
+  </div>
+</header>
 
 <nav class="tabs" aria-label="spec view">
-  <a class="tab{{if eq .ActiveTab "rendered"}} tab-active{{end}}" href="?tab=rendered">rendered</a>
-  <a class="tab{{if eq .ActiveTab "source"}} tab-active{{end}}" href="?tab=source">yaml source</a>
-  <a class="tab{{if eq .ActiveTab "tasks"}} tab-active{{end}}" href="?tab=tasks">tasks ({{len .Spec.Tasks}})</a>
+  <a class="tab"
+     {{if eq .ActiveTab "rendered"}}aria-selected="true"{{end}}
+     href="?tab=rendered">rendered</a>
+  <a class="tab"
+     {{if eq .ActiveTab "source"}}aria-selected="true"{{end}}
+     href="?tab=source">yaml source</a>
+  <a class="tab"
+     {{if eq .ActiveTab "tasks"}}aria-selected="true"{{end}}
+     href="?tab=tasks">tasks <span class="count">{{len .Spec.Tasks}}</span></a>
 </nav>
 
-<section class="card tab-panel">
+<section class="section">
   {{if eq .ActiveTab "rendered"}}
     {{if .Spec.Description}}
       <pre class="markdown">{{.Spec.Description}}</pre>
     {{else}}
-      <p class="muted">no description</p>
+      <p class="muted">no description.</p>
     {{end}}
+
     {{if .Spec.Components}}
-      <h3>components</h3>
+      <h2 class="section-h2">components</h2>
       {{range $cid := .Spec.ComponentOrder}}
         {{$c := index $.Spec.Components $cid}}
-        <details class="component">
-          <summary><code>{{$cid}}</code> — {{$c.Name}} <span class="muted">({{len $c.Requirements}} reqs)</span></summary>
-          <table class="table req-table">
-            <tbody>
-              {{range $rid := $c.RequirementOrder}}
-              {{$r := index $c.Requirements $rid}}
-              <tr>
-                <td><a class="acid" data-acid="{{$.Spec.ID}}.{{$cid}}.{{$rid}}" href="#">{{$.Spec.ID}}.{{$cid}}.{{$rid}}</a></td>
-                <td>{{$r.Text}}</td>
-              </tr>
-              {{end}}
-            </tbody>
-          </table>
-        </details>
+        <article class="component-block">
+          <header class="component-block-head">
+            <span class="component-id">{{$cid}}</span>
+            <span class="component-name">{{$c.Name}}</span>
+            <span class="component-count">{{len $c.Requirements}} requirement{{if ne (len $c.Requirements) 1}}s{{end}}</span>
+          </header>
+          {{range $rid := $c.RequirementOrder}}
+            {{$r := index $c.Requirements $rid}}
+            <div class="requirement" id="{{$.Spec.ID}}.{{$cid}}.{{$rid}}">
+              <div class="requirement-acid">
+                <a class="acid"
+                   data-acid="{{$.Spec.ID}}.{{$cid}}.{{$rid}}"
+                   href="#{{$.Spec.ID}}.{{$cid}}.{{$rid}}"
+                   title="copy acid">{{$.Spec.ID}}.{{$cid}}.{{$rid}}</a>
+              </div>
+              <div class="requirement-text">{{$r.Text}}</div>
+            </div>
+          {{end}}
+        </article>
       {{end}}
     {{end}}
+
+    {{if .Spec.Constraints}}
+      <h2 class="section-h2">constraints</h2>
+      {{range $cid := .Spec.ConstraintOrder}}
+        {{$c := index $.Spec.Constraints $cid}}
+        <article class="component-block">
+          <header class="component-block-head">
+            <span class="component-id">{{$cid}}</span>
+            <span class="component-name">{{$c.Description}}</span>
+            <span class="component-count">{{len $c.Requirements}} rule{{if ne (len $c.Requirements) 1}}s{{end}}</span>
+          </header>
+          {{range $rid := $c.RequirementOrder}}
+            {{$r := index $c.Requirements $rid}}
+            <div class="requirement" id="{{$.Spec.ID}}.{{$cid}}.{{$rid}}">
+              <div class="requirement-acid">
+                <a class="acid"
+                   data-acid="{{$.Spec.ID}}.{{$cid}}.{{$rid}}"
+                   href="#{{$.Spec.ID}}.{{$cid}}.{{$rid}}"
+                   title="copy acid">{{$.Spec.ID}}.{{$cid}}.{{$rid}}</a>
+              </div>
+              <div class="requirement-text">{{$r.Text}}</div>
+            </div>
+          {{end}}
+        </article>
+      {{end}}
+    {{end}}
+
   {{else if eq .ActiveTab "source"}}
     {{if .YAMLPretty}}
       <pre class="source chroma"><code class="language-yaml">{{.YAMLPretty}}</code></pre>
     {{else}}
       <pre class="source"><code>{{.RawYAML}}</code></pre>
     {{end}}
+
   {{else if eq .ActiveTab "tasks"}}
     {{if .Spec.Tasks}}
-      <table class="table">
-        <thead><tr><th>id</th><th>state</th><th>description</th><th>references</th></tr></thead>
-        <tbody>
-          {{range .Spec.Tasks}}
-          <tr>
-            <td><code>{{.ID}}</code></td>
-            <td><span class="pill pill-{{.State}}"><i class="dot"></i>{{.State}}</span></td>
-            <td>{{.Description}}</td>
-            <td>
-              {{range .References}}
-                <a class="acid" data-acid="{{.}}" href="#">{{.}}</a>
+      <div class="card">
+        {{range .Spec.Tasks}}
+          <div class="task">
+            <div class="task-id"><code>{{.ID}}</code></div>
+            <div><span class="pill pill-{{.State}}"><i class="dot"></i>{{.State}}</span></div>
+            <div class="task-body">
+              <div>{{.Description}}</div>
+              {{if .References}}
+                <div class="task-refs">
+                  {{range .References}}
+                    <a class="acid acid-sm" data-acid="{{.}}" href="#" title="copy acid">{{.}}</a>
+                  {{end}}
+                </div>
               {{end}}
-            </td>
-          </tr>
-          {{end}}
-        </tbody>
-      </table>
+            </div>
+          </div>
+        {{end}}
+      </div>
     {{else}}
-      <p class="muted">no tasks</p>
+      <p class="muted">no tasks defined.</p>
     {{end}}
   {{end}}
 </section>

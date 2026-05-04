@@ -1,41 +1,41 @@
 {{define "title"}}rex — remotes{{end}}
 
 {{define "content"}}
-<section class="overview">
-  <p class="eyebrow">workspace · remotes</p>
+<header class="page-header">
   <h1>remotes</h1>
-  <p class="muted">
-    registered in <code>~/.config/rex/remotes.toml</code> —
-    add via <code>rex remote add &lt;name&gt; &lt;url&gt;</code>,
-    remove via <code>rex remote remove</code>
-  </p>
-</section>
+  <div class="meta">
+    <span>registered in <code>~/.config/rex/remotes.toml</code></span>
+    <span>·</span>
+    <span>add via <code>rex remote add &lt;name&gt; &lt;url&gt;</code></span>
+  </div>
+</header>
 
-<section class="card">
-  <p class="card-eyebrow">attached</p>
+<section class="section">
   {{if .Rows}}
-    <table class="table">
-      <thead>
-        <tr>
-          <th>name</th><th>url</th><th>drafts</th>
-          <th>fingerprint</th><th>added</th><th>last seen</th>
-        </tr>
-      </thead>
-      <tbody>
-        {{range .Rows}}
-        <tr>
-          <td><code>{{.Name}}</code></td>
-          <td><code>{{.URL}}</code></td>
-          <td>{{.Drafts}}</td>
-          <td>{{if .Fingerprint}}<code>{{.Fingerprint}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
-          <td>{{if .AddedAt}}<time>{{.AddedAt}}</time>{{else}}<span class="muted">—</span>{{end}}</td>
-          <td>{{if .LastSeen}}<time>{{.LastSeen}}</time>{{else}}<span class="muted">—</span>{{end}}</td>
-        </tr>
-        {{end}}
-      </tbody>
-    </table>
+    <div class="card">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>name</th><th>url</th><th class="col-numeric">drafts</th>
+            <th>fingerprint</th><th>added</th><th>last seen</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Rows}}
+          <tr>
+            <td><code>{{.Name}}</code></td>
+            <td><code>{{.URL}}</code></td>
+            <td class="col-numeric">{{.Drafts}}</td>
+            <td>{{if .Fingerprint}}<code>{{.Fingerprint}}</code>{{else}}<span class="dim">—</span>{{end}}</td>
+            <td>{{if .AddedAt}}<time>{{.AddedAt}}</time>{{else}}<span class="dim">—</span>{{end}}</td>
+            <td>{{if .LastSeen}}<time>{{.LastSeen}}</time>{{else}}<span class="dim">—</span>{{end}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
   {{else}}
-    <p class="muted">no remotes registered — <code>rex remote add &lt;name&gt; &lt;url&gt;</code></p>
+    <p class="muted small">no remotes registered — <code>rex remote add &lt;name&gt; &lt;url&gt;</code></p>
   {{end}}
 </section>
 {{end}}

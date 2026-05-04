@@ -1,0 +1,81 @@
+{{define "title"}}rex — new spec{{end}}
+
+{{define "content"}}
+<header class="page-header">
+  <h1>new spec</h1>
+  <div class="meta">
+    <span>writes <code>.rex/specs/&lt;id&gt;.yaml</code></span>
+    <span class="back"><a href="/specs">← all specs</a></span>
+  </div>
+</header>
+
+{{if .Error}}
+<aside class="banner banner-error" role="alert">
+  <span><strong>could not create.</strong> {{.Error}}</span>
+</aside>
+{{end}}
+
+<section class="section">
+  <div class="card">
+    <form method="post" action="/specs/create" class="form">
+      <div class="form-grid">
+        <label class="field">
+          <span class="field-label">id <span class="req">*</span></span>
+          <input class="field-input mono"
+                 type="text"
+                 name="id"
+                 autofocus
+                 required
+                 pattern="[a-z][a-z0-9-]*"
+                 placeholder="my-feature"
+                 value="{{.ID}}">
+          <span class="field-hint">Kebab-case, lowercase. Becomes the filename.</span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">human-readable name</span>
+          <input class="field-input"
+                 type="text"
+                 name="name"
+                 placeholder="defaults to id"
+                 value="{{.Name}}">
+          <span class="field-hint">Optional. Defaults to the id.</span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">state</span>
+          <select class="field-select" name="state">
+            {{range $s := .States}}
+            <option value="{{$s}}" {{if eq $.State $s}}selected{{end}}>{{$s}}</option>
+            {{end}}
+          </select>
+          <span class="field-hint">Flip to <code>active</code> once the spec is reviewed.</span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">template</span>
+          <select class="field-select" name="template">
+            <option value="" {{if eq .Template ""}}selected{{end}}>(minimal skeleton)</option>
+            {{range .Templates}}
+            <option value="{{.ID}}" {{if eq $.Template .ID}}selected{{end}}>
+              {{.ID}} — {{.Name}}{{if .IsDefault}} (workspace default){{end}}
+            </option>
+            {{end}}
+          </select>
+          <span class="field-hint">Templates inherit their tasks, components, and constraints. The workspace default applies when none is selected.</span>
+        </label>
+
+        <label class="field field-checkbox full">
+          <input type="checkbox" name="force" value="on" {{if .Force}}checked{{end}}>
+          <span class="field-label">overwrite existing file</span>
+        </label>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">create spec</button>
+        <a class="btn btn-ghost" href="/specs">cancel</a>
+      </div>
+    </form>
+  </div>
+</section>
+{{end}}

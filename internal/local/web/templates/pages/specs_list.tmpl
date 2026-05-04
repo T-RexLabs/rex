@@ -1,41 +1,40 @@
 {{define "title"}}rex — specs{{end}}
 
 {{define "content"}}
-<section class="overview">
-  <p class="eyebrow">workspace · specs</p>
+<header class="page-header">
   <h1>specs</h1>
-  <p class="muted">
-    {{len .Specs}} spec{{if ne (len .Specs) 1}}s{{end}} in
-    <code>.rex/specs/</code>
-    · <a href="/specs/validate">validate</a>
-    via <code>rex spec create &lt;id&gt;</code> from the CLI to add more
-  </p>
-</section>
+  <div class="meta">
+    <span>{{len .Specs}} spec{{if ne (len .Specs) 1}}s{{end}} in <code>.rex/specs/</code></span>
+  </div>
+</header>
 
-<section class="card">
+<section class="section">
+  <div class="toolbar">
+    <a class="btn btn-primary" href="/specs/new">new spec</a>
+    <form method="post" action="/specs/validate"><button type="submit" class="btn">validate all</button></form>
+  </div>
+
   {{if .Specs}}
-    <table class="table">
-      <thead>
-        <tr><th>id</th><th>name</th><th>state</th><th>tasks</th><th>components</th></tr>
-      </thead>
-      <tbody>
-        {{range .Specs}}
-        <tr>
-          <td><a href="/specs/{{.ID}}"><code>{{.ID}}</code></a></td>
-          <td>{{.Name}}</td>
-          <td><span class="pill pill-{{.State}}"><i class="dot"></i>{{.State}}</span></td>
-          <td>{{.TaskCount}}</td>
-          <td>{{.ComponentCount}}</td>
-        </tr>
-        {{end}}
-      </tbody>
-    </table>
+    <div class="card">
+      <table class="table">
+        <thead>
+          <tr><th>id</th><th>name</th><th>state</th><th class="col-numeric">tasks</th><th class="col-numeric">components</th></tr>
+        </thead>
+        <tbody>
+          {{range .Specs}}
+          <tr>
+            <td><a href="/specs/{{.ID}}"><code>{{.ID}}</code></a></td>
+            <td>{{.Name}}</td>
+            <td><span class="pill pill-{{.State}}"><i class="dot"></i>{{.State}}</span></td>
+            <td class="col-numeric">{{.TaskCount}}</td>
+            <td class="col-numeric">{{.ComponentCount}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
   {{else}}
-    <p class="muted">no specs yet — <code>rex spec create &lt;id&gt;</code></p>
+    <p class="muted small">no specs yet — <a href="/specs/new">create the first one</a></p>
   {{end}}
 </section>
-
-<form method="post" action="/specs/validate" style="display:inline;">
-  <button type="submit" class="btn">validate specs</button>
-</form>
 {{end}}

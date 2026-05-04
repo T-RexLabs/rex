@@ -97,7 +97,7 @@ components:
 		"alpha covers the auth surface",
 		"AUTH",
 		"alpha.AUTH.1",
-		"tab-active",
+		`aria-selected="true"`,
 		`href="?tab=source"`,
 	} {
 		if !strings.Contains(strings.ToLower(body), strings.ToLower(want)) {

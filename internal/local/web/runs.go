@@ -181,12 +181,13 @@ func (s *Server) streamRunEvents(w http.ResponseWriter, r *http.Request, runID s
 		body := fmt.Sprintf(
 			`<article class="event">`+
 				`<header class="event-head">`+
-				`<span class="event-type"><code>%s</code></span>`+
+				`<span class="event-type" data-type="%s"><code>%s</code></span>`+
 				`<time class="event-time">%s</time>`+
-				`<span class="event-id"><code class="dim">%s</code></span>`+
+				`<span class="event-id"><code>%s</code></span>`+
 				`</header>`+
 				`<pre class="event-body chroma"><code class="language-json">%s</code></pre>`+
 				`</article>`,
+			html.EscapeString(row.Type),
 			html.EscapeString(row.Type),
 			html.EscapeString(row.Timestamp),
 			html.EscapeString(row.ID),

@@ -1,42 +1,39 @@
 {{define "title"}}rex — run {{.RunID}}{{end}}
 
 {{define "content"}}
-<section class="overview">
-  <p class="eyebrow">workspace · run</p>
-  <h1 class="run-id"><code>{{.RunID}}</code></h1>
-  <dl class="kv">
-    <dt>status</dt><dd><span class="pill pill-{{.Status}}"><i class="dot"></i>{{.Status}}</span></dd>
-    <dt>events</dt><dd>{{len .Events}}</dd>
-  </dl>
-  <p class="muted small">
-    <a href="/runs">← all runs</a>
-  </p>
-</section>
+<header class="page-header">
+  <p class="runid-heading">{{.RunID}}</p>
+  <div class="meta">
+    <span class="pill pill-{{.Status}}"><i class="dot"></i>{{.Status}}</span>
+    <span>·</span>
+    <span>{{len .Events}} event{{if ne (len .Events) 1}}s{{end}}</span>
+    <span class="back"><a href="/runs">← all runs</a></span>
+  </div>
+</header>
 
-<section class="timeline-section"
+<section class="section"
          hx-ext="sse"
          sse-connect="/runs/{{.RunID}}/stream"
          sse-swap="run-event"
          hx-target="#run-events"
          hx-swap="beforeend">
-  <p class="card-eyebrow">events <span class="muted">(live)</span></p>
+  <div class="section-head">
+    <h2>events</h2>
+    <span class="section-meta">live · streaming from <code>/runs/{{.RunID}}/stream</code></span>
+  </div>
   <div class="timeline" id="run-events">
     {{range .Events}}
     <article class="event">
       <header class="event-head">
-        <span class="event-type"><code>{{.Type}}</code></span>
+        <span class="event-type" data-type="{{.Type}}"><code>{{.Type}}</code></span>
         <time class="event-time">{{.Timestamp}}</time>
-        <span class="event-id"><code class="dim">{{.ID}}</code></span>
+        <span class="event-id"><code>{{.ID}}</code></span>
       </header>
       <pre class="event-body chroma"><code class="language-json">{{.Payload}}</code></pre>
     </article>
     {{end}}
   </div>
-  <p class="muted small">
-    live updates stream from <code>/runs/{{.RunID}}/stream</code> via
-    Server-Sent Events. Disable JS for a static, page-reload-only view
-    (web-ui.ACCESS.3).
-  </p>
+  <p class="muted small">disable js for a static, page-reload-only view (web-ui.access.3).</p>
 </section>
 
 <script src="/static/htmx.min.js" defer></script>

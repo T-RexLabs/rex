@@ -1,33 +1,35 @@
 {{define "title"}}rex — audit{{end}}
 
 {{define "content"}}
-<section class="overview">
-  <p class="eyebrow">workspace · audit</p>
+<header class="page-header">
   <h1>audit log</h1>
-  <p class="muted">last {{.Limit}} audit-class entries from <code>.rex/events.log</code></p>
-</section>
+  <div class="meta">
+    <span>last {{.Limit}} audit-class entries from <code>.rex/events.log</code></span>
+  </div>
+</header>
 
-<section class="card">
-  <p class="card-eyebrow">entries</p>
+<section class="section">
   {{if .Rows}}
-    <table class="table">
-      <thead>
-        <tr><th>timestamp</th><th>type</th><th>actor</th><th>workspace</th><th>id</th></tr>
-      </thead>
-      <tbody>
-        {{range .Rows}}
-        <tr>
-          <td><time>{{.Timestamp}}</time></td>
-          <td><code>{{.Type}}</code></td>
-          <td>{{if .Actor}}<code>{{.Actor}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
-          <td>{{.WorkspaceID}}</td>
-          <td><code class="dim">{{.ID}}</code></td>
-        </tr>
-        {{end}}
-      </tbody>
-    </table>
+    <div class="card">
+      <table class="table">
+        <thead>
+          <tr><th>timestamp</th><th>type</th><th>actor</th><th>workspace</th><th>id</th></tr>
+        </thead>
+        <tbody>
+          {{range .Rows}}
+          <tr>
+            <td><time>{{.Timestamp}}</time></td>
+            <td><code>{{.Type}}</code></td>
+            <td>{{if .Actor}}<code>{{.Actor}}</code>{{else}}<span class="dim">—</span>{{end}}</td>
+            <td>{{.WorkspaceID}}</td>
+            <td><code class="dim">{{.ID}}</code></td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
   {{else}}
-    <p class="muted">no audit entries yet</p>
+    <p class="muted small">no audit entries yet</p>
   {{end}}
 </section>
 {{end}}

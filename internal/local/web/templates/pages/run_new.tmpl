@@ -1,57 +1,53 @@
 {{define "title"}}rex — start a run{{end}}
 
 {{define "content"}}
-<section class="overview">
-  <p class="eyebrow">workspace · runs</p>
+<header class="page-header">
   <h1>start a run</h1>
-  <p class="muted">
-    runs a one-node DAG containing a <code>shell_exec</code> primitive.
-    Synchronous: the response returns when the run terminates.
-    Long runs should still go through <code>rex run start</code> from
-    the CLI.
-  </p>
-</section>
+  <div class="meta">
+    <span>one-shot shell command, runs synchronously</span>
+    <span class="back"><a href="/runs">← all runs</a></span>
+  </div>
+</header>
 
 {{if .Error}}
 <aside class="banner banner-error" role="alert">
-  <strong>could not start:</strong> {{.Error}}
+  <span><strong>could not start.</strong> {{.Error}}</span>
 </aside>
 {{end}}
 
-<section class="card">
-  <form method="post" action="/runs/start" class="form">
-    <label class="field">
-      <span class="field-label">shell command</span>
-      <input class="field-input mono"
-             type="text"
-             name="shell"
-             autocomplete="off"
-             autofocus
-             required
-             placeholder='echo hello && date'
-             value="{{.Shell}}">
-      <span class="field-hint">
-        POSIX-ish: bare words and double-quoted runs. Single quotes
-        and backslash escapes are not yet honoured.
-      </span>
-    </label>
+<section class="section">
+  <div class="card">
+    <form method="post" action="/runs/start" class="form">
+      <div class="form-grid">
+        <label class="field full">
+          <span class="field-label">shell command <span class="req">*</span></span>
+          <input class="field-input mono"
+                 type="text"
+                 name="shell"
+                 autocomplete="off"
+                 autofocus
+                 required
+                 placeholder='echo hello && date'
+                 value="{{.Shell}}">
+          <span class="field-hint">POSIX-ish: bare words and double-quoted runs. Single quotes and backslash escapes are not yet honoured.</span>
+        </label>
 
-    <label class="field">
-      <span class="field-label">node id</span>
-      <input class="field-input mono"
-             type="text"
-             name="node_id"
-             value="{{.NodeID}}"
-             placeholder="shell">
-      <span class="field-hint">
-        Visible in run.show output and in <code>events.log</code>.
-      </span>
-    </label>
+        <label class="field">
+          <span class="field-label">node id</span>
+          <input class="field-input mono"
+                 type="text"
+                 name="node_id"
+                 value="{{.NodeID}}"
+                 placeholder="shell">
+          <span class="field-hint">Defaults to <code>shell</code>. Visible in <code>run.show</code> output.</span>
+        </label>
+      </div>
 
-    <div class="form-actions">
-      <button type="submit" class="btn btn-primary">start run</button>
-      <a class="btn btn-ghost" href="/runs">cancel</a>
-    </div>
-  </form>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">start run</button>
+        <a class="btn btn-ghost" href="/runs">cancel</a>
+      </div>
+    </form>
+  </div>
 </section>
 {{end}}

@@ -1,8 +1,9 @@
 {{define "base"}}<!DOCTYPE html>
-<html lang="en" data-theme="auto">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>{{block "title" .}}rex{{end}}</title>
   <link rel="stylesheet" href="/static/app.css">
   <link rel="stylesheet" href="/static/chroma.css">
@@ -12,15 +13,17 @@
     <div class="topbar-inner">
       <a class="brand" href="/">rex</a>
       <nav class="nav" aria-label="primary">
-        <a href="/">overview</a>
-        <a href="/specs">specs</a>
-        <a href="/runs">runs</a>
-        <a href="/audit">audit</a>
-        <a href="/remotes">remotes</a>
+        <a href="/"        {{if eq .NavSection "home"}}aria-current="page"{{end}}>overview</a>
+        <a href="/specs"   {{if eq .NavSection "specs"}}aria-current="page"{{end}}>specs</a>
+        <a href="/runs"    {{if eq .NavSection "runs"}}aria-current="page"{{end}}>runs</a>
+        <a href="/audit"   {{if eq .NavSection "audit"}}aria-current="page"{{end}}>audit</a>
+        <a href="/remotes" {{if eq .NavSection "remotes"}}aria-current="page"{{end}}>remotes</a>
       </nav>
-      <span class="ws-badge" title="workspace">
-        {{if .Workspace}}{{.Workspace.ID}}{{else}}(no workspace){{end}}
-      </span>
+      {{if .Workspace}}
+        <span class="ws-badge" title="active workspace">{{.Workspace.ID}}</span>
+      {{else}}
+        <span class="ws-badge muted" title="no workspace at this path">no workspace</span>
+      {{end}}
     </div>
   </header>
   <main class="main">

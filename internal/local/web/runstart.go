@@ -33,6 +33,7 @@ func (s *Server) handleRunNew(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "web: no workspace at "+s.opts.WorkspaceRoot, http.StatusInternalServerError)
 		return
 	}
+	base.NavSection = "runs"
 	s.render(w, r, "run_new.tmpl", runNewData{
 		pageData: base,
 		NodeID:   "shell",
@@ -62,6 +63,7 @@ func (s *Server) handleRunStart(w http.ResponseWriter, r *http.Request) {
 
 	rerender := func(msg string) {
 		base := s.basePageData()
+		base.NavSection = "runs"
 		w.WriteHeader(http.StatusBadRequest)
 		s.render(w, r, "run_new.tmpl", runNewData{
 			pageData: base,

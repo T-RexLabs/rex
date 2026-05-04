@@ -77,8 +77,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /static/chroma.css", s.handleChromaCSS)
 	s.mux.HandleFunc("GET /{$}", s.handleHome)
 	s.mux.HandleFunc("GET /specs", s.handleSpecsList)
-	s.mux.HandleFunc("GET /specs/{id}", s.handleSpecDetail)
+	s.mux.HandleFunc("GET /specs/new", s.handleSpecNew)
+	s.mux.HandleFunc("POST /specs/create", s.handleSpecCreate)
 	s.mux.HandleFunc("POST /specs/validate", s.handleSpecsValidate)
+	s.mux.HandleFunc("GET /specs/{id}", s.handleSpecDetail)
 	s.mux.HandleFunc("GET /runs", s.handleRunsList)
 	s.mux.HandleFunc("GET /runs/new", s.handleRunNew)
 	s.mux.HandleFunc("POST /runs/start", s.handleRunStart)
@@ -113,13 +115,18 @@ func loadPages() (map[string]*template.Template, error) {
 }
 
 // pageData is what every page receives via the base template's
-// {{.Workspace}} / {{.Version}} / {{.BindAddr}} fields. Pages embed
-// it via composition so they can add their own fields without
-// reflecting through map[string]any.
+// {{.Workspace}} / {{.Version}} / {{.BindAddr}} / {{.NavSection}}
+// fields. Pages embed it via composition so they can add their
+// own fields without reflecting through map[string]any.
+//
+// NavSection drives the active-link state in the top nav. One of:
+// "home", "specs", "runs", "audit", "remotes". Empty for pages
+// that don't fit any (e.g. /specs/new still highlights "specs").
 type pageData struct {
-	Workspace *workspaceSummary
-	BindAddr  string
-	Version   string
+	Workspace  *workspaceSummary
+	BindAddr   string
+	Version    string
+	NavSection string
 }
 
 func (s *Server) basePageData() pageData {
@@ -129,6 +136,13 @@ func (s *Server) basePageData() pageData {
 		BindAddr:  s.opts.BindAddr,
 		Version:   s.opts.Version,
 	}
+}
+
+// withNav returns a copy of base with NavSection set. Tiny helper
+// so handlers don't repeat the assignment dance.
+func (p pageData) withNav(s string) pageData {
+	p.NavSection = s
+	return p
 }
 
 // render executes base+page against data. Returns a 500 on

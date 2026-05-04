@@ -83,6 +83,7 @@ func (s *Server) handleSpecsValidate(w http.ResponseWriter, r *http.Request) {
 		pageData:  s.basePageData(),
 		SpecCount: len(paths),
 	}
+	d.NavSection = "specs"
 	for _, iss := range issues {
 		switch iss.Severity {
 		case specfmt.SeverityError:

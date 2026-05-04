@@ -94,7 +94,8 @@ func TestRunDetailRendersHistory(t *testing.T) {
 		t.Fatalf("status: %d", resp.StatusCode)
 	}
 	for _, want := range []string{
-		`<code>the-run</code>`,
+		`the-run`,
+		`runid-heading`,
 		"run.started",
 		"node.started",
 		"node.succeeded",

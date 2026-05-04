@@ -1,619 +1,820 @@
-/* Rex local UI — engineer's ledger.
+/* rex local UI.
  *
- * Hand-written, no preprocessor (web-ui.STACK.3). System fonts via
- * the ui-* generics so we get genuine typography on each platform
- * (New York / Cambria for the serif, SF Mono / Cascadia Code for
- * the mono) without shipping any woff2 bytes.
+ * Industrial-utilitarian. Two type voices (sans body + mono).
+ * Neutral grayscale with a single emerald accent. One 4px radius
+ * everywhere. The committed decorative gesture is a 1px hairline
+ * stroke and nothing else — no gradient backgrounds, no zebra
+ * rows, no decorative left-borders, no animated dots.
  *
- * Palette: warm parchment in light mode, warm graphite in dark.
- * Single ink-red accent for the active state. State pills are
- * rendered with a leading dot so color is never the sole carrier
- * of information (web-ui.ACCESS.2).
+ * Reference frame: IETF RFC layout meets Linear's quietest
+ * screens. The signature affordance is that ACIDs (e.g.
+ * sync.ORDER.3) read like permanent citation marks — large,
+ * mono, copy-on-click. Everything else recedes.
+ *
+ * Hand-written, no preprocessor (web-ui.STACK.3). Class-based
+ * chroma highlighting in /static/chroma.css.
  */
 
+/* ============================================================
+ * 1. Tokens
+ * ============================================================ */
+
 :root {
-  /* Paper + ink */
-  --paper:        #f6f1e7;
-  --paper-pale:   #fbf7ec;
-  --paper-warm:   #efe7d2;
-  --ink:          #1c1a17;
-  --ink-soft:     #3a342c;
-  --ink-mute:     #6c645a;
-  --rule:         #c8bfa9;
-  --rule-soft:    #ddd3bc;
+  /* Grayscale ramp — 9 stops. Neutral, no warmth. */
+  --gray-0:  #ffffff;
+  --gray-50: #fafafa;
+  --gray-100: #f5f5f5;
+  --gray-150: #ededed;
+  --gray-200: #e5e5e5;
+  --gray-300: #d4d4d4;
+  --gray-400: #a3a3a3;
+  --gray-500: #737373;
+  --gray-600: #525252;
+  --gray-700: #404040;
+  --gray-800: #262626;
+  --gray-900: #171717;
+  --gray-950: #0a0a0a;
 
-  /* Accent — venetian / ink red. Single source for the live
-   * ribbon, focus rings, run-id headings, link hovers. */
-  --accent:       #9a2a2a;
-  --accent-soft:  #c75151;
-  --accent-fg:    #fbf7ec;
+  /* Surfaces and text — semantic aliases over the grayscale.
+   * Light mode: dark text on near-white surfaces. */
+  --canvas:        var(--gray-50);
+  --surface:       var(--gray-0);
+  --surface-sunk:  var(--gray-100);
+  --border:        var(--gray-200);
+  --border-strong: var(--gray-300);
+  --text:          var(--gray-950);
+  --text-2:        var(--gray-600);
+  --text-3:        var(--gray-500);
 
-  /* State colors — used for pills + dot indicators. Color is
-   * never sole carrier; pills always carry a label and a leading
-   * dot. */
-  --state-ok:     #2d5e2a;
-  --state-warn:   #9a6a14;
-  --state-error:  #8a2222;
-  --state-info:   #2c4f8a;
-  --state-mute:   #6c645a;
+  /* Accent — single emerald. Used for: primary button, active
+   * nav link, focus ring, completed/active state, run-id
+   * heading. Never used for body text. */
+  --accent:    #0a6b3e;
+  --accent-2:  #128a52;
+  --accent-fg: #ffffff;
+  --focus:     #0a6b3e55;
 
-  /* Code surfaces */
-  --code-bg:      #ece4cf;
-  --code-bg-soft: #f1ebd8;
+  /* States — small, restrained. Dot indicators use these
+   * colors directly; pill backgrounds use a 6% tint. */
+  --state-ok:    #0a6b3e;
+  --state-info:  #1d4ed8;
+  --state-warn:  #b45309;
+  --state-error: #b91c1c;
+  --state-mute:  var(--text-3);
 
-  /* Typography — system stacks, no shipped fonts.
-   * ui-serif resolves to New York on macOS, Cambria on Windows,
-   * Source Serif on most Linux distros. */
-  --font-display: ui-serif, "New York", "Iowan Old Style", "Apple Garamond", Garamond, "Hoefler Text", "Times New Roman", serif;
-  --font-body:    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, "Cascadia Code", "DejaVu Sans Mono", monospace;
+  /* Typography — two voices. Body uses ui-sans-serif so the
+   * platform picks SF Pro / Segoe UI Variable — better than
+   * Inter, ships zero bytes. Mono uses ui-monospace for the
+   * same reason (SF Mono / Cascadia Code). */
+  --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI Variable", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Liberation Mono", Menlo, monospace;
 
-  /* Spacing rhythm — multiples of 4 + 6 (deliberate slight
-   * irregularity to keep the ledger feeling hand-set, not pixel
-   * perfect). */
-  --gap-xs: 4px;
-  --gap-sm: 8px;
-  --gap-md: 14px;
-  --gap-lg: 22px;
-  --gap-xl: 36px;
+  /* Type scale — small, tight, technical. Body 14px so tables
+   * read dense without looking cramped. */
+  --fs-xs:   12px;
+  --fs-sm:   13px;
+  --fs-base: 14px;
+  --fs-md:   15px;
+  --fs-lg:   18px;
+  --fs-xl:   22px;
+  --fs-2xl:  28px;
 
-  /* Page width — narrower than typical so reading the audit log
-   * feels like reading a column of hand-kept records. */
-  --page-max: 1080px;
+  /* Spacing — 4px base scale, no exotic numbers. */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  12px;
+  --sp-4:  16px;
+  --sp-5:  20px;
+  --sp-6:  24px;
+  --sp-8:  32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+
+  /* Radius — one value, period. */
+  --r: 4px;
+
+  /* Page width — narrower than typical so spec text reads at a
+   * comfortable 70ch and the run-detail timeline doesn't feel
+   * sparse. */
+  --page-max: 960px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper:        #1c1a17;
-    --paper-pale:   #232017;
-    --paper-warm:   #2a261c;
-    --ink:          #efe7d2;
-    --ink-soft:     #d6cdb6;
-    --ink-mute:     #908573;
-    --rule:         #3b362b;
-    --rule-soft:    #2a261c;
+    --canvas:        var(--gray-950);
+    --surface:       var(--gray-900);
+    --surface-sunk:  #1f1f1f;
+    --border:        var(--gray-800);
+    --border-strong: var(--gray-700);
+    --text:          var(--gray-50);
+    --text-2:        var(--gray-400);
+    --text-3:        var(--gray-500);
 
-    --accent:       #e07474;
-    --accent-soft:  #f0a0a0;
-    --accent-fg:    #1c1a17;
+    --accent:    #34d399;
+    --accent-2:  #4ade80;
+    --accent-fg: #04140b;
+    --focus:     #34d39966;
 
-    --state-ok:     #7fb37d;
-    --state-warn:   #e0b46a;
-    --state-error:  #f08585;
-    --state-info:   #8eaee0;
-    --state-mute:   #908573;
-
-    --code-bg:      #2a261c;
-    --code-bg-soft: #232017;
+    --state-ok:    #34d399;
+    --state-info:  #60a5fa;
+    --state-warn:  #fbbf24;
+    --state-error: #f87171;
+    --state-mute:  var(--text-3);
   }
 }
 
-* { box-sizing: border-box; }
+/* ============================================================
+ * 2. Reset
+ * ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; }
 
 html, body {
   margin: 0;
   padding: 0;
-  background: var(--paper);
-  color: var(--ink);
+  background: var(--canvas);
+  color: var(--text);
   font-family: var(--font-body);
-  font-size: 15px;
+  font-size: var(--fs-base);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
-/* Subtle paper texture: hairlines at the edges + a light grain.
- * The horizontal rule across the top is the page's only chrome
- * gesture, so it must be visible but not loud. */
-body {
-  background-image:
-    linear-gradient(to bottom, var(--paper) 0, var(--paper) 100%);
-  min-height: 100vh;
+body { min-height: 100vh; }
+
+p { margin: 0 0 var(--sp-3) 0; }
+p:last-child { margin-bottom: 0; }
+
+h1, h2, h3, h4, h5 {
+  font-family: var(--font-body);
+  margin: 0;
+  letter-spacing: -0.011em;
+  font-weight: 600;
+  color: var(--text);
 }
+h1 { font-size: var(--fs-2xl); line-height: 1.2; letter-spacing: -0.02em; }
+h2 { font-size: var(--fs-lg); line-height: 1.3; letter-spacing: -0.012em; }
+h3 { font-size: var(--fs-md); line-height: 1.35; }
+
+code, pre, .mono { font-family: var(--font-mono); }
 
 a {
-  color: var(--ink);
+  color: var(--text);
   text-decoration: underline;
-  text-decoration-color: var(--rule);
+  text-decoration-color: var(--border-strong);
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
-  transition: text-decoration-color 100ms ease;
+  transition: text-decoration-color 80ms ease, color 80ms ease;
 }
-a:hover { text-decoration-color: var(--accent); }
-a:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+a:hover { text-decoration-color: var(--accent); color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: var(--sp-6) 0;
 }
 
-code, pre, .mono {
-  font-family: var(--font-mono);
-  font-size: 0.92em;
-}
+::selection { background: var(--focus); }
 
-/* ============== top chrome ============== */
+/* ============================================================
+ * 3. Top chrome
+ * ============================================================ */
 
 .topbar {
-  border-bottom: 1px solid var(--rule);
-  background: var(--paper-pale);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
 }
 .topbar-inner {
   max-width: var(--page-max);
   margin: 0 auto;
   display: flex;
-  align-items: baseline;
-  gap: var(--gap-lg);
-  padding: var(--gap-md) var(--gap-lg);
+  align-items: center;
+  gap: var(--sp-6);
+  padding: var(--sp-3) var(--sp-5);
 }
 .brand {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 1.4rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  font-weight: 600;
   letter-spacing: -0.01em;
   text-decoration: none;
-  color: var(--ink);
+  color: var(--text);
 }
-.brand::after {
-  content: ".";
-  color: var(--accent);
-  margin-left: 1px;
-}
+.brand:hover { color: var(--text); text-decoration: none; }
 .nav {
   display: flex;
-  gap: var(--gap-lg);
-  flex-grow: 1;
-  font-size: 0.85rem;
-  text-transform: lowercase;
-  letter-spacing: 0.04em;
+  gap: var(--sp-5);
+  flex: 1;
+  font-size: var(--fs-sm);
 }
 .nav a {
-  color: var(--ink-soft);
+  color: var(--text-2);
   text-decoration: none;
-  padding-bottom: 2px;
+  padding: 4px 0;
   border-bottom: 1px solid transparent;
-  transition: border-color 100ms ease;
 }
-.nav a:hover { border-bottom-color: var(--accent); color: var(--ink); }
+.nav a:hover { color: var(--text); border-bottom-color: var(--border-strong); }
+.nav a[aria-current="page"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
 
 .ws-badge {
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  color: var(--ink-mute);
-  letter-spacing: 0.02em;
-  text-transform: lowercase;
-  padding: 2px 0;
-}
-.ws-badge::before {
-  content: "ws · ";
-  color: var(--ink-mute);
-  opacity: 0.65;
-}
-
-/* ============== page ============== */
-
-.main {
-  max-width: var(--page-max);
-  margin: var(--gap-xl) auto;
-  padding: 0 var(--gap-lg);
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-xl);
-}
-
-/* Sub-rail layout: hero column + commands rail. Used by the
- * workspace overview to surface LOCAL.3 quick actions. */
-.split {
-  display: grid;
-  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr);
-  gap: var(--gap-xl);
-  align-items: start;
-}
-@media (max-width: 760px) {
-  .split { grid-template-columns: 1fr; }
-}
-
-/* ============== headings + eyebrows ============== */
-
-.eyebrow,
-.card-eyebrow {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-  margin: 0 0 var(--gap-sm) 0;
-  display: inline-block;
-}
-.card-eyebrow::after {
-  content: "";
-  display: inline-block;
-  vertical-align: middle;
-  margin-left: var(--gap-md);
-  width: 28px;
-  border-bottom: 1px solid var(--rule);
-  position: relative;
-  top: -2px;
-}
-
-.overview h1 {
-  font-family: var(--font-display);
-  margin: 0 0 var(--gap-md) 0;
-  font-size: 2rem;
-  letter-spacing: -0.015em;
-  font-weight: 600;
-  line-height: 1.15;
-}
-.overview h1.run-id {
-  font-family: var(--font-mono);
-  font-size: 1.2rem;
-  letter-spacing: 0;
-  font-weight: 500;
-}
-.overview h1.run-id code {
-  background: transparent;
-  padding: 0;
-  border: 0;
-  color: var(--accent);
-}
-
-/* ============== cards (leaves) ============== */
-
-.card {
-  background: var(--paper-pale);
-  border: 1px solid var(--rule);
-  border-radius: 0;
-  padding: var(--gap-lg) var(--gap-lg) calc(var(--gap-lg) + 4px) var(--gap-lg);
-  position: relative;
-}
-/* Top hairline accent — invisible by default, picks up the accent
- * for highlight states. */
-.card::before {
-  content: "";
-  position: absolute;
-  top: -1px; left: -1px; right: -1px;
-  height: 2px;
-  background: transparent;
-}
-.card-accent::before { background: var(--accent); }
-
-.card h2 {
-  font-family: var(--font-display);
-  margin: 0 0 var(--gap-md) 0;
-  font-size: 1.15rem;
-  letter-spacing: -0.005em;
-  font-weight: 600;
-}
-.card h3 {
-  font-family: var(--font-display);
-  margin: var(--gap-lg) 0 var(--gap-sm) 0;
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-/* ============== key-value blocks ============== */
-
-.kv {
-  display: grid;
-  grid-template-columns: 8.5rem 1fr;
-  gap: var(--gap-xs) var(--gap-lg);
-  margin: 0;
-}
-.kv dt {
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  letter-spacing: 0.04em;
-  text-transform: lowercase;
-  color: var(--ink-mute);
-  align-self: baseline;
-  padding-top: 2px;
-}
-.kv dd { margin: 0; }
-
-.muted { color: var(--ink-mute); }
-.muted.small { font-size: 0.85rem; }
-.dim { color: var(--ink-mute); }
-
-/* ============== tables (ruled paper) ============== */
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.92rem;
-}
-.table thead th {
-  text-align: left;
-  padding: var(--gap-sm) var(--gap-sm);
-  border-bottom: 1px solid var(--rule);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-  font-weight: 500;
-}
-.table tbody tr:nth-child(even) {
-  background: linear-gradient(to right, transparent, var(--code-bg-soft) 8%, var(--code-bg-soft) 92%, transparent);
-}
-.table tbody td {
-  padding: var(--gap-sm) var(--gap-sm);
-  border-bottom: 1px solid var(--rule-soft);
-  vertical-align: top;
-}
-.table tbody tr:last-child td { border-bottom: none; }
-
-/* ============== inline code ============== */
-
-code {
-  background: var(--code-bg);
-  padding: 0.05rem 0.4rem;
-  border-radius: 2px;
-  font-size: 0.86em;
-  border: 1px solid var(--rule-soft);
-}
-
-/* ============== state pills ============== */
-
-.pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 1px 8px;
   font-family: var(--font-mono);
-  font-size: 0.7rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  background: transparent;
-  color: var(--ink-soft);
-  border: 1px solid var(--rule);
-  border-radius: 999px;
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  padding: 3px 8px;
+  background: var(--surface-sunk);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
 }
-.pill .dot,
-.pill::before {
+.ws-badge::before {
   content: "";
   display: inline-block;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: currentColor;
-}
-.pill .dot { background: currentColor; }
-
-.pill-active, .pill-completed, .pill-ok { color: var(--state-ok); border-color: color-mix(in srgb, var(--state-ok), transparent 60%); }
-.pill-draft, .pill-warn { color: var(--state-warn); border-color: color-mix(in srgb, var(--state-warn), transparent 60%); }
-.pill-aborted, .pill-error { color: var(--state-error); border-color: color-mix(in srgb, var(--state-error), transparent 60%); }
-.pill-cancelled, .pill-mute { color: var(--state-mute); border-color: color-mix(in srgb, var(--state-mute), transparent 60%); }
-.pill-running { color: var(--state-info); border-color: color-mix(in srgb, var(--state-info), transparent 60%); }
-.pill-running .dot { animation: dot-pulse 1.2s ease-in-out infinite; }
-
-@keyframes dot-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%      { opacity: 0.45; transform: scale(0.6); }
+  background: var(--accent);
 }
 
-/* ============== buttons ============== */
+/* ============================================================
+ * 4. Page layout
+ * ============================================================ */
+
+.main {
+  max-width: var(--page-max);
+  margin: var(--sp-8) auto var(--sp-12);
+  padding: 0 var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+}
+
+.page-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-5);
+  border-bottom: 1px solid var(--border);
+}
+.page-header .meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+}
+/* Right-aligned link in the .meta strip — typically the "back"
+ * link to the parent index. Replaces the inline margin-left:auto
+ * smell scattered across templates. */
+.page-header .meta .back {
+  margin-left: auto;
+}
+
+/* Meta variant for pages with many summary items — drops the
+ * inline · separators and lets `gap` do the visual spacing.
+ * Used on /  where 5 items + 4 dots became visual hash. */
+.page-header .meta.meta-spread {
+  gap: var(--sp-2) var(--sp-5);
+}
+.page-header .meta a { color: var(--text-3); }
+.page-header .meta a:hover { color: var(--accent); }
+
+.section { display: flex; flex-direction: column; gap: var(--sp-4); }
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.section-head h2 { margin: 0; }
+.section-head .section-meta {
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+}
+
+/* ============================================================
+ * 5. Cards
+ * ============================================================ */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: var(--sp-5);
+}
+.card.compact { padding: var(--sp-4); }
+
+/* ============================================================
+ * 6. Toolbar
+ * ============================================================ */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.toolbar form { display: inline; }
+
+/* ============================================================
+ * 7. Tables
+ * ============================================================ */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+.table thead th {
+  text-align: left;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+.table tbody td {
+  padding: var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.table tbody tr:last-child td { border-bottom: none; }
+.table tbody tr:hover { background: var(--surface-sunk); }
+
+.table .col-numeric { text-align: right; font-variant-numeric: tabular-nums; }
+.table time, .table .num { font-variant-numeric: tabular-nums; }
+
+/* ============================================================
+ * 8. Inline code + dim text
+ * ============================================================ */
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--surface-sunk);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+a code { background: transparent; border-color: transparent; padding: 0; }
+
+.muted { color: var(--text-2); }
+.muted.small { font-size: var(--fs-sm); }
+.dim { color: var(--text-3); }
+.small { font-size: var(--fs-sm); }
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  padding: 1px 5px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+/* ============================================================
+ * 9. State pills (one dot, one label, one rule)
+ * ============================================================ */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  background: var(--surface-sunk);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  white-space: nowrap;
+}
+.pill .dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+  flex-shrink: 0;
+}
+
+.pill-active   .dot,
+.pill-completed .dot,
+.pill-ok        .dot,
+.pill-done      .dot { background: var(--state-ok); }
+.pill-running   .dot { background: var(--state-info); }
+.pill-draft     .dot,
+.pill-todo      .dot,
+.pill-warn      .dot { background: var(--state-warn); }
+.pill-aborted   .dot,
+.pill-error     .dot { background: var(--state-error); }
+.pill-cancelled .dot,
+.pill-mute      .dot { background: var(--state-mute); }
+
+/* ============================================================
+ * 10. Buttons
+ * ============================================================ */
 
 .btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  letter-spacing: 0.06em;
-  text-transform: lowercase;
-  border-radius: 0;
-  border: 1px solid var(--ink);
-  background: var(--paper);
-  color: var(--ink);
+  padding: 6px 12px;
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 1.4;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--r);
   text-decoration: none;
   cursor: pointer;
-  transition: background 80ms ease, color 80ms ease;
+  user-select: none;
+  transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
 }
-.btn:hover { background: var(--ink); color: var(--paper); }
-.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn:hover {
+  background: var(--surface-sunk);
+  text-decoration: none;
+  color: var(--text);
+}
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.btn[disabled],
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+  background: var(--surface-sunk);
+  color: var(--text-3);
+  border-color: var(--border);
+}
+
 .btn-primary {
   background: var(--accent);
-  color: var(--accent-fg);
   border-color: var(--accent);
+  color: var(--accent-fg);
 }
-.btn-primary:hover { background: var(--ink); border-color: var(--ink); }
+.btn-primary:hover {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  color: var(--accent-fg);
+}
+
 .btn-ghost {
-  border-color: transparent;
   background: transparent;
-  color: var(--ink-mute);
+  border-color: transparent;
+  color: var(--text-2);
 }
-.btn-ghost:hover { background: transparent; color: var(--ink); }
+.btn-ghost:hover {
+  background: var(--surface-sunk);
+  color: var(--text);
+  border-color: transparent;
+}
 
-/* ============== quick actions rail ============== */
+/* ============================================================
+ * 11. Forms
+ * ============================================================ */
 
-.commands {
+.form { display: flex; flex-direction: column; gap: var(--sp-5); }
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sp-5);
+}
+.form-grid .full { grid-column: 1 / -1; }
+@media (max-width: 600px) {
+  .form-grid { grid-template-columns: 1fr; }
+}
+
+.field {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-md);
+  gap: 6px;
 }
-.command {
-  border: 1px solid var(--rule);
-  background: var(--paper-pale);
-  padding: var(--gap-md) var(--gap-md) var(--gap-md) calc(var(--gap-md) + 8px);
-  position: relative;
-  text-decoration: none;
-  color: var(--ink);
-  display: block;
-  transition: background 80ms ease;
-}
-.command::before {
-  content: "";
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 2px;
-  background: var(--accent);
-  opacity: 0.55;
-  transition: opacity 80ms ease, width 80ms ease;
-}
-.command:hover { background: var(--paper-warm); }
-.command:hover::before { opacity: 1; width: 4px; }
-.command:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.command-title {
-  font-family: var(--font-display);
-  font-size: 1.05rem;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-}
-.command-hint {
-  display: block;
-  margin-top: 2px;
-  color: var(--ink-mute);
-  font-size: 0.85rem;
-  font-family: var(--font-body);
-}
-.command-disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.command-disabled:hover { background: var(--paper-pale); }
-.command-disabled:hover::before { width: 2px; opacity: 0.55; }
-
-/* ============== forms ============== */
-
-.form { display: flex; flex-direction: column; gap: var(--gap-lg); }
-.field { display: flex; flex-direction: column; gap: 4px; }
 .field-label {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text);
 }
-.field-input {
+.field-label .req {
+  color: var(--state-error);
+  margin-left: 2px;
+}
+.field-input,
+.field-select {
   font-family: var(--font-body);
-  font-size: 1rem;
-  padding: 8px 10px;
-  border: 1px solid var(--rule);
-  background: var(--paper);
-  color: var(--ink);
-  border-radius: 0;
-  transition: border-color 100ms ease;
+  font-size: var(--fs-base);
+  padding: 7px 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--r);
+  width: 100%;
+  transition: border-color 80ms ease, box-shadow 80ms ease;
 }
-.field-input.mono { font-family: var(--font-mono); font-size: 0.95rem; }
-.field-input:focus {
+.field-input.mono { font-family: var(--font-mono); }
+.field-input:focus,
+.field-select:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent), transparent 80%);
+  box-shadow: 0 0 0 3px var(--focus);
 }
 .field-hint {
-  font-size: 0.85rem;
-  color: var(--ink-mute);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
 }
-.form-actions { display: flex; gap: var(--gap-md); align-items: center; }
+.field-hint code { font-size: 0.95em; }
 
-/* ============== banners ============== */
+.form-actions {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: center;
+  padding-top: var(--sp-5);
+  margin-top: var(--sp-2);
+  border-top: 1px solid var(--border);
+}
+
+/* Checkbox row inside .form-grid — by default form-grid stacks
+ * label-text on top of input. The checkbox affordance is
+ * inherently inline, so the row goes horizontal and the
+ * "field-label" sits to the right of the box, in body weight. */
+.field-checkbox {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+}
+.field-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  margin: 0;
+}
+.field-checkbox .field-label {
+  font-weight: 400;
+  color: var(--text-2);
+}
+
+/* Section heading separator — used between in-page h2 sections
+ * (e.g. "components" and "constraints" within a single tab
+ * panel). No border because the immediately-following
+ * .component-block-head already carries one — two parallel rules
+ * close together looks cluttered. */
+.section-h2 {
+  margin-top: var(--sp-8);
+  margin-bottom: var(--sp-3);
+}
+.section-h2:first-child { margin-top: 0; }
+
+/* ============================================================
+ * 12. Banners
+ * ============================================================ */
 
 .banner {
-  border: 1px solid var(--rule);
-  border-left: 3px solid var(--state-error);
-  padding: var(--gap-md) var(--gap-lg);
-  background: var(--paper-warm);
-  font-size: 0.95rem;
+  display: flex;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  background: var(--surface-sunk);
+  border-radius: var(--r);
+  font-size: var(--fs-sm);
+  color: var(--text);
 }
-.banner-error { border-left-color: var(--state-error); }
-.banner-ok { border-left-color: var(--state-ok); }
+.banner-error { border-color: var(--state-error); background: color-mix(in srgb, var(--state-error), transparent 92%); }
+.banner-ok    { border-color: var(--state-ok);    background: color-mix(in srgb, var(--state-ok),    transparent 92%); }
+.banner-info  { border-color: var(--state-info);  background: color-mix(in srgb, var(--state-info),  transparent 92%); }
+.banner strong { font-weight: 600; }
 
-/* ============== footer ============== */
+/* ============================================================
+ * 13. KV blocks
+ * ============================================================ */
+
+.kv {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 6px var(--sp-5);
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+.kv dt {
+  color: var(--text-3);
+  font-weight: 400;
+  align-self: baseline;
+}
+.kv dd { margin: 0; }
+
+/* ============================================================
+ * 14. Footer
+ * ============================================================ */
 
 .footer {
   max-width: var(--page-max);
-  margin: var(--gap-xl) auto;
-  padding: var(--gap-md) var(--gap-lg);
-  border-top: 1px solid var(--rule);
+  margin: var(--sp-12) auto var(--sp-6);
+  padding: var(--sp-3) var(--sp-5) 0;
+  border-top: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
   font-family: var(--font-mono);
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
-  color: var(--ink-mute);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
 }
 
-/* ============== tabs (spec detail) ============== */
+/* ============================================================
+ * 15. Tabs (spec detail)
+ * ============================================================ */
 
 .tabs {
   display: flex;
-  gap: var(--gap-xs);
-  border-bottom: 1px solid var(--rule);
-  padding: 0 var(--gap-sm);
+  gap: 0;
+  border-bottom: 1px solid var(--border);
 }
 .tab {
-  display: inline-block;
-  padding: 8px 14px 6px 14px;
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  letter-spacing: 0.06em;
-  text-transform: lowercase;
-  color: var(--ink-mute);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-2);
   border-bottom: 2px solid transparent;
   text-decoration: none;
-  margin-bottom: -1px; /* let tab-active border overlap the rule */
+  margin-bottom: -1px;
+  transition: color 80ms ease, border-color 80ms ease;
 }
-.tab:hover { color: var(--ink); }
-.tab-active {
-  color: var(--ink);
+.tab:hover { color: var(--text); text-decoration: none; }
+.tab[aria-selected="true"], .tab.tab-active {
+  color: var(--text);
   border-bottom-color: var(--accent);
 }
-
-.tab-panel {
-  border-top: none;
-  padding: var(--gap-lg);
+.tab .count {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--text-3);
 }
 
-/* ============== spec rendered + components ============== */
+/* ============================================================
+ * 16. Spec rendered: components + requirements (the big one)
+ *
+ * The signature treatment. Every requirement is an addressable
+ * citation. The ACID looks like a permanent-link mark — large,
+ * mono, copy-on-click. Body text is generous (75ch) so the
+ * contract reads like prose, not a database row.
+ * ============================================================ */
+
+.component-block {
+  margin: var(--sp-6) 0;
+  padding: 0;
+}
+.component-block:first-child { margin-top: var(--sp-4); }
+/* Component head is two voices: a mono id and a sans name. The
+ * requirement count rides as a quiet trailing fragment of the
+ * name line, not a third typographic voice. */
+.component-block-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--sp-2);
+}
+.component-id {
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.005em;
+}
+.component-name {
+  font-size: var(--fs-md);
+  color: var(--text);
+  font-weight: 500;
+}
+.component-count {
+  margin-left: auto;
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+.requirement {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: var(--sp-5);
+  padding: var(--sp-5) 0;
+  border-bottom: 1px solid var(--border);
+}
+.requirement:last-child { border-bottom: none; }
+/* Right-align the ACID inside its column so it sits adjacent to
+ * the requirement text — citation marks belong next to the
+ * cited text, not floating in a wide left margin. */
+.requirement-acid {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+}
+.requirement-acid .acid {
+  font-size: var(--fs-sm);
+}
+.requirement-text {
+  font-size: var(--fs-base);
+  line-height: 1.6;
+  color: var(--text);
+  max-width: 75ch;
+}
+@media (max-width: 720px) {
+  .requirement {
+    grid-template-columns: 1fr;
+    gap: var(--sp-2);
+  }
+}
+
+/* ACID pill — the citation gesture. Copy-on-click; hover
+ * surfaces the copy affordance. */
+.acid {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  background: var(--surface-sunk);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  border-radius: var(--r);
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 80ms ease, color 80ms ease, background 80ms ease;
+  white-space: nowrap;
+}
+.acid::after {
+  content: "¶";
+  font-size: 0.85em;
+  color: var(--text-3);
+  margin-left: 2px;
+  opacity: 0;
+  transition: opacity 80ms ease;
+}
+.acid:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  text-decoration: none;
+  background: var(--surface);
+}
+.acid:hover::after { opacity: 1; color: var(--accent); }
+.acid.copied {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent), transparent 90%);
+}
+
+/* Small ACID chip for inline lists (e.g. task references). */
+.acid.acid-sm {
+  font-size: 11px;
+  padding: 1px 5px;
+  margin-right: 3px;
+  margin-bottom: 2px;
+}
+
+/* ============================================================
+ * 17. Spec description (markdown / preformatted)
+ * ============================================================ */
 
 .markdown {
   white-space: pre-wrap;
   font-family: var(--font-body);
-  font-size: 1rem;
+  font-size: var(--fs-md);
   line-height: 1.65;
+  color: var(--text);
+  max-width: 75ch;
 }
 
-.component {
-  border: 1px solid var(--rule-soft);
-  border-radius: 0;
-  padding: 8px 12px;
-  margin: var(--gap-sm) 0;
-  background: var(--paper-pale);
-}
-.component summary {
-  cursor: pointer;
-  outline: none;
-  font-family: var(--font-mono);
-  font-size: 0.86rem;
-}
-.component[open] summary { color: var(--accent); }
-.req-table { margin-top: var(--gap-sm); }
-
-.acid {
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  background: var(--paper-warm);
-  border: 1px solid var(--rule);
-  padding: 1px 6px;
-  margin-right: 4px;
-  text-decoration: none;
-  color: var(--ink);
-  cursor: pointer;
-  transition: border-color 80ms ease, background 80ms ease;
-  border-radius: 0;
-}
-.acid:hover { border-color: var(--accent); background: var(--paper-warm); }
-
-/* ============== source view (yaml + json) ============== */
+/* ============================================================
+ * 18. Source view (yaml + json via chroma)
+ * ============================================================ */
 
 .source,
 .event-body {
-  background: var(--code-bg-soft);
-  border: 1px solid var(--rule-soft);
-  padding: var(--gap-md) var(--gap-lg);
-  border-radius: 0;
+  background: var(--surface-sunk);
+  border: 1px solid var(--border);
+  padding: var(--sp-4) var(--sp-5);
+  border-radius: var(--r);
   overflow-x: auto;
-  font-size: 0.86rem;
-  line-height: 1.5;
+  font-size: var(--fs-sm);
+  line-height: 1.55;
   margin: 0;
 }
 .source code,
@@ -624,87 +825,135 @@ code {
   white-space: pre;
   font-size: 1em;
 }
-
-/* ============== run-detail timeline ============== */
-
-.timeline-section { display: flex; flex-direction: column; gap: var(--gap-md); }
-
-.timeline {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-md);
-  position: relative;
-  padding-left: 0;
+.event-body code {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
+
+/* Chroma's stylesheet sets a body background on .chroma — we
+ * want the surface tint we picked instead. */
+.chroma { background: transparent !important; }
+
+/* ============================================================
+ * 19. Run-detail timeline
+ *
+ * Each event is a thin row with its meta on top and the JSON
+ * payload below. No card chrome — the row IS the unit. The
+ * type name carries the only color cue; everything else is
+ * neutral.
+ * ============================================================ */
+
+.timeline { display: flex; flex-direction: column; gap: 0; }
 
 .event {
-  background: var(--paper-pale);
-  border: 1px solid var(--rule);
-  position: relative;
-  padding: 0;
+  border-bottom: 1px solid var(--border);
+  padding: var(--sp-4) 0;
 }
+.event:first-child { padding-top: var(--sp-2); }
+.event:last-child { border-bottom: none; }
+
 .event-head {
   display: flex;
   align-items: baseline;
-  gap: var(--gap-md);
+  gap: var(--sp-3);
   flex-wrap: wrap;
-  padding: 8px var(--gap-lg);
-  border-bottom: 1px solid var(--rule-soft);
-  background: var(--paper-warm);
-}
-.event-type {
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  font-weight: 500;
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-sm);
 }
 .event-type code {
   background: transparent;
   border: 0;
   padding: 0;
-  color: var(--accent);
+  color: var(--text);
+  font-weight: 500;
+  font-size: var(--fs-sm);
 }
+.event-type[data-type^="run.completed"] code,
+.event-type[data-type^="node.succeeded"] code { color: var(--state-ok); }
+.event-type[data-type^="run.aborted"] code,
+.event-type[data-type^="node.failed"] code    { color: var(--state-error); }
+.event-type[data-type^="run.cancelled"] code  { color: var(--state-mute); }
+.event-type[data-type^="run.started"] code,
+.event-type[data-type^="node.started"] code   { color: var(--state-info); }
 .event-time {
   font-family: var(--font-mono);
-  font-size: 0.78rem;
-  color: var(--ink-mute);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
 }
 .event-id {
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: var(--ink-mute);
   margin-left: auto;
-  letter-spacing: -0.01em;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
 }
-.event-id code {
-  background: transparent;
-  border: 0;
-  padding: 0;
-  font-size: inherit;
+.event-id code { background: transparent; border: 0; padding: 0; font-size: inherit; }
+.event-body { margin-top: 0; }
+
+/* ============================================================
+ * 20. Run identifier heading (run-detail page)
+ *
+ * A run-id is a 22+ char HLC. Render it in mono at h2 size so
+ * it reads as a tag, not a title. Accent color so it visually
+ * registers as the page's anchor.
+ * ============================================================ */
+
+.runid-heading {
+  font-family: var(--font-mono);
+  font-size: var(--fs-lg);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--text);
+  margin: 0;
+  word-break: break-all;
 }
 
-.event-body {
-  border-top: none;
-  border-left: none;
-  border-right: none;
-  border-bottom: none;
-  padding: var(--gap-md) var(--gap-lg);
-  background: var(--paper-pale);
+/* ============================================================
+ * 21. Quick action toolbar (home)
+ *
+ * A horizontal row of small buttons above the recent-runs
+ * panel. Replaces the previous side-rail. Same buttons as
+ * elsewhere — no special treatment.
+ * ============================================================ */
+.quick-actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
 }
-.event-body code {
-  font-size: 0.82rem;
+
+/* ============================================================
+ * 22. Spec-detail tasks list
+ *
+ * Each task is a row with its id, state pill, description, and
+ * inline ACID chips for references. Matches the requirement
+ * row pattern.
+ * ============================================================ */
+.task {
+  display: grid;
+  grid-template-columns: 160px auto 1fr;
+  gap: var(--sp-3) var(--sp-5);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--border);
+  align-items: baseline;
+}
+.task:last-child { border-bottom: none; }
+.task-id {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+.task-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  font-size: var(--fs-base);
   line-height: 1.55;
-  /* Wrap long values inside JSON so a 22-char run id doesn't
-   * push the page sideways. White-space pre-wrap preserves the
-   * indentation chroma emits while still wrapping at the right
-   * margin. */
-  white-space: pre-wrap;
-  word-break: break-word;
 }
+.task-refs { display: flex; flex-wrap: wrap; gap: 4px; }
 
-/* ============== chroma ============== */
-
-/* The chroma stylesheet is served from /static/chroma.css and
- * gets dropped into <head>. These overrides keep the highlight
- * palette readable on the parchment and give the run-detail
- * cards a slightly different background tint than spec source. */
-.chroma { background: transparent !important; }
+@media (max-width: 720px) {
+  .task {
+    grid-template-columns: 1fr;
+    gap: var(--sp-2);
+  }
+}

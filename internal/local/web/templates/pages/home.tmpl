@@ -1,81 +1,79 @@
 {{define "title"}}rex — {{.Workspace.ID}}{{end}}
 
 {{define "content"}}
-<div class="split">
-  <div class="split-main">
-    <section class="overview">
-      <p class="eyebrow">workspace</p>
-      <h1>{{.Workspace.Name}}</h1>
-      <dl class="kv">
-        <dt>id</dt><dd><code>{{.Workspace.ID}}</code></dd>
-        <dt>state</dt><dd><span class="pill pill-{{.Workspace.State}}"><i class="dot"></i>{{.Workspace.State}}</span></dd>
-        <dt>created</dt><dd><time>{{.Workspace.CreatedAt}}</time></dd>
-        <dt>specs</dt><dd>{{.SpecCount}}</dd>
-        <dt>runs</dt><dd>{{.RunCount}}</dd>
-        <dt>events total</dt><dd>{{.EventCount}}</dd>
-      </dl>
-    </section>
-
-    <section class="card">
-      <p class="card-eyebrow">recent runs</p>
-      {{if .RecentRuns}}
-        <table class="table">
-          <thead><tr><th>run</th><th>status</th><th>started</th><th>nodes</th></tr></thead>
-          <tbody>
-            {{range .RecentRuns}}
-            <tr>
-              <td><a href="/runs/{{.RunID}}"><code>{{.RunID}}</code></a></td>
-              <td><span class="pill pill-{{.Status}}"><i class="dot"></i>{{.Status}}</span></td>
-              <td><time>{{.StartedAt}}</time></td>
-              <td>{{.NodeEvents}}</td>
-            </tr>
-            {{end}}
-          </tbody>
-        </table>
-      {{else}}
-        <p class="muted">no runs yet — start one from the rail, or <code>rex run start --shell &lt;cmd&gt;</code></p>
-      {{end}}
-    </section>
-
-    <section class="card">
-      <p class="card-eyebrow">remotes</p>
-      {{if .Remotes}}
-        <table class="table">
-          <thead><tr><th>name</th><th>drafts</th><th>last sync</th></tr></thead>
-          <tbody>
-            {{range .Remotes}}
-            <tr>
-              <td><code>{{.Name}}</code></td>
-              <td>{{.Drafts}}</td>
-              <td><time>{{.LastSync}}</time></td>
-            </tr>
-            {{end}}
-          </tbody>
-        </table>
-      {{else}}
-        <p class="muted">no remotes registered — <code>rex remote add &lt;name&gt; &lt;url&gt;</code></p>
-      {{end}}
-    </section>
+<header class="page-header">
+  <h1>{{.Workspace.Name}}</h1>
+  <div class="meta meta-spread">
+    <code>{{.Workspace.ID}}</code>
+    <span class="pill pill-{{.Workspace.State}}"><i class="dot"></i>{{.Workspace.State}}</span>
+    <span>{{.SpecCount}} spec{{if ne .SpecCount 1}}s{{end}}</span>
+    <span>{{.RunCount}} run{{if ne .RunCount 1}}s{{end}}</span>
+    <span>{{.EventCount}} event{{if ne .EventCount 1}}s{{end}}</span>
   </div>
+</header>
 
-  <aside class="split-rail">
-    <p class="eyebrow">commands</p>
-    <div class="commands">
-      <a class="command" href="/runs/new">
-        <span class="command-title">start a run</span>
-        <span class="command-hint">one-shot shell command, synchronous</span>
-      </a>
-      <form method="post" action="/specs/validate" class="command-form">
-        <button class="command" type="submit" style="width: 100%; text-align: left; cursor: pointer;">
-          <span class="command-title">validate specs</span>
-          <span class="command-hint">strict pass over <code>.rex/specs</code></span>
-        </button>
-      </form>
-      <a class="command command-disabled" aria-disabled="true" title="sync now is a CLI-only flow in v1; remote selection + error surface needs more design before it lands here">
-        <span class="command-title">sync now <span class="muted">(CLI only · v1)</span></span>
-        <span class="command-hint"><code>rex sync</code> from the terminal</span>
-      </a>
+<section class="section">
+  <div class="section-head">
+    <h2>quick actions</h2>
+    <span class="section-meta">parity with the cli's daily-driver flows</span>
+  </div>
+  <div class="quick-actions">
+    <a class="btn btn-primary" href="/runs/new">start a run</a>
+    <a class="btn" href="/specs/new">new spec</a>
+    <form method="post" action="/specs/validate"><button type="submit" class="btn">validate specs</button></form>
+    <a class="btn" href="/specs">browse specs</a>
+    <button class="btn" type="button" disabled title="sync runs from the CLI in v1; remote selection + error surface land in a follow-up">sync now (cli only)</button>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <h2>recent runs</h2>
+    <a class="section-meta" href="/runs">all runs →</a>
+  </div>
+  {{if .RecentRuns}}
+    <div class="card">
+      <table class="table">
+        <thead><tr><th>run</th><th>status</th><th>started</th><th class="col-numeric">nodes</th></tr></thead>
+        <tbody>
+          {{range .RecentRuns}}
+          <tr>
+            <td><a href="/runs/{{.RunID}}"><code>{{.RunID}}</code></a></td>
+            <td><span class="pill pill-{{.Status}}"><i class="dot"></i>{{.Status}}</span></td>
+            <td><time>{{.StartedAt}}</time></td>
+            <td class="col-numeric">{{.NodeEvents}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
     </div>
-  </aside>
-</div>
+  {{else}}
+    <p class="muted small">no runs yet — <a href="/runs/new">start one</a> or use <code>rex run start --shell &lt;cmd&gt;</code></p>
+  {{end}}
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <h2>remotes</h2>
+    <a class="section-meta" href="/remotes">all remotes →</a>
+  </div>
+  {{if .Remotes}}
+    <div class="card">
+      <table class="table">
+        <thead><tr><th>name</th><th class="col-numeric">drafts</th><th>last sync</th></tr></thead>
+        <tbody>
+          {{range .Remotes}}
+          <tr>
+            <td><code>{{.Name}}</code></td>
+            <td class="col-numeric">{{.Drafts}}</td>
+            <td><time>{{.LastSync}}</time></td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  {{else}}
+    <p class="muted small">no remotes registered — <code>rex remote add &lt;name&gt; &lt;url&gt;</code></p>
+  {{end}}
+</section>
 {{end}}

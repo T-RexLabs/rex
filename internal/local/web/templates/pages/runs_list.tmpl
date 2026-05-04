@@ -1,31 +1,38 @@
 {{define "title"}}rex — runs{{end}}
 
 {{define "content"}}
-<section class="overview">
-  <p class="eyebrow">workspace · runs</p>
+<header class="page-header">
   <h1>runs</h1>
-  <p class="muted">{{len .Runs}} run{{if ne (len .Runs) 1}}s{{end}}</p>
-</section>
+  <div class="meta">
+    <span>{{len .Runs}} run{{if ne (len .Runs) 1}}s{{end}}</span>
+  </div>
+</header>
 
-<section class="card">
+<section class="section">
+  <div class="toolbar">
+    <a class="btn btn-primary" href="/runs/new">start a run</a>
+  </div>
+
   {{if .Runs}}
-    <table class="table">
-      <thead><tr><th>run</th><th>status</th><th>started</th><th>nodes</th></tr></thead>
-      <tbody>
-        {{range .Runs}}
-        <tr>
-          <td><a href="/runs/{{.RunID}}"><code>{{.RunID}}</code></a></td>
-          <td><span class="pill pill-{{.Status}}"><i class="dot"></i>{{.Status}}</span></td>
-          <td><time>{{.StartedAt}}</time></td>
-          <td>{{.NodeEvents}}</td>
-        </tr>
-        {{end}}
-      </tbody>
-    </table>
+    <div class="card">
+      <table class="table">
+        <thead>
+          <tr><th>run</th><th>status</th><th>started</th><th class="col-numeric">nodes</th></tr>
+        </thead>
+        <tbody>
+          {{range .Runs}}
+          <tr>
+            <td><a href="/runs/{{.RunID}}"><code>{{.RunID}}</code></a></td>
+            <td><span class="pill pill-{{.Status}}"><i class="dot"></i>{{.Status}}</span></td>
+            <td><time>{{.StartedAt}}</time></td>
+            <td class="col-numeric">{{.NodeEvents}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
   {{else}}
-    <p class="muted">no runs yet</p>
+    <p class="muted small">no runs yet — <a href="/runs/new">start one</a></p>
   {{end}}
 </section>
-
-<a class="btn btn-primary" href="/runs/new">+ start a run</a>
 {{end}}

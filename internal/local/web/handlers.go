@@ -13,6 +13,7 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "web: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	data.NavSection = "home"
 	s.render(w, r, "home.tmpl", data)
 }
 
@@ -23,6 +24,7 @@ func (s *Server) handleSpecsList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "web: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	data.NavSection = "specs"
 	s.render(w, r, "specs_list.tmpl", data)
 }
 
@@ -39,6 +41,7 @@ func (s *Server) handleSpecDetail(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	data.NavSection = "specs"
 	s.render(w, r, "spec_detail.tmpl", data)
 }
 
@@ -49,6 +52,7 @@ func (s *Server) handleRunsList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "web: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	data.NavSection = "runs"
 	s.render(w, r, "runs_list.tmpl", data)
 }
 
@@ -64,6 +68,7 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	data.NavSection = "runs"
 	s.render(w, r, "run_detail.tmpl", data)
 }
 
@@ -91,6 +96,7 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "web: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	data.NavSection = "audit"
 	s.render(w, r, "audit.tmpl", data)
 }
 
@@ -101,6 +107,7 @@ func (s *Server) handleRemotes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "web: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	data.NavSection = "remotes"
 	s.render(w, r, "remotes.tmpl", data)
 }
 
