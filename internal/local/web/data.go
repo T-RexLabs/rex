@@ -134,9 +134,8 @@ func countEvents(root string) int {
 }
 
 // loadRunRows folds events.log into per-run summaries (run_id,
-// status, started_at, node_event_count). Mirrors the CLI's
-// readRunSummaries logic but stays inside this package so web/cli
-// can each iterate at their own pace.
+// status, started_at, node_event_count) using the shared
+// runner.RunSummary helper.
 func loadRunRows(root string) ([]runRow, error) {
 	r, err := eventlog.OpenReader(filepath.Join(root, ".rex", "events.log"))
 	if err != nil {
@@ -150,22 +149,7 @@ func loadRunRows(root string) ([]runRow, error) {
 	reg := event.NewRegistry()
 	runner.RegisterEvents(reg)
 
-	type acc struct {
-		runID      string
-		status     runner.RunStatus
-		startedAt  time.Time
-		endedAt    time.Time
-		nodeEvents int
-	}
-	by := map[string]*acc{}
-	get := func(id string) *acc {
-		a, ok := by[id]
-		if !ok {
-			a = &acc{runID: id}
-			by[id] = a
-		}
-		return a
-	}
+	by := map[string]*runner.RunSummary{}
 	for {
 		rec, err := r.Next()
 		if errors.Is(err, io.EOF) {
@@ -183,46 +167,25 @@ func loadRunRows(root string) ([]runRow, error) {
 		if err != nil {
 			return nil, err
 		}
-		switch ev := decoded.(type) {
-		case runner.RunStartedEvent:
-			a := get(ev.RunID)
-			if a.startedAt.IsZero() {
-				a.startedAt = ev.StartedAt
-			}
-		case runner.RunCompletedEvent:
-			a := get(ev.RunID)
-			a.status = runner.RunStatusCompleted
-			a.endedAt = ev.CompletedAt
-		case runner.RunCancelledEvent:
-			a := get(ev.RunID)
-			a.status = runner.RunStatusCancelled
-			a.endedAt = ev.CancelledAt
-		case runner.RunAbortedEvent:
-			a := get(ev.RunID)
-			a.status = runner.RunStatusAborted
-			a.endedAt = ev.AbortedAt
-		case runner.NodeStartedEvent:
-			get(ev.RunID).nodeEvents++
-		case runner.NodeSucceededEvent:
-			get(ev.RunID).nodeEvents++
-		case runner.NodeFailedEvent:
-			get(ev.RunID).nodeEvents++
-		case runner.NodeRetriedEvent:
-			get(ev.RunID).nodeEvents++
+		var probe runner.RunSummary
+		if !probe.FoldEvent(decoded) {
+			continue
 		}
+		s, ok := by[probe.RunID]
+		if !ok {
+			s = &runner.RunSummary{}
+			by[probe.RunID] = s
+		}
+		s.FoldEvent(decoded)
 	}
 
 	out := make([]runRow, 0, len(by))
-	for _, a := range by {
-		status := a.status
-		if status == "" {
-			status = runner.RunStatusRunning
-		}
+	for _, s := range by {
 		out = append(out, runRow{
-			RunID:      a.runID,
-			Status:     status,
-			StartedAt:  a.startedAt.UTC().Format(time.RFC3339),
-			NodeEvents: a.nodeEvents,
+			RunID:      s.RunID,
+			Status:     s.EffectiveStatus(),
+			StartedAt:  s.StartedAt.UTC().Format(time.RFC3339),
+			NodeEvents: s.NodeEvents,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt > out[j].StartedAt })

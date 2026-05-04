@@ -388,7 +388,7 @@ func readRunSummaries(workspaceRoot string) ([]runSummary, error) {
 	defer r.Close()
 
 	reg := runDecoderRegistry()
-	byID := map[string]*runSummary{}
+	byID := map[string]*runner.RunSummary{}
 	for {
 		rec, err := r.Next()
 		if errors.Is(err, io.EOF) {
@@ -406,58 +406,29 @@ func readRunSummaries(workspaceRoot string) ([]runSummary, error) {
 		if err != nil {
 			return nil, err
 		}
-		applySummaryEvent(byID, decoded)
+		var probe runner.RunSummary
+		if !probe.FoldEvent(decoded) {
+			continue
+		}
+		s, ok := byID[probe.RunID]
+		if !ok {
+			s = &runner.RunSummary{}
+			byID[probe.RunID] = s
+		}
+		s.FoldEvent(decoded)
 	}
 
 	out := make([]runSummary, 0, len(byID))
 	for _, s := range byID {
-		if s.Status == "" {
-			s.Status = runner.RunStatusRunning
-		}
-		out = append(out, *s)
+		out = append(out, runSummary{
+			RunID:      s.RunID,
+			Status:     s.EffectiveStatus(),
+			StartedAt:  s.StartedAt,
+			EndedAt:    s.EndedAt,
+			NodeEvents: s.NodeEvents,
+		})
 	}
 	return out, nil
-}
-
-// applySummaryEvent folds one decoded runner event into the running
-// summary table. It tolerates events arriving out of order — list is
-// best-effort regardless.
-func applySummaryEvent(byID map[string]*runSummary, e any) {
-	get := func(id string) *runSummary {
-		s, ok := byID[id]
-		if !ok {
-			s = &runSummary{RunID: id}
-			byID[id] = s
-		}
-		return s
-	}
-	switch ev := e.(type) {
-	case runner.RunStartedEvent:
-		s := get(ev.RunID)
-		if s.StartedAt.IsZero() {
-			s.StartedAt = ev.StartedAt
-		}
-	case runner.RunCompletedEvent:
-		s := get(ev.RunID)
-		s.Status = runner.RunStatusCompleted
-		s.EndedAt = ev.CompletedAt
-	case runner.RunCancelledEvent:
-		s := get(ev.RunID)
-		s.Status = runner.RunStatusCancelled
-		s.EndedAt = ev.CancelledAt
-	case runner.RunAbortedEvent:
-		s := get(ev.RunID)
-		s.Status = runner.RunStatusAborted
-		s.EndedAt = ev.AbortedAt
-	case runner.NodeStartedEvent:
-		get(ev.RunID).NodeEvents++
-	case runner.NodeSucceededEvent:
-		get(ev.RunID).NodeEvents++
-	case runner.NodeFailedEvent:
-		get(ev.RunID).NodeEvents++
-	case runner.NodeRetriedEvent:
-		get(ev.RunID).NodeEvents++
-	}
 }
 
 // runRecord is the on-wire shape `rex run show` emits — the eventlog
@@ -506,7 +477,7 @@ func loadRunEvents(workspaceRoot, runID string) ([]runRecord, error) {
 		if err != nil {
 			return nil, err
 		}
-		if eventMatchesRun(decoded, runID) {
+		if runner.MatchesRun(decoded, runID) {
 			out = append(out, runRecord{
 				ID:          rec.ID,
 				Timestamp:   rec.Timestamp,
@@ -519,37 +490,6 @@ func loadRunEvents(workspaceRoot, runID string) ([]runRecord, error) {
 		}
 	}
 	return out, nil
-}
-
-// eventMatchesRun reports whether the decoded runner event references
-// the given runID. Centralizing the check here means readRunSummaries
-// and loadRunEvents agree on what a "run" event is.
-func eventMatchesRun(e any, runID string) bool {
-	switch ev := e.(type) {
-	case runner.RunStartedEvent:
-		return ev.RunID == runID
-	case runner.RunCompletedEvent:
-		return ev.RunID == runID
-	case runner.RunCancelledEvent:
-		return ev.RunID == runID
-	case runner.RunAbortedEvent:
-		return ev.RunID == runID
-	case runner.NodeStartedEvent:
-		return ev.RunID == runID
-	case runner.NodeSucceededEvent:
-		return ev.RunID == runID
-	case runner.NodeFailedEvent:
-		return ev.RunID == runID
-	case runner.NodeRetriedEvent:
-		return ev.RunID == runID
-	case runner.PermissionRequestedEvent:
-		return ev.RunID == runID
-	case runner.PermissionGrantedEvent:
-		return ev.RunID == runID
-	case runner.PermissionDeniedEvent:
-		return ev.RunID == runID
-	}
-	return false
 }
 
 // openReaderForPath wraps eventlog.OpenReader to return (nil, nil) when

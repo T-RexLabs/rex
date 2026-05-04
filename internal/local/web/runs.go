@@ -3,6 +3,7 @@ package web
 import (
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"io/fs"
 	"net/http"
@@ -99,7 +100,7 @@ func loadRunDetail(opts Options, runID string) (runDetailData, bool, error) {
 		if err != nil {
 			return d, false, err
 		}
-		if !eventMatchesRun(reg, rec, runID) {
+		if !recordMatchesRun(reg, rec, runID) {
 			continue
 		}
 		d.Events = append(d.Events, newRunEventRow(rec))
@@ -121,45 +122,19 @@ func loadRunDetail(opts Options, runID string) (runDetailData, bool, error) {
 	return d, true, nil
 }
 
-// eventMatchesRun decodes rec via the runner registry and asks the
-// payload whether it references runID. We deliberately decode (not
-// substring-match the payload bytes) so a run id that happens to
-// appear inside another event's payload doesn't false-positive.
-func eventMatchesRun(reg *event.Registry, rec eventlog.Record, runID string) bool {
+// recordMatchesRun decodes rec via the runner registry and asks
+// runner.MatchesRun whether the payload references runID. We
+// deliberately decode (not substring-match the payload bytes) so a
+// run id that happens to appear inside another event's payload
+// doesn't false-positive.
+func recordMatchesRun(reg *event.Registry, rec eventlog.Record, runID string) bool {
 	decoded, err := reg.Decode(event.Envelope{
 		Type: rec.Type, Version: rec.Version, Payload: rec.Payload,
 	})
-	if errors.Is(err, event.ErrSkipUnknownType) {
-		return false
-	}
 	if err != nil {
 		return false
 	}
-	switch ev := decoded.(type) {
-	case runner.RunStartedEvent:
-		return ev.RunID == runID
-	case runner.RunCompletedEvent:
-		return ev.RunID == runID
-	case runner.RunCancelledEvent:
-		return ev.RunID == runID
-	case runner.RunAbortedEvent:
-		return ev.RunID == runID
-	case runner.NodeStartedEvent:
-		return ev.RunID == runID
-	case runner.NodeSucceededEvent:
-		return ev.RunID == runID
-	case runner.NodeFailedEvent:
-		return ev.RunID == runID
-	case runner.NodeRetriedEvent:
-		return ev.RunID == runID
-	case runner.PermissionRequestedEvent:
-		return ev.RunID == runID
-	case runner.PermissionGrantedEvent:
-		return ev.RunID == runID
-	case runner.PermissionDeniedEvent:
-		return ev.RunID == runID
-	}
-	return false
+	return runner.MatchesRun(decoded, runID)
 }
 
 // streamRunEvents implements the SSE handler for /runs/<id>/stream.
@@ -192,17 +167,17 @@ func (s *Server) streamRunEvents(w http.ResponseWriter, r *http.Request, runID s
 		// Render the row HTML so the htmx-sse extension can
 		// drop it directly into the live table. The format
 		// matches what's in the static initial-render.
-		html := fmt.Sprintf(
+		body := fmt.Sprintf(
 			`<tr><td><code>%s</code></td><td>%s</td><td><code>%s</code></td><td><code>%s</code></td></tr>`,
-			htmlEscape(row.ID),
-			htmlEscape(row.Timestamp),
-			htmlEscape(row.Type),
-			htmlEscape(row.Snippet),
+			html.EscapeString(row.ID),
+			html.EscapeString(row.Timestamp),
+			html.EscapeString(row.Type),
+			html.EscapeString(row.Snippet),
 		)
 		// SSE multi-line data must be prefixed per line, so
 		// flatten any embedded newlines.
-		html = strings.ReplaceAll(html, "\n", " ")
-		_, err := fmt.Fprintf(w, "event: run-event\ndata: %s\n\n", html)
+		body = strings.ReplaceAll(body, "\n", " ")
+		_, err := fmt.Fprintf(w, "event: run-event\ndata: %s\n\n", body)
 		if err != nil {
 			return err
 		}
@@ -227,7 +202,7 @@ func (s *Server) streamRunEvents(w http.ResponseWriter, r *http.Request, runID s
 			if err != nil {
 				return err
 			}
-			if !eventMatchesRun(reg, rec, runID) {
+			if !recordMatchesRun(reg, rec, runID) {
 				continue
 			}
 			if _, dup := seen[rec.ID]; dup {
@@ -268,18 +243,5 @@ func (s *Server) streamRunEvents(w http.ResponseWriter, r *http.Request, runID s
 			}
 		}
 	}
-}
-
-// htmlEscape mirrors html.EscapeString but is inlined here so this
-// file does not import a whole package for a 4-char substitution.
-func htmlEscape(s string) string {
-	r := strings.NewReplacer(
-		"&", "&amp;",
-		"<", "&lt;",
-		">", "&gt;",
-		`"`, "&#34;",
-		"'", "&#39;",
-	)
-	return r.Replace(s)
 }
 
