@@ -69,6 +69,7 @@ for each command group.`,
 	root.AddCommand(newIdentityCmd())
 	root.AddCommand(newSnapshotCmd())
 	root.AddCommand(newLogCmd())
+	root.AddCommand(newSearchCmd())
 
 	return root
 }

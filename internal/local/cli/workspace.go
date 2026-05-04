@@ -17,6 +17,7 @@ import (
 	"github.com/asabla/rex/internal/core/audit"
 	"github.com/asabla/rex/internal/core/hooks"
 	"github.com/asabla/rex/internal/core/identity"
+	"github.com/asabla/rex/internal/core/search"
 	"github.com/asabla/rex/internal/core/specfmt"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
 )
@@ -60,6 +61,49 @@ event log. See specs/workspace.yaml for the data model.`,
 	cmd.AddCommand(newWorkspaceInitCmd())
 	cmd.AddCommand(newWorkspaceShowCmd())
 	cmd.AddCommand(newWorkspaceListCmd())
+	cmd.AddCommand(newWorkspaceReindexCmd())
+	return cmd
+}
+
+func newWorkspaceReindexCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "reindex",
+		Short: "Drop and rebuild .rex/index.sqlite from events.log + specs/",
+		Long: `Per storage.INDEX.2, reindex deterministically rebuilds the local
+search index from the canonical event log and the workspace's
+git-merged content. Safe to run while the workspace is otherwise
+idle; not safe during concurrent writes.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			workspaceFlag, _ := cmd.Flags().GetString("workspace")
+			root, err := workspaceRootForOrError(workspaceFlag)
+			if err != nil {
+				return err
+			}
+			idx, err := search.Open(root)
+			if err != nil {
+				return err
+			}
+			defer idx.Close()
+
+			stats, err := idx.Rebuild(root)
+			if err != nil {
+				return err
+			}
+
+			jsonOut, _ := cmd.Flags().GetBool("json")
+			if jsonOut {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+					"events": stats.Events,
+					"specs":  stats.Specs,
+				})
+			}
+			fmt.Fprintf(cmd.OutOrStdout(),
+				"reindexed: %d event(s), %d spec(s)\n",
+				stats.Events, stats.Specs)
+			return nil
+		},
+	}
+	cmd.Flags().String("workspace", "", "workspace root (default: walk up from cwd)")
 	return cmd
 }
 
@@ -178,12 +222,33 @@ mean it.`,
 			})
 			defer disp.Drain()
 
+			// Open the search index now so the very first event
+			// (workspace.created) lands in both events.log and
+			// the FTS index. A nil index falls back to a no-op
+			// callback in EventIndexer; we surface the open error
+			// to the user but do not abort init — the workspace
+			// is still usable, the user can `rex workspace
+			// reindex` later.
+			searchIdx, idxErr := search.Open(abs)
+			if idxErr == nil {
+				defer searchIdx.Close()
+			} else {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: search index unavailable: %v\n", idxErr)
+			}
+			indexerCB := search.EventIndexer(searchIdx, func(err error) {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: index event: %v\n", err)
+			})
+			onAppend := func(rec eventlog.Record) {
+				disp.OnAppend(rec)
+				indexerCB(rec)
+			}
+
 			writer, err := eventlog.OpenWriter(eventlog.WriterConfig{
 				Path:        eventLogPath(abs),
 				WorkspaceID: id,
 				Actor:       signer.Actor().String(),
 				Sign:        identity.SignFunc(signer),
-				OnAppend:    disp.OnAppend,
+				OnAppend:    onAppend,
 			})
 			if err != nil {
 				return fmt.Errorf("open events.log: %w", err)

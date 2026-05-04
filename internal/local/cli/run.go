@@ -16,8 +16,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/asabla/rex/internal/core/event"
+	"github.com/asabla/rex/internal/core/hooks"
 	"github.com/asabla/rex/internal/core/runner"
 	"github.com/asabla/rex/internal/core/runner/primshell"
+	"github.com/asabla/rex/internal/core/search"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
 )
 
@@ -56,24 +58,59 @@ func (s *logSink) Append(eventType string, version uint32, payload json.RawMessa
 }
 
 // newWorkspaceWriter builds an eventlog.Writer rooted at workspace
-// root, stamping the workspace's own id as the WorkspaceID. Actor is
-// left empty until identity-and-trust lands; that field is allowed
-// to be empty per WriterConfig's documented bootstrap path.
-func newWorkspaceWriter(workspaceRoot string) (*eventlog.Writer, *eventlog.Clock, error) {
+// root, stamping the workspace's own id as the WorkspaceID, and
+// composing an OnAppend that fans events out to the hooks
+// dispatcher and the search indexer. The returned cleanup must be
+// called by the caller (typically via defer) to drain hook workers
+// and close the index handle.
+func newWorkspaceWriter(workspaceRoot string) (*eventlog.Writer, *eventlog.Clock, func(), error) {
 	settings, err := readWorkspaceSettings(workspaceRoot)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	clock := eventlog.NewClock()
+
+	global, _ := globalHooksDir()
+	disp := hooks.New(hooks.Options{
+		WorkspaceRoot:  workspaceRoot,
+		GlobalHooksDir: global,
+	})
+
+	idx, idxErr := search.Open(workspaceRoot)
+	indexerCB := search.EventIndexer(idx, nil)
+
+	onAppend := func(rec eventlog.Record) {
+		disp.OnAppend(rec)
+		indexerCB(rec)
+	}
+
 	w, err := eventlog.OpenWriter(eventlog.WriterConfig{
 		Path:        eventLogPath(workspaceRoot),
 		WorkspaceID: settings.ID,
 		Clock:       clock,
+		OnAppend:    onAppend,
 	})
 	if err != nil {
-		return nil, nil, err
+		disp.Drain()
+		if idx != nil {
+			_ = idx.Close()
+		}
+		return nil, nil, nil, err
 	}
-	return w, clock, nil
+
+	cleanup := func() {
+		disp.Drain()
+		if idx != nil {
+			_ = idx.Close()
+		}
+	}
+	if idxErr != nil {
+		// Surface the open failure but proceed without
+		// indexing; the user can `rex workspace reindex`
+		// afterwards.
+		_ = idxErr
+	}
+	return w, clock, cleanup, nil
 }
 
 // runDecoderRegistry returns an event.Registry that knows how to
@@ -131,11 +168,12 @@ deferred until execution.harness-adapter-registry lands.`,
 				},
 			}
 
-			writer, clock, err := newWorkspaceWriter(root)
+			writer, clock, cleanup, err := newWorkspaceWriter(root)
 			if err != nil {
 				return err
 			}
 			defer writer.Close()
+			defer cleanup()
 
 			runID := runIDFlag
 			if runID == "" {
