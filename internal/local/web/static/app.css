@@ -362,9 +362,8 @@ code {
   background: var(--surface-sunk);
   padding: 1px 5px;
   border-radius: 3px;
-  border: 1px solid var(--border);
 }
-a code { background: transparent; border-color: transparent; padding: 0; }
+a code { background: transparent; padding: 0; }
 
 .muted { color: var(--text-2); }
 .muted.small { font-size: var(--fs-sm); }
@@ -712,7 +711,7 @@ kbd {
 
 .requirement {
   display: grid;
-  grid-template-columns: 170px 1fr;
+  grid-template-columns: 140px 1fr;
   gap: var(--sp-5);
   padding: var(--sp-5) 0;
   border-bottom: 1px solid var(--border);
@@ -793,14 +792,22 @@ kbd {
  * 17. Spec description (markdown / preformatted)
  * ============================================================ */
 
-.markdown {
-  white-space: pre-wrap;
+/* Prose: rendered description paragraphs. Server side splits the
+ * YAML literal-block on blank lines so each <p> is a real
+ * paragraph; hard wrapping inside YAML is collapsed to spaces.
+ * Generous max-width (75ch) so the contract reads like a doc,
+ * not a database row. */
+.prose {
   font-family: var(--font-body);
   font-size: var(--fs-md);
   line-height: 1.65;
   color: var(--text);
   max-width: 75ch;
 }
+.prose p {
+  margin: 0 0 var(--sp-3) 0;
+}
+.prose p:last-child { margin-bottom: 0; }
 
 /* ============================================================
  * 18. Source view (yaml + json via chroma)

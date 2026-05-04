@@ -32,18 +32,27 @@ type specsListData struct {
 // parsed spec. Templates reach for top-level fields like .Spec.ID
 // rather than .Spec.Metadata.ID, which the parsed Document
 // doesn't expose directly.
+//
+// DescriptionParas is the description split into prose paragraphs
+// so the template can render <p> tags without preserving the
+// YAML literal-block line breaks. Authors using description: |
+// usually wrap source lines around column 70-80; that's a YAML
+// readability convention, not an instruction to break the prose
+// at those columns. We collapse single newlines to spaces and
+// preserve blank lines as paragraph breaks.
 type specView struct {
-	ID              string
-	Name            string
-	State           string
-	CreatedAt       string
-	UpdatedAt       string
-	Description     string
-	Tasks           []specfmt.Task
-	Components      map[string]specfmt.Component
-	ComponentOrder  []string
-	Constraints     map[string]specfmt.Constraint
-	ConstraintOrder []string
+	ID               string
+	Name             string
+	State            string
+	CreatedAt        string
+	UpdatedAt        string
+	Description      string
+	DescriptionParas []string
+	Tasks            []specfmt.Task
+	Components       map[string]specfmt.Component
+	ComponentOrder   []string
+	Constraints      map[string]specfmt.Constraint
+	ConstraintOrder  []string
 }
 
 func newSpecView(doc *specfmt.Document) *specView {
@@ -51,18 +60,41 @@ func newSpecView(doc *specfmt.Document) *specView {
 		return nil
 	}
 	return &specView{
-		ID:              doc.Metadata.ID,
-		Name:            doc.Metadata.Name,
-		State:           doc.Metadata.State,
-		CreatedAt:       doc.Metadata.CreatedAt,
-		UpdatedAt:       doc.Metadata.UpdatedAt,
-		Description:     doc.Description,
-		Tasks:           doc.Tasks,
-		Components:      doc.Components,
-		ComponentOrder:  doc.ComponentOrder(),
-		Constraints:     doc.Constraints,
-		ConstraintOrder: doc.ConstraintOrder(),
+		ID:               doc.Metadata.ID,
+		Name:             doc.Metadata.Name,
+		State:            doc.Metadata.State,
+		CreatedAt:        doc.Metadata.CreatedAt,
+		UpdatedAt:        doc.Metadata.UpdatedAt,
+		Description:      doc.Description,
+		DescriptionParas: splitParagraphs(doc.Description),
+		Tasks:            doc.Tasks,
+		Components:       doc.Components,
+		ComponentOrder:   doc.ComponentOrder(),
+		Constraints:      doc.Constraints,
+		ConstraintOrder:  doc.ConstraintOrder(),
 	}
+}
+
+// splitParagraphs converts a YAML literal-block description into
+// prose paragraphs. Splits on blank lines (\n\n+); within each
+// paragraph, collapses runs of whitespace (newlines + spaces +
+// tabs) to a single space. Empty input yields nil. Authors who
+// want hard line breaks within a paragraph still get them when
+// they use double newlines explicitly.
+func splitParagraphs(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, "\n\n")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		fields := strings.Fields(p)
+		if len(fields) == 0 {
+			continue
+		}
+		out = append(out, strings.Join(fields, " "))
+	}
+	return out
 }
 
 // specDetailData backs the spec_detail.tmpl page.
