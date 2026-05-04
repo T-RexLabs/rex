@@ -1,0 +1,60 @@
+{{define "title"}}rex — sync{{end}}
+
+{{define "content"}}
+<header class="page-header">
+  <h1>sync</h1>
+  <div class="meta">
+    <span>push local drafts past the per-remote watermark, then pull the remote's tail</span>
+    <span class="back"><a href="/remotes"><span aria-hidden="true">←</span> all remotes</a></span>
+  </div>
+</header>
+
+{{if .Error}}
+<aside class="banner banner-error" role="alert">
+  <span><strong>sync failed.</strong> {{.Error}}</span>
+</aside>
+{{else if and .Remote (or .Pushed .Pulled .Duplicates .HeadID)}}
+<aside class="banner banner-ok" role="status">
+  <span>
+    <strong>sync ok</strong> against <code>{{.Remote}}</code> —
+    pushed {{.Pushed}} (dup {{.Duplicates}}), pulled {{.Pulled}}{{if .HeadID}}; head <code>{{.HeadID}}</code>{{end}}.
+  </span>
+</aside>
+{{else if .Remote}}
+<aside class="banner banner-ok" role="status">
+  <span>
+    <strong>nothing to sync</strong> against <code>{{.Remote}}</code> — local and remote are even.
+  </span>
+</aside>
+{{end}}
+
+<section class="section">
+  {{if .Available}}
+    <div class="section-head">
+      <h2>remotes</h2>
+      <span class="section-meta">click sync to run push-then-pull synchronously</span>
+    </div>
+    <div class="card compact">
+      <table class="table">
+        <thead><tr><th>name</th><th>url</th><th></th></tr></thead>
+        <tbody>
+          {{range .Available}}
+          <tr>
+            <td><code>{{.Name}}</code></td>
+            <td><code class="dim">{{.URL}}</code></td>
+            <td>
+              <form method="post" action="/sync">
+                <input type="hidden" name="remote" value="{{.Name}}">
+                <button type="submit" class="btn btn-primary">sync now</button>
+              </form>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  {{else}}
+    <p class="muted">no remotes registered — <code>rex remote add &lt;name&gt; &lt;url&gt;</code> to add one.</p>
+  {{end}}
+</section>
+{{end}}

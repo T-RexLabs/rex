@@ -455,3 +455,44 @@ func TestSettingsRendersAllSections(t *testing.T) {
 		}
 	}
 }
+
+func TestSyncPageWithoutRemotesShowsHint(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t, "ws-sync-empty")
+	hs := newTestServer(t, root)
+
+	resp, err := http.Get(hs.URL + "/sync")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: %d", resp.StatusCode)
+	}
+	body := readBody(t, resp)
+	if !strings.Contains(body, "no remotes registered") {
+		t.Errorf("expected empty-state hint: %s", body[:minInt(len(body), 1500)])
+	}
+}
+
+func TestSyncPostUnknownRemoteRendersError(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t, "ws-sync-unknown")
+	hs := newTestServer(t, root)
+
+	form := "remote=ghost"
+	req, _ := http.NewRequest(http.MethodPost, hs.URL+"/sync", strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: %d", resp.StatusCode)
+	}
+	body := readBody(t, resp)
+	if !strings.Contains(body, "not registered") {
+		t.Errorf("expected unknown-remote banner: %s", body[:minInt(len(body), 1500)])
+	}
+}

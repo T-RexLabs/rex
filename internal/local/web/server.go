@@ -92,6 +92,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /remotes", s.handleRemotes)
 	s.mux.HandleFunc("GET /search", s.handleSearch)
 	s.mux.HandleFunc("GET /settings", s.handleSettings)
+	s.mux.HandleFunc("GET /sync", s.handleSyncPage)
+	s.mux.HandleFunc("POST /sync", s.handleSyncRun)
 }
 
 // loadPages reads base.tmpl + every templates/pages/*.tmpl and
