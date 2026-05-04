@@ -16,12 +16,13 @@ coverage.html
 # Local tooling state (per-machine, ephemeral)
 # - .claude: Claude Code plugin state (e.g. installed skills like
 #   the playwright-cli skill bundle).
-# - .playwright, .playwright-cli: playwright-cli session data,
-#   per-machine config, and the screenshot/console log artifacts
+# - .playwright, .playwright-cli, .playwright-mcp: playwright session
+#   data, per-machine config, and the screenshot/console log artifacts
 #   it leaves behind while driving a browser.
 .claude/
 .playwright/
 .playwright-cli/
+.playwright-mcp/
 
 # Local config not checked in
 /.rex/
