@@ -1,0 +1,31 @@
+{{define "title"}}rex — audit{{end}}
+
+{{define "content"}}
+<section class="overview">
+  <h1>audit log</h1>
+  <p class="muted">last {{.Limit}} audit-class entries from <code>.rex/events.log</code></p>
+</section>
+
+<section class="card">
+  {{if .Rows}}
+    <table class="table">
+      <thead>
+        <tr><th>timestamp</th><th>type</th><th>actor</th><th>workspace</th><th>id</th></tr>
+      </thead>
+      <tbody>
+        {{range .Rows}}
+        <tr>
+          <td><time>{{.Timestamp}}</time></td>
+          <td><code>{{.Type}}</code></td>
+          <td>{{if .Actor}}<code>{{.Actor}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{.WorkspaceID}}</td>
+          <td><code class="dim">{{.ID}}</code></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p class="muted">no audit entries yet</p>
+  {{end}}
+</section>
+{{end}}

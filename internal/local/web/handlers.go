@@ -77,3 +77,50 @@ func (s *Server) handleRunStream(w http.ResponseWriter, r *http.Request) {
 	}
 	s.streamRunEvents(w, r, id)
 }
+
+// handleAudit renders /audit.
+func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
+	limit := auditDefaultLimit
+	if v := r.URL.Query().Get("n"); v != "" {
+		if parsed, ok := parsePositiveInt(v); ok {
+			limit = parsed
+		}
+	}
+	data, err := loadAuditRows(s.opts, limit)
+	if err != nil {
+		http.Error(w, "web: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.render(w, r, "audit.tmpl", data)
+}
+
+// handleRemotes renders /remotes (read-only).
+func (s *Server) handleRemotes(w http.ResponseWriter, r *http.Request) {
+	data, err := loadRemotesData(s.opts)
+	if err != nil {
+		http.Error(w, "web: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.render(w, r, "remotes.tmpl", data)
+}
+
+// parsePositiveInt is a small stdlib-free integer parser used by
+// the audit page's ?n= query. Returns (n, true) for positive
+// integers up to 9999; out-of-range and malformed inputs return
+// false so the caller falls back to the default.
+func parsePositiveInt(s string) (int, bool) {
+	if s == "" || len(s) > 4 {
+		return 0, false
+	}
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+		n = n*10 + int(c-'0')
+	}
+	if n <= 0 {
+		return 0, false
+	}
+	return n, true
+}

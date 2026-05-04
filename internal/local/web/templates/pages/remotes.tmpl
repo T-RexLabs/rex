@@ -1,0 +1,39 @@
+{{define "title"}}rex — remotes{{end}}
+
+{{define "content"}}
+<section class="overview">
+  <h1>remotes</h1>
+  <p class="muted">
+    registered in <code>~/.config/rex/remotes.toml</code> —
+    add / remove via <code>rex remote add</code> and
+    <code>rex remote remove</code>
+  </p>
+</section>
+
+<section class="card">
+  {{if .Rows}}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>name</th><th>url</th><th>drafts</th>
+          <th>fingerprint</th><th>added</th><th>last seen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Rows}}
+        <tr>
+          <td><code>{{.Name}}</code></td>
+          <td><code>{{.URL}}</code></td>
+          <td>{{.Drafts}}</td>
+          <td>{{if .Fingerprint}}<code>{{.Fingerprint}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{if .AddedAt}}{{.AddedAt}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{if .LastSeen}}{{.LastSeen}}{{else}}<span class="muted">—</span>{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{else}}
+    <p class="muted">no remotes registered — try <code>rex remote add &lt;name&gt; &lt;url&gt;</code></p>
+  {{end}}
+</section>
+{{end}}

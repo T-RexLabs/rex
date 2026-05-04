@@ -78,6 +78,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /runs", s.handleRunsList)
 	s.mux.HandleFunc("GET /runs/{id}", s.handleRunDetail)
 	s.mux.HandleFunc("GET /runs/{id}/stream", s.handleRunStream)
+	s.mux.HandleFunc("GET /audit", s.handleAudit)
+	s.mux.HandleFunc("GET /remotes", s.handleRemotes)
 }
 
 // loadPages reads base.tmpl + every templates/pages/*.tmpl and
