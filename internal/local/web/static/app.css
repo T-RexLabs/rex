@@ -243,6 +243,35 @@ hr {
   background: var(--accent);
 }
 
+/* Topbar search input — quiet by default; expands its emerald
+ * focus ring when active so it pulls visual weight only when the
+ * user is typing. Width grows on focus to give room for queries
+ * without dominating the topbar at rest. */
+.topbar-search { display: flex; }
+.topbar-search-input {
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  padding: 4px 10px;
+  width: 180px;
+  border: 1px solid var(--border);
+  background: var(--surface-sunk);
+  color: var(--text);
+  border-radius: var(--r);
+  transition: width 120ms ease, border-color 80ms ease, box-shadow 80ms ease, background 80ms ease;
+}
+.topbar-search-input::placeholder { color: var(--text-3); }
+.topbar-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--focus);
+  width: 280px;
+}
+@media (max-width: 760px) {
+  .topbar-search-input,
+  .topbar-search-input:focus { width: 120px; }
+}
+
 /* ============================================================
  * 4. Page layout
  * ============================================================ */
@@ -262,6 +291,23 @@ hr {
   gap: var(--sp-2);
   padding-bottom: var(--sp-5);
   border-bottom: 1px solid var(--border);
+}
+
+/* header-row: optional first row of the page-header that holds
+ * the h1 + a right-aligned actions cluster. Used by spec-detail
+ * to surface "edit" as a real button instead of a buried link
+ * in the meta strip. */
+.page-header .header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.page-header .header-actions {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
 }
 .page-header .meta {
   display: flex;
@@ -946,6 +992,66 @@ textarea.editor {
   display: flex;
   gap: var(--sp-2);
   flex-wrap: wrap;
+}
+
+/* ============================================================
+ * 22a. Search
+ *
+ * The page form uses a wider input + primary-button pair so the
+ * page itself is searchable without flying back to the topbar.
+ * Results render as a vertical list of hits; FTS5's <<term>>
+ * highlight markers convert to <mark> server-side and pick up
+ * the standard <mark> rule below.
+ * ============================================================ */
+
+.search-form { gap: var(--sp-2); }
+.search-row {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: stretch;
+}
+.search-row .field-input { flex: 1; }
+.search-row .btn { flex-shrink: 0; }
+
+mark {
+  background: color-mix(in srgb, var(--accent), transparent 80%);
+  color: var(--text);
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.search-hit {
+  padding: var(--sp-4) 0;
+  border-bottom: 1px solid var(--border);
+}
+.search-hit:last-child { border-bottom: none; }
+.search-hit-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.search-hit-title {
+  font-weight: 500;
+  font-size: var(--fs-md);
+}
+.search-hit-id {
+  margin-left: auto;
+  font-size: 11px;
+}
+.search-hit-snippet {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  line-height: 1.55;
+  word-break: break-word;
 }
 
 /* ============================================================

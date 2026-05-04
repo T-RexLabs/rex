@@ -19,6 +19,14 @@
         <a href="/audit"   {{if eq .NavSection "audit"}}aria-current="page"{{end}}>audit</a>
         <a href="/remotes" {{if eq .NavSection "remotes"}}aria-current="page"{{end}}>remotes</a>
       </nav>
+      <form class="topbar-search" method="get" action="/search" role="search">
+        <input class="topbar-search-input"
+               type="search"
+               name="q"
+               placeholder="search…"
+               aria-label="search workspace"
+               autocomplete="off">
+      </form>
       {{if .Workspace}}
         <span class="ws-badge" title="active workspace">{{.Workspace.ID}}</span>
       {{else}}
