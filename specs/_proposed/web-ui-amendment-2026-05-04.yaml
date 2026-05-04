@@ -1,0 +1,81 @@
+# Proposed amendment to specs/web-ui.yaml.
+#
+# Status:    proposed
+# Date:      2026-05-04
+# Surfaced by:
+#   - Pre-implementation review of LIVE.1 against the v1 process
+#     model (rex serve and rex run start are separate processes
+#     with no shared in-process bus).
+#
+# Single additive note (LIVE."1-note"). Documents the v1 mechanism
+# choice for cross-process live updates (file-tail polling) and
+# names the post-v1 daemon model that would enable push-style
+# notification. No semantic change to LIVE.1 itself.
+
+amendment_for: web-ui
+amendment_date: 2026-05-04
+state: proposed
+
+summary: |
+  v1's rex serve cannot intercept events from rex run start because
+  they are separate processes. The web UI implements live run
+  watching via file-tail polling of .rex/events.log: replay all
+  prior events for the run on SSE connect, then poll for new
+  records past EOF every ~100ms. Latency on localhost is well
+  within PERF.1's 100ms TTFB target.
+
+  Push-style notification needs a daemon model where a single
+  long-running process owns the events.log writer and brokers
+  in-process pub/sub between writers and SSE subscribers. That
+  daemon does not exist in v1 and is deferred. This note records
+  the trade-off so future maintainers see the rationale before
+  refactoring.
+
+migration_impact: |
+  No code changes anywhere; this is documentation. The note's
+  presence in the spec means future work that wants push-style
+  notification has a clear pointer to the design constraint.
+
+changes:
+
+  - id: live-implementation-note
+    title: Document v1 file-tail polling and the deferred daemon model
+    affects: [LIVE.1]
+    rationale: |
+      LIVE.1 specifies the SSE endpoint and what it emits but does
+      not constrain the mechanism. v1 implementation makes a
+      specific choice (file-tail polling) that is correct under
+      v1's process model but would be replaced by push-style
+      notification once a daemon exists. Recording this in a
+      "1-note" preserves the implementation rationale alongside
+      the requirement.
+
+    edits:
+
+      - target: LIVE
+        kind: add-sub-requirement
+        new_id: "1-note"
+        new_text: |
+          v1 mechanism: file-tail polling of .rex/events.log at
+          ~100ms cadence. The SSE handler replays the prior events
+          for the run on connect (filtered by run_id), then polls
+          past EOF for new records. Push-style notification (one
+          writer broadcasting over an in-process bus) is deferred
+          until a daemon model exists; v1 ships rex serve and
+          rex run start as separate processes with no shared bus.
+          Latency on localhost stays within PERF.1.
+
+verification:
+  - existing_implementation: ".rex/events.log writer (eventlog.Writer)"
+    notes: |
+      Already supports the OnAppend callback used by hooks +
+      indexer in-process. The web UI's file-tail reader operates
+      on the same on-disk format and respects the length-prefixed
+      JSON framing.
+
+extra:
+  authors: [claude]
+  follow_up: |
+    On signoff, fold the new sub-requirement into specs/web-ui.yaml
+    under LIVE, bump metadata.updated_at, and move this proposal
+    file to specs/_proposed/_accepted/.
