@@ -22,6 +22,11 @@ type inputMessage struct {
 type runInteraction struct {
 	acceptsInput bool
 	inputCh      chan inputMessage
+	// initialPrompt is the user's first prompt for harness runs.
+	// Stored so the run-detail page can render the user message
+	// optimistically (before the harness echoes it back as a
+	// user_message_chunk). Cleared as soon as the run unregisters.
+	initialPrompt string
 
 	mu          sync.Mutex
 	permissions map[string]chan permissionResolution
@@ -37,13 +42,32 @@ func newRunInteractionHub() *runInteractionHub {
 }
 
 func (h *runInteractionHub) register(runID string, acceptsInput bool) {
+	h.registerWithPrompt(runID, acceptsInput, "")
+}
+
+func (h *runInteractionHub) registerWithPrompt(runID string, acceptsInput bool, initialPrompt string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.runs[runID] = &runInteraction{
-		acceptsInput: acceptsInput,
-		inputCh:      make(chan inputMessage, 16),
-		permissions:  make(map[string]chan permissionResolution),
+		acceptsInput:  acceptsInput,
+		inputCh:       make(chan inputMessage, 16),
+		permissions:   make(map[string]chan permissionResolution),
+		initialPrompt: initialPrompt,
 	}
+}
+
+// initialPrompt returns the first prompt registered for a still-live
+// harness run, or "" when none is recorded (run completed, never
+// started, shell run, …). Used by the run-detail page to render an
+// optimistic user message before the harness echoes the prompt back.
+func (h *runInteractionHub) initialPrompt(runID string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	run, ok := h.runs[runID]
+	if !ok {
+		return ""
+	}
+	return run.initialPrompt
 }
 
 func (h *runInteractionHub) unregister(runID string) {

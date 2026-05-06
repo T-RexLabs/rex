@@ -68,13 +68,16 @@ type runEventRow struct {
 //	                  protocol-level frames; rendered as a one-
 //	                  liner with the method name
 type frameView struct {
-	Kind     string
-	Role     string
-	Method   string
-	Text     string
-	ToolName string
-	ToolArgs template.HTML
-	Status   string
+	Kind       string
+	Role       string
+	Method     string
+	Text       string
+	ToolName   string
+	ToolCallID string
+	Subtitle   string // free-form qualifier shown next to ToolName (e.g. the skill ref for a Skill tool)
+	ToolArgs   template.HTML
+	ToolOutput string // human-readable content[] payload from tool_call_update
+	Status     string
 }
 
 // permissionView is the per-row shape behind LIVE.3's permission
@@ -145,6 +148,17 @@ type runDetailData struct {
 	AcceptsInput bool
 	ActivePrompt *permissionView
 	Debug        bool
+	// OptimisticPrompt is the user's prompt as captured by /runs/start.
+	// Rendered as a synthetic transcript row before the harness echoes
+	// it back as a user_message_chunk, so the user sees their message
+	// the moment they hit submit. JS removes it once the real user
+	// message arrives.
+	OptimisticPrompt string
+	// HasUserMessage is true when the events log already contains a
+	// user_message_chunk frame. The template uses it to decide whether
+	// to render OptimisticPrompt — if the harness already echoed, the
+	// synthetic row is redundant.
+	HasUserMessage bool
 }
 
 // loadRunDetail walks events.log and returns the records whose
@@ -214,9 +228,43 @@ func loadRunDetail(opts Options, runID string, hl *Highlighter) (runDetailData, 
 						continue
 					}
 				}
+				// Tool calls: every later tool_call_update for the
+				// same toolCallId merges into the original card so
+				// the timeline shows one row per logical invocation
+				// instead of one per status transition.
+				if fv.ToolCallID != "" && fv.Kind == "tool_result" {
+					merged := false
+					for i := len(collected) - 1; i >= 0; i-- {
+						pf := collected[i].row.Frame
+						if pf == nil || pf.ToolCallID != fv.ToolCallID {
+							continue
+						}
+						if fv.ToolName != "(unnamed)" && fv.ToolName != "" {
+							pf.ToolName = fv.ToolName
+						}
+						if fv.Subtitle != "" {
+							pf.Subtitle = fv.Subtitle
+						}
+						if fv.ToolArgs != "" {
+							pf.ToolArgs = fv.ToolArgs
+						}
+						if fv.ToolOutput != "" {
+							pf.ToolOutput = fv.ToolOutput
+						}
+						pf.Status = fv.Status
+						merged = true
+						break
+					}
+					if merged {
+						continue
+					}
+				}
 				row.Frame = fv
 				if fv.Kind == "meta" {
 					row.Compact = true
+				}
+				if fv.Kind == "agent_text" && fv.Role == "user" {
+					d.HasUserMessage = true
 				}
 			}
 		}

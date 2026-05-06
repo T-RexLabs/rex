@@ -17,7 +17,7 @@
         </div>
       {{end}}
     {{else if .Frame}}
-      <article class="event frame frame-{{.Frame.Kind}}" data-event-id="{{.ID}}" data-frame-kind="{{.Frame.Kind}}" data-frame-role="{{.Frame.Role}}">
+      <article class="event frame frame-{{.Frame.Kind}}" data-event-id="{{.ID}}" data-frame-kind="{{.Frame.Kind}}" data-frame-role="{{.Frame.Role}}"{{if .Frame.ToolCallID}} data-tool-call-id="{{.Frame.ToolCallID}}"{{end}}>
         <header class="event-head">
           <span class="frame-role frame-role-{{.Frame.Role}}">{{if eq .Frame.Role "user"}}you{{else}}{{.Frame.Role}}{{end}}</span>
           <span class="frame-kind muted small">{{if eq .Frame.Kind "agent_text"}}message{{else if eq .Frame.Kind "agent_thought"}}thought{{else}}{{.Frame.Kind}}{{end}}{{if .Frame.Method}} · <code>{{.Frame.Method}}</code>{{end}}</span>
@@ -27,28 +27,19 @@
           <div class="frame-body frame-text" data-frame-text>{{.Frame.Text}}</div>
         {{else if eq .Frame.Kind "agent_thought"}}
           <div class="frame-body frame-text frame-thought" data-frame-text>{{.Frame.Text}}</div>
-        {{else if eq .Frame.Kind "tool_call"}}
-          <div class="frame-body frame-tool">
-            <span class="tool-arrow">→</span>
-            <code class="tool-name">{{.Frame.ToolName}}</code>
+        {{else if or (eq .Frame.Kind "tool_call") (eq .Frame.Kind "tool_result")}}
+          <div class="frame-body frame-tool" data-tool-body>
+            <span class="tool-arrow">{{if eq .Frame.Kind "tool_call"}}→{{else}}←{{end}}</span>
+            <code class="tool-name" data-tool-name>{{.Frame.ToolName}}</code>
+            <span class="tool-subtitle muted small" data-tool-subtitle{{if not .Frame.Subtitle}} hidden{{end}}>{{.Frame.Subtitle}}</span>
+            <span class="pill pill-{{if eq .Frame.Status ""}}pending{{else if or (eq .Frame.Status "ok") (eq .Frame.Status "running") (eq .Frame.Status "pending") (eq .Frame.Status "error")}}{{.Frame.Status}}{{else}}ok{{end}}" data-tool-status>{{if .Frame.Status}}{{.Frame.Status}}{{else}}pending{{end}}</span>
             {{if .Frame.ToolArgs}}
-              <details class="tool-args">
-                <summary class="muted small">args</summary>
+              <details class="tool-args" data-tool-args>
+                <summary class="muted small">{{if eq .Frame.Kind "tool_call"}}args{{else}}result{{end}}</summary>
                 <pre class="chroma"><code class="language-json">{{.Frame.ToolArgs}}</code></pre>
               </details>
             {{end}}
-          </div>
-        {{else if eq .Frame.Kind "tool_result"}}
-          <div class="frame-body frame-tool">
-            <span class="tool-arrow">←</span>
-            <code class="tool-name">{{.Frame.ToolName}}</code>
-            <span class="pill pill-{{if eq .Frame.Status "ok"}}ok{{else}}error{{end}}">{{.Frame.Status}}</span>
-            {{if .Frame.ToolArgs}}
-              <details class="tool-args">
-                <summary class="muted small">result</summary>
-                <pre class="chroma"><code class="language-json">{{.Frame.ToolArgs}}</code></pre>
-              </details>
-            {{end}}
+            <div class="tool-output" data-tool-output{{if not .Frame.ToolOutput}} hidden{{end}}>{{.Frame.ToolOutput}}</div>
           </div>
         {{else if eq .Frame.Kind "plan"}}
           <div class="frame-body frame-text">{{.Frame.Text}}</div>
@@ -150,9 +141,19 @@
     </div>
   {{else}}
     <div class="run-chat-layout">
-      <div class="timeline run-transcript" id="run-transcript"></div>
+      <div class="timeline run-transcript" id="run-transcript">
+        {{if .OptimisticPrompt}}
+          <article class="event frame frame-agent_text" data-event-id="synthetic-prompt" data-frame-kind="agent_text" data-frame-role="user" data-synthetic="prompt">
+            <header class="event-head">
+              <span class="frame-role frame-role-user">you</span>
+              <span class="frame-kind muted small">message</span>
+            </header>
+            <div class="frame-body frame-text" data-frame-text>{{.OptimisticPrompt}}</div>
+          </article>
+        {{end}}
+      </div>
 
-      <details class="run-activity-panel">
+      <details class="run-activity-panel"{{if eq (printf "%s" .Status) "running"}} open{{end}} data-run-status="{{.Status}}">
         <summary>activity and lifecycle</summary>
         <div class="timeline run-activity-list" id="run-activity"></div>
       </details>

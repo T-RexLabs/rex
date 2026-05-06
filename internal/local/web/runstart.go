@@ -224,7 +224,7 @@ func (s *Server) handleRunStart(w http.ResponseWriter, r *http.Request) {
 		})
 	case "harness":
 		reg := s.harnessRegistry()
-		s.interactions.register(runID, d.Interactive)
+		s.interactions.registerWithPrompt(runID, d.Interactive, d.Prompt)
 		startedCh, errCh = s.launchRunAsync(ws, func(onEvent func(eventlog.Record)) error {
 			defer s.interactions.unregister(runID)
 			var onInput func(context.Context, string) (string, error)

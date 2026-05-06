@@ -524,12 +524,73 @@ hr {
   color: var(--text);
   font-weight: 500;
 }
+.frame-tool .tool-subtitle {
+  color: var(--text-2);
+}
+.frame-tool .tool-subtitle[hidden] { display: none; }
 .frame-tool .tool-args {
   flex-basis: 100%;
   margin-top: 4px;
 }
 .frame-tool .tool-args summary {
   cursor: pointer;
+}
+.frame-tool .tool-output {
+  flex-basis: 100%;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border-left: 2px solid var(--border);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.frame-tool .tool-output[hidden] { display: none; }
+
+.pill.pill-pending,
+.pill.pill-running {
+  background: var(--state-warn-bg, rgba(255, 180, 0, 0.18));
+  color: var(--state-warn, #b07300);
+}
+
+/* Inline "running tool" chip shown in the transcript while a
+ * tool_call is pending/running. Disappears when no live tools
+ * remain. Gives the user a constant visual signal during long
+ * calls (e.g. nested Skill invocations) instead of staring at a
+ * frozen transcript. */
+.running-tool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  background: var(--surface-sunk);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  font-family: var(--font-mono);
+}
+.running-tool-chip .chip-name {
+  color: var(--text);
+  background: transparent;
+  padding: 0;
+}
+.running-tool-chip .chip-subtitle {
+  color: var(--text-3);
+}
+.running-tool-chip .chip-subtitle[hidden] { display: none; }
+.running-tool-chip .dot.dot-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: rex-tool-pulse 1.4s ease-in-out infinite;
+}
+@keyframes rex-tool-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1.05); }
 }
 
 .frame-debug {

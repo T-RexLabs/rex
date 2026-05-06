@@ -13,6 +13,22 @@
     return el.classList.contains('frame-agent_text') || el.classList.contains('frame-agent_thought');
   }
 
+  // dropSyntheticPromptIfShadowed removes the optimistic user prompt
+  // row once a real user_message_chunk lands. The synthetic row was
+  // server-rendered from the form submission so the user saw their
+  // message immediately; the harness echo arrives ~1s later carrying
+  // the same text, so we drop the placeholder to avoid duplication.
+  function dropSyntheticPromptIfShadowed(node) {
+    if (!node || !node.classList) return;
+    if (!node.classList.contains('frame-agent_text')) return;
+    if (node.getAttribute('data-frame-role') !== 'user') return;
+    if (node.getAttribute('data-synthetic') === 'prompt') return;
+    var synthetic = document.querySelector('[data-synthetic="prompt"]');
+    if (synthetic && synthetic.parentNode) {
+      synthetic.parentNode.removeChild(synthetic);
+    }
+  }
+
   function sameFrameKind(a, b) {
     return a.getAttribute('data-frame-kind') === b.getAttribute('data-frame-kind');
   }
@@ -27,6 +43,85 @@
       p = p.previousElementSibling;
     }
     return p;
+  }
+
+  // findToolCard locates an existing tool card with the same
+  // toolCallId so a follow-up tool_call_update can mutate it in
+  // place rather than spawning a new article.
+  function findToolCard(id) {
+    if (!id) return null;
+    var safe = (window.CSS && window.CSS.escape) ? window.CSS.escape(id) : id;
+    return document.querySelector('[data-tool-call-id="' + safe + '"]');
+  }
+
+  function copyToolBody(target, source) {
+    var srcBody = source.querySelector('[data-tool-body]');
+    var dstBody = target.querySelector('[data-tool-body]');
+    if (!srcBody || !dstBody) return;
+
+    var srcName = srcBody.querySelector('[data-tool-name]');
+    var dstName = dstBody.querySelector('[data-tool-name]');
+    if (srcName && dstName) {
+      var newName = (srcName.textContent || '').trim();
+      // Don't overwrite a real name with "(unnamed)".
+      if (newName && newName !== '(unnamed)') {
+        dstName.textContent = newName;
+      }
+    }
+
+    var srcSub = srcBody.querySelector('[data-tool-subtitle]');
+    var dstSub = dstBody.querySelector('[data-tool-subtitle]');
+    if (srcSub && dstSub) {
+      var subText = (srcSub.textContent || '').trim();
+      if (subText) {
+        dstSub.textContent = subText;
+        dstSub.removeAttribute('hidden');
+      }
+    }
+
+    var srcStatus = srcBody.querySelector('[data-tool-status]');
+    var dstStatus = dstBody.querySelector('[data-tool-status]');
+    if (srcStatus && dstStatus) {
+      var status = (srcStatus.textContent || '').trim();
+      if (status) {
+        dstStatus.textContent = status;
+        dstStatus.className = srcStatus.className;
+      }
+    }
+
+    var srcArgs = srcBody.querySelector('[data-tool-args]');
+    var dstArgs = dstBody.querySelector('[data-tool-args]');
+    if (srcArgs && dstArgs && srcArgs.innerHTML.trim()) {
+      dstArgs.innerHTML = srcArgs.innerHTML;
+    }
+
+    var srcOut = srcBody.querySelector('[data-tool-output]');
+    var dstOut = dstBody.querySelector('[data-tool-output]');
+    if (srcOut && dstOut) {
+      var outText = srcOut.textContent || '';
+      if (outText.trim()) {
+        dstOut.textContent = outText;
+        dstOut.removeAttribute('hidden');
+      }
+    }
+  }
+
+  // mergeToolUpdate merges an incoming tool_result frame into the
+  // existing card with the matching data-tool-call-id. Returns true
+  // when a merge happened (caller should drop the new node).
+  function mergeToolUpdate(node) {
+    if (!node || !node.classList || !node.classList.contains('frame-tool_result')) return false;
+    var id = node.getAttribute('data-tool-call-id');
+    if (!id) return false;
+    var existing = findToolCard(id);
+    if (!existing || existing === node) return false;
+    copyToolBody(existing, node);
+    existing.classList.add('frame-tool-coalesced');
+    var status = existing.querySelector('[data-tool-status]');
+    if (status && (status.textContent || '').trim() === 'ok') {
+      existing.classList.add('frame-tool-done');
+    }
+    return true;
   }
 
   function coalesce(node) {
@@ -185,6 +280,77 @@
     status.textContent = 'status · ' + text;
   }
 
+  // markRunTerminal closes the activity panel once the run reaches
+  // a terminal lifecycle event so a finished run doesn't leave the
+  // panel sprawled open under the transcript. We only close panels
+  // we ourselves auto-opened (data-run-status="running"); a user
+  // who manually expanded a finished run's panel keeps it open.
+  function markRunTerminal() {
+    var panel = document.querySelector('.run-activity-panel');
+    if (!panel) return;
+    if (panel.getAttribute('data-run-status') === 'running') {
+      panel.removeAttribute('open');
+    }
+  }
+
+  // updateRunningToolChip syncs the "tool currently running" pill
+  // shown inline in the transcript so the user has a constantly
+  // visible signal during long tool calls. The chip is removed
+  // when no live (pending/running) tool calls remain.
+  function updateRunningToolChip() {
+    var transcript = document.getElementById('run-transcript');
+    if (!transcript) return;
+    var live = findLiveToolCard();
+    var chip = document.getElementById('run-running-tool-chip');
+    if (!live) {
+      if (chip && chip.parentNode) chip.parentNode.removeChild(chip);
+      return;
+    }
+    if (!chip) {
+      chip = document.createElement('aside');
+      chip.id = 'run-running-tool-chip';
+      chip.className = 'running-tool-chip';
+      chip.innerHTML =
+        '<span class="dot dot-pulse" aria-hidden="true"></span>' +
+        '<span class="chip-label">running tool</span>' +
+        '<code class="chip-name" data-chip-name></code>' +
+        '<span class="chip-subtitle muted small" data-chip-subtitle></span>';
+    }
+    var nameEl = chip.querySelector('[data-chip-name]');
+    var subEl = chip.querySelector('[data-chip-subtitle]');
+    var nameSrc = live.querySelector('[data-tool-name]');
+    var subSrc = live.querySelector('[data-tool-subtitle]');
+    if (nameEl && nameSrc) nameEl.textContent = (nameSrc.textContent || '').trim() || 'tool';
+    if (subEl) {
+      var subText = subSrc ? (subSrc.textContent || '').trim() : '';
+      if (subText) {
+        subEl.textContent = '· ' + subText;
+        subEl.removeAttribute('hidden');
+      } else {
+        subEl.textContent = '';
+        subEl.setAttribute('hidden', '');
+      }
+    }
+    if (chip.parentNode !== transcript) {
+      transcript.appendChild(chip);
+    } else if (chip !== transcript.lastElementChild) {
+      transcript.appendChild(chip); // move to end so it stays at the cursor
+    }
+  }
+
+  // findLiveToolCard returns the most recent tool card whose
+  // status pill is still pending/running. Returns null when every
+  // recorded tool call has completed (or errored).
+  function findLiveToolCard() {
+    var cards = document.querySelectorAll('[data-tool-call-id]');
+    for (var i = cards.length - 1; i >= 0; i--) {
+      var s = cards[i].querySelector('[data-tool-status]');
+      var status = s ? (s.textContent || '').trim() : '';
+      if (status === 'pending' || status === 'running') return cards[i];
+    }
+    return null;
+  }
+
   function summarizeActivity(node) {
     if (!node || !node.classList) return '';
     var compact = node.querySelector('.compact-label');
@@ -220,6 +386,19 @@
     var activity = document.getElementById('run-activity');
     if (!transcript || !activity || !node || node.nodeType !== 1) return;
 
+    // Tool follow-ups (tool_call_update) merge into the existing
+    // card by toolCallId and the new node is discarded entirely.
+    if (mergeToolUpdate(node)) {
+      if (node.parentNode) node.parentNode.removeChild(node);
+      updateRunningToolChip();
+      return;
+    }
+
+    // Drop the optimistic prompt placeholder as soon as the real
+    // user_message_chunk lands; otherwise the user sees their
+    // prompt rendered twice.
+    dropSyntheticPromptIfShadowed(node);
+
     var inTranscript = isTranscriptNode(node);
     var target = inTranscript ? transcript : activity;
     var keepBottom = inTranscript && autoStick;
@@ -232,6 +411,14 @@
     } else if (merged.classList && merged.classList.contains('event-permission')) {
       setActivityStatus('awaiting permission decision');
     }
+    if (merged && merged.classList && merged.classList.contains('event-compact-lifecycle')) {
+      var label = merged.querySelector('.compact-label code');
+      var typ = label ? (label.textContent || '').trim() : '';
+      if (typ === 'run.completed' || typ === 'run.cancelled' || typ === 'run.aborted') {
+        markRunTerminal();
+      }
+    }
+    updateRunningToolChip();
 
     if (keepBottom) {
       window.requestAnimationFrame(function () {
