@@ -3,6 +3,7 @@ package specfmt
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -127,6 +128,34 @@ var validTaskStates = map[string]struct{}{
 	"in_progress": {},
 	"done":        {},
 	"blocked":     {},
+}
+
+// recognizedRecipeKinds enumerates spec-format.RECIPE.1's v1 kinds.
+// Anything outside the set is reported per spec-format.TASK.6.1
+// (strict=error, lenient=warning).
+var recognizedRecipeKinds = map[RecipeKind]struct{}{
+	RecipeKindShell:        {},
+	RecipeKindSpecValidate: {},
+	RecipeKindHarness:      {},
+}
+
+// recognizedPermissionScopes enumerates spec-format.RECIPE.4's v1
+// permission-scope values for harness recipes.
+var recognizedPermissionScopes = map[PermissionScope]struct{}{
+	PermissionScopeReadOnly:     {},
+	PermissionScopeWorkspace:    {},
+	PermissionScopeUnrestricted: {},
+}
+
+// recognizedPromptTokens are the substitution tokens spec-format.PROMPT.1
+// blesses. The set must stay small — anything beyond simple metadata is
+// out of scope per the amendment.
+var recognizedPromptTokens = map[string]struct{}{
+	"spec.id":           {},
+	"spec.name":         {},
+	"task.id":           {},
+	"task.description":  {},
+	"task.references":   {},
 }
 
 // Validate checks doc against the spec-format.yaml v1 schema and
@@ -268,6 +297,161 @@ func (v *validator) checkTasks(doc *Document) {
 				v.errf(refPath, "acid", "tasks[%d].references[%d] %q: %v", i, j, ref, err)
 			}
 		}
+
+		if t.Run != nil {
+			v.checkRecipe(base+".run", i, t.Run)
+		}
+	}
+}
+
+func (v *validator) checkRecipe(base string, taskIdx int, r *Recipe) {
+	if r.Kind == "" {
+		v.errf(base+".kind", "required-field",
+			"tasks[%d].run.kind is required (spec-format.RECIPE.1)", taskIdx)
+		return
+	}
+
+	if _, known := recognizedRecipeKinds[r.Kind]; !known {
+		// Unknown kind: strict error, lenient warning (spec-format.TASK.6.1).
+		switch v.mode {
+		case ModeStrict:
+			v.errf(base+".kind", "format",
+				"tasks[%d].run.kind %q is not one of shell, spec_validate, harness (spec-format.RECIPE.1)",
+				taskIdx, r.Kind)
+		case ModeLenient:
+			v.warnf(base+".kind", "format",
+				"tasks[%d].run.kind %q is not one of shell, spec_validate, harness (spec-format.RECIPE.1)",
+				taskIdx, r.Kind)
+		}
+		return
+	}
+
+	switch r.Kind {
+	case RecipeKindShell:
+		v.checkShellRecipe(base, taskIdx, r)
+	case RecipeKindSpecValidate:
+		v.checkSpecValidateRecipe(base, taskIdx, r)
+	case RecipeKindHarness:
+		v.checkHarnessRecipe(base, taskIdx, r)
+	}
+}
+
+func (v *validator) checkShellRecipe(base string, taskIdx int, r *Recipe) {
+	if len(r.Command) == 0 {
+		v.errf(base+".command", "required-field",
+			"tasks[%d].run.command is required and non-empty for kind: shell (spec-format.RECIPE.2)", taskIdx)
+	}
+	for j, arg := range r.Command {
+		path := fmt.Sprintf("%s.command[%d]", base, j)
+		v.checkPromptTokens(path, taskIdx, arg)
+	}
+	v.rejectFieldsForKind(base, taskIdx, r, "shell",
+		[]rejectedField{
+			{r.Paths != nil, "paths"},
+			{r.Strict != nil, "strict"},
+			{r.Harness != "", "harness"},
+			{r.Prompt != "", "prompt"},
+			{r.PermissionScope != "", "permission_scope"},
+		})
+}
+
+func (v *validator) checkSpecValidateRecipe(base string, taskIdx int, r *Recipe) {
+	v.rejectFieldsForKind(base, taskIdx, r, "spec_validate",
+		[]rejectedField{
+			{len(r.Command) > 0, "command"},
+			{r.Cwd != "", "cwd"},
+			{r.Env != nil, "env"},
+			{r.Harness != "", "harness"},
+			{r.Prompt != "", "prompt"},
+			{r.PermissionScope != "", "permission_scope"},
+		})
+}
+
+func (v *validator) checkHarnessRecipe(base string, taskIdx int, r *Recipe) {
+	if r.Harness == "" {
+		v.errf(base+".harness", "required-field",
+			"tasks[%d].run.harness is required for kind: harness (spec-format.RECIPE.4)", taskIdx)
+	}
+	if r.Prompt == "" {
+		v.errf(base+".prompt", "required-field",
+			"tasks[%d].run.prompt is required for kind: harness (spec-format.RECIPE.4)", taskIdx)
+	} else {
+		v.checkPromptTokens(base+".prompt", taskIdx, r.Prompt)
+	}
+	if r.PermissionScope != "" {
+		if _, ok := recognizedPermissionScopes[r.PermissionScope]; !ok {
+			v.errf(base+".permission_scope", "format",
+				"tasks[%d].run.permission_scope %q is not one of read_only, workspace, unrestricted (spec-format.RECIPE.4)",
+				taskIdx, r.PermissionScope)
+		}
+	}
+	v.rejectFieldsForKind(base, taskIdx, r, "harness",
+		[]rejectedField{
+			{len(r.Command) > 0, "command"},
+			{r.Cwd != "", "cwd"},
+			{r.Env != nil, "env"},
+			{r.Paths != nil, "paths"},
+			{r.Strict != nil, "strict"},
+		})
+}
+
+type rejectedField struct {
+	present bool
+	name    string
+}
+
+func (v *validator) rejectFieldsForKind(base string, taskIdx int, r *Recipe, kind string, fields []rejectedField) {
+	for _, f := range fields {
+		if !f.present {
+			continue
+		}
+		v.errf(base+"."+f.name, "format",
+			"tasks[%d].run.%s is not valid for kind: %s (spec-format.RECIPE.%s)",
+			taskIdx, f.name, kind, recipeReqIDForKind(kind))
+	}
+}
+
+func recipeReqIDForKind(kind string) string {
+	switch kind {
+	case "shell":
+		return "2"
+	case "spec_validate":
+		return "3"
+	case "harness":
+		return "4"
+	}
+	return "1"
+}
+
+// checkPromptTokens scans a string for `{{token}}` substitutions and
+// flags any token outside spec-format.PROMPT.1's recognized set. Strict
+// mode reports errors; lenient mode reports warnings. Empty/balanced
+// input is fine; malformed `{{...` without closing `}}` is left alone
+// (the recipe author probably meant `{{` literally).
+func (v *validator) checkPromptTokens(path string, taskIdx int, s string) {
+	for i := 0; i < len(s); i++ {
+		if i+1 >= len(s) || s[i] != '{' || s[i+1] != '{' {
+			continue
+		}
+		end := strings.Index(s[i+2:], "}}")
+		if end < 0 {
+			return
+		}
+		raw := s[i+2 : i+2+end]
+		token := strings.TrimSpace(raw)
+		if _, ok := recognizedPromptTokens[token]; !ok {
+			switch v.mode {
+			case ModeStrict:
+				v.errf(path, "format",
+					"tasks[%d] prompt-template token %q is not recognized (spec-format.PROMPT.1)",
+					taskIdx, token)
+			case ModeLenient:
+				v.warnf(path, "format",
+					"tasks[%d] prompt-template token %q is not recognized (spec-format.PROMPT.1)",
+					taskIdx, token)
+			}
+		}
+		i += 2 + end + 1
 	}
 }
 

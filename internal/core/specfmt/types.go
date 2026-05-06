@@ -55,6 +55,66 @@ type Task struct {
 	State       string   `yaml:"state"`
 	References  []string `yaml:"references,omitempty"`
 	AssignedTo  string   `yaml:"assigned_to,omitempty"`
+	// Run is an optional recipe describing how to launch a run that
+	// implements this task (spec-format.TASK.6 / spec-format.RECIPE).
+	// Nil means the task has no canonical run; UI surfaces hide the
+	// "Run this task" affordance for it.
+	Run *Recipe `yaml:"run,omitempty"`
+}
+
+// RecipeKind enumerates the v1 recipe kinds (spec-format.RECIPE.1).
+// Unknown kinds are surfaced by the validator per spec-format.TASK.6.1.
+type RecipeKind string
+
+const (
+	RecipeKindShell        RecipeKind = "shell"
+	RecipeKindSpecValidate RecipeKind = "spec_validate"
+	RecipeKindHarness      RecipeKind = "harness"
+)
+
+// PermissionScope is the v1 enumerated value set for harness recipes
+// (spec-format.RECIPE.4).
+type PermissionScope string
+
+const (
+	PermissionScopeReadOnly     PermissionScope = "read_only"
+	PermissionScopeWorkspace    PermissionScope = "workspace"
+	PermissionScopeUnrestricted PermissionScope = "unrestricted"
+)
+
+// Recipe is the embedded run-launch hint attached to a Task
+// (spec-format.RECIPE). Fields outside the recipe's Kind are ignored
+// by the executor at resolution time but are validated for shape.
+type Recipe struct {
+	// Kind discriminates the field set. Required.
+	Kind RecipeKind `yaml:"kind"`
+	// Description optionally overrides the task description in UI
+	// surfaces (spec-format.RECIPE.5).
+	Description string `yaml:"description,omitempty"`
+
+	// kind: shell
+	Command []string          `yaml:"command,omitempty"`
+	Cwd     string            `yaml:"cwd,omitempty"`
+	Env     map[string]string `yaml:"env,omitempty"`
+
+	// kind: spec_validate
+	Paths       []string `yaml:"paths,omitempty"`
+	Strict      *bool    `yaml:"strict,omitempty"`
+	StrictUnset bool     `yaml:"-"`
+
+	// kind: harness
+	Harness         string          `yaml:"harness,omitempty"`
+	Prompt          string          `yaml:"prompt,omitempty"`
+	PermissionScope PermissionScope `yaml:"permission_scope,omitempty"`
+}
+
+// StrictValue reports whether the spec_validate recipe runs in strict
+// mode (the default when `strict` is omitted, per spec-format.RECIPE.3).
+func (r *Recipe) StrictValue() bool {
+	if r == nil || r.Strict == nil {
+		return true
+	}
+	return *r.Strict
 }
 
 // Component is one acceptance-criteria group (spec-format.COMP).
