@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"embed"
 	"errors"
 	"fmt"
@@ -9,6 +10,8 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+
+	"github.com/asabla/rex/internal/core/runner/adapter"
 )
 
 //go:embed templates/*.tmpl templates/pages/*.tmpl
@@ -29,12 +32,22 @@ type Options struct {
 	BindAddr string
 	// Version surfaces in the footer for diagnosis.
 	Version string
+	// Context is the server-lifetime context background tasks should
+	// inherit (e.g. async runs started from the web UI). Nil means
+	// context.Background().
+	Context context.Context
+	// Adapters overrides the harness registry the run-start form uses.
+	// Nil means adapter.Default(), which is what the production CLI
+	// wiring wants; tests inject a custom registry.
+	Adapters *adapter.Registry
 }
 
 // Server is the local web UI handler. Routes register on its mux;
 // templates and static assets come from the embed.FS.
 type Server struct {
 	opts        Options
+	ctx         context.Context
+	harnesses   *harnessCache
 	mux         *http.ServeMux
 	pages       map[string]*template.Template
 	highlighter *Highlighter
@@ -43,6 +56,7 @@ type Server struct {
 // New constructs a Server, parses templates from the embed.FS, and
 // registers routes.
 func New(opts Options) (*Server, error) {
+	warmHarnesses := opts.Context != nil
 	if opts.WorkspaceRoot == "" {
 		return nil, errors.New("web: WorkspaceRoot is required")
 	}
@@ -52,6 +66,9 @@ func New(opts Options) (*Server, error) {
 	if opts.BindAddr == "" {
 		opts.BindAddr = "(unspecified)"
 	}
+	if opts.Context == nil {
+		opts.Context = context.Background()
+	}
 
 	pages, err := loadPages()
 	if err != nil {
@@ -60,6 +77,8 @@ func New(opts Options) (*Server, error) {
 
 	s := &Server{
 		opts:        opts,
+		ctx:         opts.Context,
+		harnesses:   newHarnessCache(opts.Adapters, opts.Context, opts.WorkspaceRoot, warmHarnesses),
 		mux:         http.NewServeMux(),
 		pages:       pages,
 		highlighter: newHighlighter(),
@@ -112,7 +131,9 @@ func loadPages() (map[string]*template.Template, error) {
 	out := make(map[string]*template.Template, len(pages))
 	for _, p := range pages {
 		name := filepath.Base(p)
-		t, err := template.New(name).ParseFS(templateFS, "templates/base.tmpl", p)
+		t, err := template.New(name).Funcs(template.FuncMap{
+			"joinCSV": func(xs []string) string { return strings.Join(xs, ",") },
+		}).ParseFS(templateFS, "templates/base.tmpl", p)
 		if err != nil {
 			return nil, fmt.Errorf("web: parse %s: %w", p, err)
 		}

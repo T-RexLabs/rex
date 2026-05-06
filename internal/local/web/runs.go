@@ -205,9 +205,9 @@ func loadRunDetail(opts Options, runID string, hl *Highlighter) (runDetailData, 
 		// raw JSON view alongside every other event.
 		if hf, ok := decoded.(runner.HarnessFrameEvent); ok {
 			if fv := categorizeFrame(hf, hl); fv != nil {
-				if fv.Kind == "agent_text" && len(collected) > 0 {
+				if (fv.Kind == "agent_text" || fv.Kind == "agent_thought") && len(collected) > 0 {
 					prev := &collected[len(collected)-1]
-					if pf := prev.row.Frame; pf != nil && pf.Kind == "agent_text" && pf.Role == fv.Role {
+					if pf := prev.row.Frame; pf != nil && pf.Kind == fv.Kind && pf.Role == fv.Role {
 						pf.Text += fv.Text
 						continue
 					}

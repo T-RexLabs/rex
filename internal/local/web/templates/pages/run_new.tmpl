@@ -4,7 +4,7 @@
 <header class="page-header">
   <h1>start a run</h1>
   <div class="meta">
-    <span>one-shot shell command, runs synchronously</span>
+    <span>redirects to the live run page as soon as the run starts</span>
     <span class="back"><a href="/runs"><span aria-hidden="true">←</span> all runs</a></span>
   </div>
 </header>
@@ -17,30 +17,91 @@
 
 <section class="section">
   <div class="card">
-    <form method="post" action="/runs/start" class="form">
+    <form method="post" action="/runs/start" class="form" id="run-start-form">
       <div class="form-grid">
-        <label class="field full">
-          <span class="field-label">shell command <span class="req">*</span></span>
-          <input class="field-input mono"
-                 type="text"
-                 name="shell"
-                 autocomplete="off"
-                 autofocus
-                 required
-                 placeholder='echo hello && date'
-                 value="{{.Shell}}">
-          <span class="field-hint">POSIX-ish: bare words and double-quoted runs. Single quotes and backslash escapes are not yet honoured.</span>
-        </label>
-
         <label class="field">
-          <span class="field-label">node id</span>
-          <input class="field-input mono"
-                 type="text"
-                 name="node_id"
-                 value="{{.NodeID}}"
-                 placeholder="shell">
-          <span class="field-hint">Defaults to <code>shell</code>. Visible in <code>run.show</code> output.</span>
+          <span class="field-label">run type <span class="req">*</span></span>
+          <select class="field-input" id="run-type" name="run_type">
+            <option value="shell" {{if eq .RunType "shell"}}selected{{end}}>shell</option>
+            <option value="harness" {{if eq .RunType "harness"}}selected{{end}}>harness</option>
+          </select>
+          <span class="field-hint">The form only shows the settings used by the selected run type.</span>
         </label>
+      </div>
+
+      <div id="run-shell-panel" data-run-panel="shell" {{if ne .RunType "shell"}}hidden{{end}}>
+        <div class="form-grid">
+          <label class="field full">
+            <span class="field-label">shell command <span class="req">*</span></span>
+            <input class="field-input mono"
+                   type="text"
+                   name="shell"
+                   autocomplete="off"
+                   autofocus
+                   placeholder='echo hello && date'
+                   value="{{.Shell}}"
+                   {{if ne .RunType "shell"}}disabled{{end}}>
+            <span class="field-hint">POSIX-ish: bare words and double-quoted runs. Single quotes and backslash escapes are not yet honoured.</span>
+          </label>
+        </div>
+      </div>
+
+      <div id="run-harness-panel" data-run-panel="harness" {{if ne .RunType "harness"}}hidden{{end}}>
+        <div class="form-grid">
+          <label class="field">
+            <span class="field-label">harness <span class="req">*</span></span>
+            <select class="field-input" id="run-harness" name="harness" {{if ne .RunType "harness"}}disabled{{end}}>
+              <option value="">select a harness</option>
+              {{range .Harnesses}}
+              <option value="{{.Name}}"
+                        data-models="{{joinCSV .Models}}"
+                        data-modes="{{joinCSV .Modes}}"
+                        {{if eq $.Harness .Name}}selected{{end}}>{{.Name}}</option>
+              {{end}}
+            </select>
+            <span class="field-hint">Pick the harness binary Rex should drive through ACP.</span>
+          </label>
+
+          <label class="field full">
+            <span class="field-label">prompt <span class="req">*</span></span>
+            <textarea class="field-input mono"
+                      name="prompt"
+                      rows="6"
+                      placeholder="hello"
+                      {{if ne .RunType "harness"}}disabled{{end}}>{{.Prompt}}</textarea>
+            <span class="field-hint">Submitted as the initial prompt to the harness session.</span>
+          </label>
+
+          {{if .ShowModel}}
+          <label class="field" id="run-model-field" {{if not .ModelOptions}}hidden{{end}}>
+            <span class="field-label">model</span>
+            <select class="field-input mono" id="run-model" name="model" {{if ne .RunType "harness"}}disabled{{end}}>
+              <option value="">harness default</option>
+              {{range .ModelOptions}}
+                <option value="{{.}}" {{if eq $.Model .}}selected{{end}}>{{.}}</option>
+              {{end}}
+            </select>
+            <span class="field-hint">Model list comes from cached harness capabilities. It refreshes in the background when <code>rex serve</code> starts.</span>
+          </label>
+          {{end}}
+
+          {{if .ShowMode}}
+          <label class="field" id="run-mode-field" {{if not .ModeOptions}}hidden{{end}}>
+            <span class="field-label">mode</span>
+            <select class="field-input mono" id="run-mode" name="mode" {{if ne .RunType "harness"}}disabled{{end}}>
+              <option value="">harness default</option>
+              {{range .ModeOptions}}
+                <option value="{{.}}" {{if eq $.Mode .}}selected{{end}}>{{.}}</option>
+              {{end}}
+            </select>
+            <span class="field-hint">Harness-specific operating mode.</span>
+          </label>
+          {{end}}
+        </div>
+
+        {{if not .Harnesses}}
+          <p class="muted small">No harness adapters are registered in this build; shell runs still work.</p>
+        {{end}}
       </div>
 
       <div class="form-actions">
@@ -50,4 +111,6 @@
     </form>
   </div>
 </section>
+
+<script src="/static/run-form.js" defer></script>
 {{end}}

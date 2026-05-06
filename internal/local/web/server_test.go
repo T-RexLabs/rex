@@ -1,12 +1,16 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/asabla/rex/internal/core/runner/adapter"
 )
 
 // initWorkspace builds a TempDir workspace shape with the v1
@@ -30,17 +34,40 @@ func initWorkspace(t *testing.T, id string) string {
 
 func newTestServer(t *testing.T, root string) *httptest.Server {
 	t.Helper()
-	s, err := New(Options{
-		WorkspaceRoot: root,
-		BindAddr:      "127.0.0.1:0",
-		Version:       "test",
-	})
+	return newTestServerWithOptions(t, Options{WorkspaceRoot: root})
+}
+
+func newTestServerWithOptions(t *testing.T, opts Options) *httptest.Server {
+	t.Helper()
+	if opts.WorkspaceRoot == "" {
+		t.Fatal("newTestServerWithOptions: WorkspaceRoot is required")
+	}
+	if opts.BindAddr == "" {
+		opts.BindAddr = "127.0.0.1:0"
+	}
+	if opts.Version == "" {
+		opts.Version = "test"
+	}
+	s, err := New(opts)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	hs := httptest.NewServer(s.Handler())
 	t.Cleanup(hs.Close)
 	return hs
+}
+
+type testStaticAdapter struct {
+	name string
+	caps adapter.Capabilities
+}
+
+func (a testStaticAdapter) Name() string { return a.name }
+func (a testStaticAdapter) Capabilities() adapter.Capabilities {
+	return a.caps
+}
+func (a testStaticAdapter) Spawn(adapter.SpawnOptions) (*exec.Cmd, error) {
+	return nil, fmt.Errorf("test adapter %q should not be spawned", a.name)
 }
 
 func TestNewRequiresWorkspaceRoot(t *testing.T) {

@@ -13,4 +13,9 @@ import (
 	// claude-code (execution.ADAPT.2): the upstream
 	// @agentclientprotocol/claude-agent-acp bridge spawned via npx.
 	_ "github.com/asabla/rex/internal/core/runner/adapter/claudecode"
+	// codex (execution.ADAPT.2): the Codex ACP bridge spawned via npx.
+	_ "github.com/asabla/rex/internal/core/runner/adapter/codex"
+	// opencode (execution.ADAPT.2): the native `opencode acp`
+	// subprocess shipped by OpenCode itself.
+	_ "github.com/asabla/rex/internal/core/runner/adapter/opencode"
 )

@@ -43,15 +43,6 @@ request is treated as the workspace owner.`,
 				return err
 			}
 
-			s, err := web.New(web.Options{
-				WorkspaceRoot: root,
-				BindAddr:      addr,
-				Version:       version,
-			})
-			if err != nil {
-				return fmt.Errorf("build server: %w", err)
-			}
-
 			// serverCtx propagates "the server is shutting down" to
 			// every in-flight request via http.Server.BaseContext.
 			// Without this, long-lived handlers (the run-detail SSE
@@ -61,6 +52,16 @@ request is treated as the workspace owner.`,
 			// gives every handler a chance to exit cleanly first.
 			serverCtx, cancelServer := context.WithCancel(context.Background())
 			defer cancelServer()
+
+			s, err := web.New(web.Options{
+				WorkspaceRoot: root,
+				BindAddr:      addr,
+				Version:       version,
+				Context:       serverCtx,
+			})
+			if err != nil {
+				return fmt.Errorf("build server: %w", err)
+			}
 
 			srv := &http.Server{
 				Addr:              addr,

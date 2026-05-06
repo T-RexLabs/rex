@@ -42,7 +42,13 @@ func (Adapter) Name() string { return Name }
 // servers are supported natively (execution.ACP.5).
 func (Adapter) Capabilities() adapter.Capabilities {
 	return adapter.Capabilities{
-		Models:      nil,
+		Models: []string{
+			"sonnet",
+			"opus",
+			"haiku",
+			"claude-sonnet-4-5",
+			"claude-opus-4-1",
+		},
 		Modes:       nil,
 		SupportsMCP: true,
 	}

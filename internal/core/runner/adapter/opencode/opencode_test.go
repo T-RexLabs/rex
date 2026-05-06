@@ -1,4 +1,4 @@
-package claudecode
+package opencode
 
 import (
 	"context"
@@ -10,8 +10,8 @@ import (
 
 func TestNameIsKebabCase(t *testing.T) {
 	t.Parallel()
-	if Name != "claude-code" {
-		t.Errorf("Name = %q, want %q", Name, "claude-code")
+	if Name != "opencode" {
+		t.Errorf("Name = %q, want %q", Name, "opencode")
 	}
 	if (Adapter{}).Name() != Name {
 		t.Errorf("Adapter.Name() = %q, want %q", (Adapter{}).Name(), Name)
@@ -22,10 +22,13 @@ func TestCapabilitiesAdvertisesMCP(t *testing.T) {
 	t.Parallel()
 	caps := (Adapter{}).Capabilities()
 	if !caps.SupportsMCP {
-		t.Error("expected SupportsMCP=true (execution.ACP.5)")
+		t.Error("expected SupportsMCP=true")
 	}
-	if got := strings.Join(caps.Models, ","); !strings.Contains(got, "sonnet") || !strings.Contains(got, "opus") {
-		t.Errorf("expected curated Claude model list, got %v", caps.Models)
+	if got := strings.Join(caps.Models, ","); !strings.Contains(got, "opencode/big-pickle") {
+		t.Errorf("expected curated OpenCode model list, got %v", caps.Models)
+	}
+	if got := strings.Join(caps.Modes, ","); got != "build,plan" {
+		t.Errorf("Modes = %q, want %q", got, "build,plan")
 	}
 }
 
@@ -36,49 +39,40 @@ func TestSpawnRequiresContext(t *testing.T) {
 	}
 }
 
-func TestSpawnUsesNpxByDefault(t *testing.T) {
+func TestSpawnUsesOpencodeACPByDefault(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cmd, err := (Adapter{}).Spawn(adapter.SpawnOptions{
-		Ctx: ctx, Dir: "/tmp", Model: "opus", Mode: "sync",
+		Ctx: ctx, Dir: "/tmp", Model: "openai/gpt-4.1", Mode: "build",
 	})
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
-	if !strings.HasSuffix(cmd.Path, "npx") && cmd.Args[0] != "npx" {
-		t.Errorf("cmd.Args[0] = %q, want npx", cmd.Args[0])
+	if got := cmd.Args[0]; got != "opencode" {
+		t.Errorf("cmd.Args[0] = %q, want opencode", got)
 	}
 	if cmd.Dir != "/tmp" {
 		t.Errorf("cmd.Dir = %q, want /tmp", cmd.Dir)
 	}
 	joined := strings.Join(cmd.Args, " ")
-	if !strings.Contains(joined, "@agentclientprotocol/claude-agent-acp") {
-		t.Errorf("expected default bridge in args, got %q", joined)
-	}
-	if !strings.Contains(joined, "--model opus") {
-		t.Errorf("expected --model opus in args, got %q", joined)
-	}
-	if !strings.Contains(joined, "--mode sync") {
-		t.Errorf("expected --mode sync in args, got %q", joined)
+	for _, want := range []string{"acp", "--cwd /tmp", "--model openai/gpt-4.1", "--agent build"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("expected %q in args, got %q", want, joined)
+		}
 	}
 }
 
-func TestSpawnHonoursBridgeOverride(t *testing.T) {
-	// t.Setenv is incompatible with t.Parallel().
-	t.Setenv("REX_CLAUDE_CODE_BRIDGE", "/usr/local/lib/my-fork.tgz")
+func TestSpawnHonoursBinaryOverride(t *testing.T) {
+	t.Setenv(envBinaryOverride, "/usr/local/bin/opencode-dev")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cmd, err := (Adapter{}).Spawn(adapter.SpawnOptions{Ctx: ctx})
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
-	joined := strings.Join(cmd.Args, " ")
-	if !strings.Contains(joined, "/usr/local/lib/my-fork.tgz") {
-		t.Errorf("expected override bridge in args, got %q", joined)
-	}
-	if strings.Contains(joined, "@agentclientprotocol/claude-agent-acp") {
-		t.Errorf("did not expect default bridge when override is set, got %q", joined)
+	if got := cmd.Args[0]; got != "/usr/local/bin/opencode-dev" {
+		t.Errorf("cmd.Args[0] = %q, want override binary", got)
 	}
 }
 
@@ -118,5 +112,13 @@ func TestEnvOverrideMergesOnTopOfOSEnv(t *testing.T) {
 	}
 	if sawDuplicate {
 		t.Error("expected single PATH entry; got duplicates")
+	}
+}
+
+func TestParseModelList(t *testing.T) {
+	t.Parallel()
+	got := parseModelList([]byte("alpha\n\n beta \nalpha\n"))
+	if strings.Join(got, ",") != "alpha,beta" {
+		t.Fatalf("parseModelList = %v, want [alpha beta]", got)
 	}
 }

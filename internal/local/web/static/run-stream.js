@@ -9,8 +9,13 @@
 // drop the new one. Anything else (tool calls, run/node lifecycle,
 // permission events) breaks the chain and lands as a fresh card.
 (function () {
-  function isAgentText(el) {
-    return el && el.classList && el.classList.contains('frame-agent_text');
+  function isCoalescibleFrame(el) {
+    if (!el || !el.classList) return false;
+    return el.classList.contains('frame-agent_text') || el.classList.contains('frame-agent_thought');
+  }
+
+  function sameFrameKind(a, b) {
+    return a.getAttribute('data-frame-kind') === b.getAttribute('data-frame-kind');
   }
 
   function sameRole(a, b) {
@@ -26,9 +31,9 @@
   }
 
   function coalesce(node) {
-    if (!isAgentText(node)) return;
+    if (!isCoalescibleFrame(node)) return;
     var prev = previousFrameSibling(node);
-    if (!isAgentText(prev) || !sameRole(prev, node)) return;
+    if (!isCoalescibleFrame(prev) || !sameRole(prev, node) || !sameFrameKind(prev, node)) return;
     var newText = node.querySelector('[data-frame-text]');
     var prevText = prev.querySelector('[data-frame-text]');
     if (!newText || !prevText) return;

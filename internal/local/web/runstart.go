@@ -1,32 +1,142 @@
 package web
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
+	"github.com/asabla/rex/internal/core/runner/adapter"
+	"github.com/asabla/rex/internal/core/storage/eventlog"
 	"github.com/asabla/rex/internal/local/runtask"
 )
 
 // runNewData backs the run_new.tmpl form page.
 type runNewData struct {
 	pageData
-	// Error is rendered above the form when a previous submit
-	// failed validation. Empty on the GET path.
-	Error string
-	// Shell is the previously-submitted shell command, redisplayed
-	// when validation failed so the user doesn't retype.
-	Shell string
-	// NodeID lets the user override the node id (default: shell).
-	NodeID string
+	RunType string
+	Error   string
+	Shell   string
+	Harness string
+	Prompt  string
+	Model   string
+	Mode    string
+
+	Harnesses    []harnessFormOption
+	ModelOptions []string
+	ModeOptions  []string
+	ShowModel    bool
+	ShowMode     bool
 }
 
-// handleRunNew renders the GET /runs/new form. The actual run
-// dispatch happens at POST /runs/start (handleRunStart) so the URL
-// shape matches the spec's "GET fetches a representation, POST
-// creates" idiom — and a JS-disabled browser can submit the form
-// the same way htmx does.
+func anyHarnessModels(opts []harnessFormOption) bool {
+	for _, opt := range opts {
+		if len(opt.Models) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func anyHarnessModes(opts []harnessFormOption) bool {
+	for _, opt := range opts {
+		if len(opt.Modes) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) harnessRegistry() *adapter.Registry {
+	return normalizeHarnessRegistry(s.opts.Adapters)
+}
+
+func defaultHarnessName(opts []harnessFormOption) string {
+	for _, opt := range opts {
+		if opt.Name == "opencode" {
+			return opt.Name
+		}
+	}
+	if len(opts) == 0 {
+		return ""
+	}
+	return opts[0].Name
+}
+
+func findHarnessOption(opts []harnessFormOption, name string) (harnessFormOption, bool) {
+	for _, opt := range opts {
+		if opt.Name == name {
+			return opt, true
+		}
+	}
+	return harnessFormOption{}, false
+}
+
+func (s *Server) prepareRunNewData(d runNewData) runNewData {
+	if d.RunType == "" {
+		d.RunType = "shell"
+	}
+	d.Harnesses = s.harnesses.snapshot()
+	if d.Harness == "" {
+		d.Harness = defaultHarnessName(d.Harnesses)
+	}
+	selected, ok := findHarnessOption(d.Harnesses, d.Harness)
+	if !ok {
+		d.Harness = defaultHarnessName(d.Harnesses)
+		selected, _ = findHarnessOption(d.Harnesses, d.Harness)
+	}
+	d.ModelOptions = append([]string(nil), selected.Models...)
+	d.ModeOptions = append([]string(nil), selected.Modes...)
+	d.ShowModel = anyHarnessModels(d.Harnesses)
+	d.ShowMode = anyHarnessModes(d.Harnesses)
+	return d
+}
+
+func (s *Server) rerenderRunNew(w http.ResponseWriter, r *http.Request, msg string, d runNewData) {
+	base := s.basePageData()
+	base.NavSection = "runs"
+	d.pageData = base
+	d.Error = msg
+	d = s.prepareRunNewData(d)
+	w.WriteHeader(http.StatusBadRequest)
+	s.render(w, r, "run_new.tmpl", d)
+}
+
+func (s *Server) launchRunAsync(ws *runtask.Workspace, start func(func(eventlog.Record)) error) (<-chan struct{}, <-chan error) {
+	startedCh := make(chan struct{}, 1)
+	errCh := make(chan error, 1)
+	var started atomic.Bool
+	go func() {
+		defer ws.Close()
+		onEvent := func(eventlog.Record) {
+			if started.CompareAndSwap(false, true) {
+				startedCh <- struct{}{}
+			}
+		}
+		if err := start(onEvent); err != nil {
+			if !started.Load() {
+				errCh <- err
+			}
+			return
+		}
+		if !started.Load() {
+			errCh <- fmt.Errorf("run finished before emitting any events")
+		}
+	}()
+	return startedCh, errCh
+}
+
+func defaultNodeID(runType string) string {
+	if runType == "harness" {
+		return "harness"
+	}
+	return "shell"
+}
+
+// handleRunNew renders the GET /runs/new form. The start action now
+// returns as soon as the run's first event is durably written, then
+// redirects to the live run page so the user sees progress instead of
+// waiting on a blank form submit.
 func (s *Server) handleRunNew(w http.ResponseWriter, r *http.Request) {
 	base := s.basePageData()
 	if base.Workspace == nil {
@@ -34,52 +144,48 @@ func (s *Server) handleRunNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base.NavSection = "runs"
-	s.render(w, r, "run_new.tmpl", runNewData{
-		pageData: base,
-		NodeID:   "shell",
-	})
+	d := s.prepareRunNewData(runNewData{pageData: base, RunType: "shell"})
+	s.render(w, r, "run_new.tmpl", d)
 }
 
-// handleRunStart parses the form, dispatches a synchronous shell
-// run via runtask.StartShellRun, and redirects to the run detail
-// page on success. Validation failures rerender the form with the
-// previously-typed values so the user doesn't lose state.
-//
-// Synchronous semantics match v1: there is no daemon, the run is
-// the request goroutine's lifetime. If the user closes the tab
-// mid-run the request context cancels and the run aborts. This is
-// fine for the v1 daily-driver — long runs are launched from the
-// CLI, the web form is for one-shot smoke tests.
+// handleRunStart validates the submitted form, launches the run in a
+// server-bound goroutine, waits until the first event is written, then
+// redirects to the run detail page so the user can watch the run live.
 func (s *Server) handleRunStart(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "web: parse form: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	shell := strings.TrimSpace(r.FormValue("shell"))
-	nodeID := strings.TrimSpace(r.FormValue("node_id"))
-	if nodeID == "" {
-		nodeID = "shell"
-	}
+	d := s.prepareRunNewData(runNewData{
+		RunType: strings.TrimSpace(r.FormValue("run_type")),
+		Shell:   strings.TrimSpace(r.FormValue("shell")),
+		Harness: strings.TrimSpace(r.FormValue("harness")),
+		Prompt:  strings.TrimSpace(r.FormValue("prompt")),
+		Model:   strings.TrimSpace(r.FormValue("model")),
+		Mode:    strings.TrimSpace(r.FormValue("mode")),
+	})
 
-	rerender := func(msg string) {
-		base := s.basePageData()
-		base.NavSection = "runs"
-		w.WriteHeader(http.StatusBadRequest)
-		s.render(w, r, "run_new.tmpl", runNewData{
-			pageData: base,
-			Error:    msg,
-			Shell:    shell,
-			NodeID:   nodeID,
-		})
-	}
-
-	if shell == "" {
-		rerender("shell command is required")
-		return
-	}
-	argv, err := runtask.SplitShellCommand(shell)
-	if err != nil {
-		rerender(err.Error())
+	switch d.RunType {
+	case "shell":
+		if d.Shell == "" {
+			s.rerenderRunNew(w, r, "shell command is required", d)
+			return
+		}
+	case "harness":
+		if d.Harness == "" {
+			s.rerenderRunNew(w, r, "harness is required", d)
+			return
+		}
+		if d.Prompt == "" {
+			s.rerenderRunNew(w, r, "prompt is required", d)
+			return
+		}
+		if _, ok := s.harnessRegistry().Lookup(d.Harness); !ok {
+			s.rerenderRunNew(w, r, fmt.Sprintf("unknown harness %q", d.Harness), d)
+			return
+		}
+	default:
+		s.rerenderRunNew(w, r, fmt.Sprintf("unknown run type %q", d.RunType), d)
 		return
 	}
 
@@ -88,26 +194,49 @@ func (s *Server) handleRunStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "web: open workspace: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer ws.Close()
+	runID := ws.Clock.Now().String()
+	nodeID := defaultNodeID(d.RunType)
 
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-
-	res, err := runtask.StartShellRun(ctx, ws, runtask.ShellRunRequest{
-		Command: argv,
-		NodeID:  nodeID,
-	})
-	if err != nil {
-		// Best-effort surface: rerender with the error.
-		rerender(fmt.Sprintf("run failed to start: %s", err))
-		return
+	var startedCh <-chan struct{}
+	var errCh <-chan error
+	switch d.RunType {
+	case "shell":
+		argv, err := runtask.SplitShellCommand(d.Shell)
+		if err != nil {
+			_ = ws.Close()
+			s.rerenderRunNew(w, r, err.Error(), d)
+			return
+		}
+		startedCh, errCh = s.launchRunAsync(ws, func(onEvent func(eventlog.Record)) error {
+			_, err := runtask.StartShellRun(s.ctx, ws, runtask.ShellRunRequest{
+				Command: argv,
+				NodeID:  nodeID,
+				RunID:   runID,
+				OnEvent: onEvent,
+			})
+			return err
+		})
+	case "harness":
+		reg := s.harnessRegistry()
+		startedCh, errCh = s.launchRunAsync(ws, func(onEvent func(eventlog.Record)) error {
+			_, err := runtask.StartHarnessRun(s.ctx, ws, runtask.HarnessRunRequest{
+				Harness:  d.Harness,
+				Prompt:   d.Prompt,
+				Model:    d.Model,
+				Mode:     d.Mode,
+				NodeID:   nodeID,
+				RunID:    runID,
+				Adapters: reg,
+				OnEvent:  onEvent,
+			})
+			return err
+		})
 	}
-	if res == nil || res.RunID == "" {
-		rerender("run failed: empty result from runtask")
-		return
-	}
 
-	// 303 See Other so the browser issues a GET on the redirect
-	// target — POST/redirect/GET pattern, refreshes idempotent.
-	http.Redirect(w, r, "/runs/"+res.RunID, http.StatusSeeOther)
+	select {
+	case <-startedCh:
+		http.Redirect(w, r, "/runs/"+runID, http.StatusSeeOther)
+	case err := <-errCh:
+		s.rerenderRunNew(w, r, fmt.Sprintf("run failed to start: %s", err), d)
+	}
 }

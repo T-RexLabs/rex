@@ -63,6 +63,20 @@ type Capabilities struct {
 	SupportsMCP bool
 }
 
+// DiscoverOptions are the runtime hints an adapter may use to refine
+// its static Capabilities surface. Discovery is optional: callers
+// fall back to Capabilities() when an adapter does not implement the
+// DynamicCapabilities interface or discovery fails.
+type DiscoverOptions struct {
+	Dir string
+}
+
+// DynamicCapabilities is an optional adapter extension for harnesses
+// whose model/mode surface is only knowable at runtime.
+type DynamicCapabilities interface {
+	Discover(context.Context, DiscoverOptions) (Capabilities, error)
+}
+
 // Adapter is the per-harness interface. Implementations are tiny —
 // ADAPT.4 caps them at ~200 LOC — and live in adapter/<name>/.
 type Adapter interface {
