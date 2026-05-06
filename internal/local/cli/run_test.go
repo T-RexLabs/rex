@@ -50,6 +50,26 @@ func TestRunStartShellSuccess(t *testing.T) {
 	}
 }
 
+func TestRunCommandsInheritWorkspaceFlagFromParent(t *testing.T) {
+	t.Parallel()
+
+	dir := initWorkspaceForRunTest(t)
+	if _, err := executeCommand(t, "run", "--workspace", dir, "start",
+		"--shell", "echo parent-workspace",
+		"--run-id", "parent-run-1",
+	); err != nil {
+		t.Fatalf("run start with parent workspace: %v", err)
+	}
+
+	out, err := executeCommand(t, "run", "--workspace", dir, "list")
+	if err != nil {
+		t.Fatalf("run list with parent workspace: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "parent-run-1") {
+		t.Fatalf("expected parent-run-1 in output: %s", out)
+	}
+}
+
 func TestRunStartShellFailureReturnsError(t *testing.T) {
 	t.Parallel()
 

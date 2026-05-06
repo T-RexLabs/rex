@@ -24,6 +24,7 @@ func newSpecCmd() *cobra.Command {
 YAML file under .rex/specs/<id>.yaml; the format is described by
 specs/spec-format.yaml.`,
 	}
+	addWorkspacePersistentFlag(cmd)
 	cmd.AddCommand(newSpecCreateCmd())
 	cmd.AddCommand(newSpecValidateCmd())
 	cmd.AddCommand(newSpecListCmd())
@@ -34,11 +35,10 @@ specs/spec-format.yaml.`,
 
 func newSpecCreateCmd() *cobra.Command {
 	var (
-		workspaceFlag string
-		templateFlag  string
-		nameFlag      string
-		stateFlag     string
-		force         bool
+		templateFlag string
+		nameFlag     string
+		stateFlag    string
+		force        bool
 	)
 	cmd := &cobra.Command{
 		Use:   "create <id>",
@@ -56,7 +56,7 @@ Refuses to overwrite an existing spec unless --force is passed.`,
 			if !specfmt.IsKebab(id) {
 				return fmt.Errorf("spec id %q is not kebab-case", id)
 			}
-			root, err := workspaceRootForOrError(workspaceFlag)
+			root, err := workspaceRootForOrError(workspaceFlagValue(cmd))
 			if err != nil {
 				return err
 			}
@@ -100,7 +100,6 @@ Refuses to overwrite an existing spec unless --force is passed.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
 	cmd.Flags().StringVar(&templateFlag, "template", "", "template spec id to inherit shape from (overrides workspace default)")
 	cmd.Flags().StringVar(&nameFlag, "name", "", "human-readable name (default: spec id)")
 	cmd.Flags().StringVar(&stateFlag, "state", "draft", "metadata.state for the new spec")
@@ -163,7 +162,6 @@ const ExtraKey = "extra"
 
 func newSpecValidateCmd() *cobra.Command {
 	var lenient bool
-	var workspaceFlag string
 	cmd := &cobra.Command{
 		Use:   "validate [<id-or-path>...]",
 		Short: "Validate one or more specs",
@@ -181,6 +179,7 @@ Per spec-format.VAL.5: exit 0 on success, 1 on any validation error,
 				mode = specfmt.ModeLenient
 			}
 			jsonOut, _ := cmd.Flags().GetBool("json")
+			workspaceFlag := workspaceFlagValue(cmd)
 			paths, err := pathsFromArgs(args, workspaceFlag)
 			if err != nil {
 				return err
@@ -226,19 +225,17 @@ Per spec-format.VAL.5: exit 0 on success, 1 on any validation error,
 		},
 	}
 	cmd.Flags().BoolVar(&lenient, "lenient", false, "treat unknown top-level keys and dangling ACIDs as warnings")
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root to validate (default: walk up from cwd)")
 	return cmd
 }
 
 func newSpecListCmd() *cobra.Command {
-	var workspaceFlag string
 	var stateFilter string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List specs in the workspace",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			jsonOut, _ := cmd.Flags().GetBool("json")
-			paths, err := pathsFromArgs(nil, workspaceFlag)
+			paths, err := pathsFromArgs(nil, workspaceFlagValue(cmd))
 			if err != nil {
 				return err
 			}
@@ -267,20 +264,18 @@ func newSpecListCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root to list (default: walk up from cwd)")
 	cmd.Flags().StringVar(&stateFilter, "state", "", "only show specs with the given metadata.state")
 	return cmd
 }
 
 func newSpecShowCmd() *cobra.Command {
-	var workspaceFlag string
 	cmd := &cobra.Command{
 		Use:   "show <id-or-path>",
 		Short: "Show a spec's metadata, components, and tasks",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			jsonOut, _ := cmd.Flags().GetBool("json")
-			paths, err := pathsFromArgs(args, workspaceFlag)
+			paths, err := pathsFromArgs(args, workspaceFlagValue(cmd))
 			if err != nil {
 				return err
 			}
@@ -298,12 +293,10 @@ func newSpecShowCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root for id resolution (default: walk up from cwd)")
 	return cmd
 }
 
 func newSpecACIDCmd() *cobra.Command {
-	var workspaceFlag string
 	cmd := &cobra.Command{
 		Use:   "acid <ACID>",
 		Short: "Resolve an ACID reference and show the requirement",
@@ -316,7 +309,7 @@ the workspace; if exactly one match exists, it is printed.`,
 			if err != nil {
 				return fmt.Errorf("malformed ACID: %w", err)
 			}
-			paths, err := pathsFromArgs(nil, workspaceFlag)
+			paths, err := pathsFromArgs(nil, workspaceFlagValue(cmd))
 			if err != nil {
 				return err
 			}
@@ -336,7 +329,6 @@ the workspace; if exactly one match exists, it is printed.`,
 			return printResolution(cmd, res, jsonOut)
 		},
 	}
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root to resolve against (default: walk up from cwd)")
 	return cmd
 }
 
@@ -401,6 +393,17 @@ func pathsFromArgs(args []string, workspaceFlag string) ([]string, error) {
 // walks up from cwd looking for .rex/. Returns "" with no error when
 // neither source yields a workspace — leaf commands handle that with
 // their own friendlier message.
+const workspaceFlagName = "workspace"
+
+func addWorkspacePersistentFlag(cmd *cobra.Command) {
+	cmd.PersistentFlags().String(workspaceFlagName, "", "workspace root (default: walk up from cwd)")
+}
+
+func workspaceFlagValue(cmd *cobra.Command) string {
+	v, _ := cmd.Flags().GetString(workspaceFlagName)
+	return v
+}
+
 func workspaceRootFor(flag string) (string, error) {
 	if flag != "" {
 		return flag, nil

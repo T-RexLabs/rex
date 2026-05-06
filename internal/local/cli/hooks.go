@@ -31,15 +31,15 @@ func newHooksCmd() *cobra.Command {
 specs/hooks.yaml, v1 supports only post-event observers; pre-event
 gating is deferred.`,
 	}
+	addWorkspacePersistentFlag(cmd)
 	cmd.AddCommand(newHooksListCmd())
 	return cmd
 }
 
 func newHooksListCmd() *cobra.Command {
 	var (
-		workspaceFlag string
-		globalFlag    string
-		skipGlobal    bool
+		globalFlag string
+		skipGlobal bool
 	)
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -51,7 +51,7 @@ parsed from the sidecar <event-name>.config.toml — until TOML
 reading lands, every hook is reported with the default 30s.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var hooks []hookInfo
-			root, err := workspaceRootFor(workspaceFlag)
+			root, err := workspaceRootFor(workspaceFlagValue(cmd))
 			if err != nil {
 				return err
 			}
@@ -112,7 +112,6 @@ reading lands, every hook is reported with the default 30s.`,
 			return tw.Flush()
 		},
 	}
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
 	cmd.Flags().StringVar(&globalFlag, "global-dir", "", "override global hooks directory (default: platform user config)")
 	cmd.Flags().BoolVar(&skipGlobal, "no-global", false, "skip the global hooks directory")
 	return cmd

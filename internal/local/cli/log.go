@@ -36,35 +36,35 @@ With no subcommand, behaves like ` + "`rex log tail`" + ` with
 default flags. Pass --help on tail to see filter options.`,
 		RunE: tail.RunE,
 	}
+	addWorkspacePersistentFlag(cmd)
 	cmd.AddCommand(tail)
 	return cmd
 }
 
 func newLogTailCmd() *cobra.Command {
 	var (
-		workspaceFlag string
-		count         int
-		sinceFlag     string
-		typeFlag      string
-		actorFlag     string
-		auditOnly     bool
+		count     int
+		sinceFlag string
+		typeFlag  string
+		actorFlag string
+		auditOnly bool
 	)
 	cmd := &cobra.Command{
 		Use:   "tail",
 		Short: "Show recent audit entries (default: last 50 audit-class events)",
 		Long: `Reads .rex/events.log in order and prints the last N entries
 that match the supplied filters. By default only audit-class event
-types from internal/core/audit are shown; pass --audit-only=false
-to surface every record (including any non-audit-class types a
-future producer may write).
+			types from internal/core/audit are shown; pass --audit-only=false
+			to surface every record (including any non-audit-class types a
+			future producer may write).
 
 --since accepts either an RFC3339 timestamp ("2026-05-04T10:00:00Z")
 or a Go duration ("1h", "24h", "30m") interpreted as "ago".
 
---type, --actor, and --workspace match the corresponding record
-field exactly.`,
+			--type, --actor, and --workspace match the corresponding record
+			field exactly.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootForOrError(workspaceFlag)
+			root, err := workspaceRootForOrError(workspaceFlagValue(cmd))
 			if err != nil {
 				return err
 			}
@@ -106,7 +106,6 @@ field exactly.`,
 			return tw.Flush()
 		},
 	}
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
 	cmd.Flags().IntVarP(&count, "n", "n", 50, "number of records to show (most recent N)")
 	cmd.Flags().StringVar(&sinceFlag, "since", "", "show records since this RFC3339 time or duration ago (e.g. 1h, 24h)")
 	cmd.Flags().StringVar(&typeFlag, "type", "", "show only records of this event type")

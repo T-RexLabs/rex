@@ -178,6 +178,25 @@ metadata: {id: beta, name: Beta, state: active}
 	}
 }
 
+func TestSpecListInheritsWorkspaceFlagFromParent(t *testing.T) {
+	t.Parallel()
+
+	root := makeFakeWorkspace(t, map[string]string{
+		"alpha.yaml": `
+spec_version: 1
+metadata: {id: alpha, name: Alpha, state: draft}
+`,
+	})
+
+	out, err := executeCommand(t, "spec", "--workspace", root, "list")
+	if err != nil {
+		t.Fatalf("list with parent workspace: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "alpha") {
+		t.Fatalf("expected alpha in output: %s", out)
+	}
+}
+
 func TestSpecShowByPath(t *testing.T) {
 	t.Parallel()
 

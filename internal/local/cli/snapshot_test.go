@@ -48,6 +48,19 @@ func TestSnapshotCreateAndList(t *testing.T) {
 	}
 }
 
+func TestSnapshotCommandsInheritWorkspaceFlagFromParent(t *testing.T) {
+	t.Parallel()
+
+	dir := initSnapshotWorkspace(t)
+	out, err := executeCommand(t, "snapshot", "--workspace", dir, "create")
+	if err != nil {
+		t.Fatalf("snapshot create with parent workspace: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "created") {
+		t.Fatalf("create output: %s", out)
+	}
+}
+
 func TestSnapshotListEmpty(t *testing.T) {
 	t.Parallel()
 

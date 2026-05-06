@@ -26,6 +26,7 @@ recording the events.log head at snapshot time. Snapshots live at
 manual triggers; auto-triggers (every-N-events, every-T-duration)
 land alongside the daemon work.`,
 	}
+	addWorkspacePersistentFlag(cmd)
 	cmd.AddCommand(newSnapshotCreateCmd())
 	cmd.AddCommand(newSnapshotListCmd())
 	cmd.AddCommand(newSnapshotRestoreCmd())
@@ -34,12 +35,11 @@ land alongside the daemon work.`,
 }
 
 func newSnapshotCreateCmd() *cobra.Command {
-	var workspaceFlag string
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new snapshot of the workspace's git-merged content",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootForOrError(workspaceFlag)
+			root, err := workspaceRootForOrError(workspaceFlagValue(cmd))
 			if err != nil {
 				return err
 			}
@@ -57,17 +57,15 @@ func newSnapshotCreateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
 	return cmd
 }
 
 func newSnapshotListCmd() *cobra.Command {
-	var workspaceFlag string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List snapshots in the workspace",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootForOrError(workspaceFlag)
+			root, err := workspaceRootForOrError(workspaceFlagValue(cmd))
 			if err != nil {
 				return err
 			}
@@ -95,12 +93,10 @@ func newSnapshotListCmd() *cobra.Command {
 			return tw.Flush()
 		},
 	}
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
 	return cmd
 }
 
 func newSnapshotRestoreCmd() *cobra.Command {
-	var workspaceFlag string
 	cmd := &cobra.Command{
 		Use:   "restore <snapshot-id>",
 		Short: "Roll the workspace's git-merged content back to a snapshot",
@@ -113,7 +109,7 @@ leave the workspace partially restored. Take a fresh snapshot
 immediately before restoring if you need a manual rollback path.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootForOrError(workspaceFlag)
+			root, err := workspaceRootForOrError(workspaceFlagValue(cmd))
 			if err != nil {
 				return err
 			}
@@ -131,16 +127,14 @@ immediately before restoring if you need a manual rollback path.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
 	return cmd
 }
 
 func newSnapshotPruneCmd() *cobra.Command {
 	var (
-		workspaceFlag string
-		keepLast      int
-		keepMonthly   bool
-		dryRun        bool
+		keepLast    int
+		keepMonthly bool
+		dryRun      bool
 	)
 	cmd := &cobra.Command{
 		Use:   "prune",
@@ -149,7 +143,7 @@ func newSnapshotPruneCmd() *cobra.Command {
 calendar month forever. Override with --keep-last and --keep-monthly.
 --dry-run reports what would be deleted without removing anything.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootForOrError(workspaceFlag)
+			root, err := workspaceRootForOrError(workspaceFlagValue(cmd))
 			if err != nil {
 				return err
 			}
@@ -171,7 +165,6 @@ calendar month forever. Override with --keep-last and --keep-monthly.
 			return reportPrune(cmd, deleted, false)
 		},
 	}
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
 	cmd.Flags().IntVar(&keepLast, "keep-last", snapshot.DefaultPolicy.KeepLast, "retain the N most recent snapshots")
 	cmd.Flags().BoolVar(&keepMonthly, "keep-monthly", snapshot.DefaultPolicy.KeepMonthly, "retain one snapshot per calendar month")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what would be deleted without removing anything")

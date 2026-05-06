@@ -50,6 +50,19 @@ func TestLogTailShowsWorkspaceCreated(t *testing.T) {
 	}
 }
 
+func TestLogParentCommandInheritsWorkspaceFlag(t *testing.T) {
+	t.Parallel()
+
+	dir := initLogWorkspace(t)
+	out, err := executeCommand(t, "log", "--workspace", dir)
+	if err != nil {
+		t.Fatalf("log with parent workspace: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "workspace.created") {
+		t.Fatalf("expected workspace.created in output: %s", out)
+	}
+}
+
 func TestLogTailJSON(t *testing.T) {
 	t.Parallel()
 

@@ -37,6 +37,7 @@ harness-driven flags from cli.RUN.1 (--harness, --prompt, --spec)
 land once the harness adapter registry exists; cancel/watch/signal
 need a daemon model that v1 does not have.`,
 	}
+	addWorkspacePersistentFlag(cmd)
 	cmd.AddCommand(newRunStartCmd())
 	cmd.AddCommand(newRunAttachCmd())
 	cmd.AddCommand(newRunWatchAliasCmd())
@@ -61,17 +62,16 @@ func runDecoderRegistry() *event.Registry {
 
 func newRunStartCmd() *cobra.Command {
 	var (
-		workspaceFlag string
-		shellCommand  string
-		harnessFlag   string
-		promptFlag    string
-		modelFlag     string
-		modeFlag      string
-		timeoutFlag   time.Duration
-		nodeID        string
-		runIDFlag     string
-		quietFlag     bool
-		detachFlag    bool
+		shellCommand string
+		harnessFlag  string
+		promptFlag   string
+		modelFlag    string
+		modeFlag     string
+		timeoutFlag  time.Duration
+		nodeID       string
+		runIDFlag    string
+		quietFlag    bool
+		detachFlag   bool
 	)
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -103,7 +103,7 @@ To re-attach later, run 'rex run attach <run-id>'.`,
 			if harnessMode && promptFlag == "" {
 				return errors.New("--prompt is required with --harness")
 			}
-			root, err := workspaceRootFor(workspaceFlag)
+			root, err := workspaceRootFor(workspaceFlagValue(cmd))
 			if err != nil {
 				return err
 			}
@@ -166,7 +166,6 @@ To re-attach later, run 'rex run attach <run-id>'.`,
 			return reportShellRun(cmd, res, nodeID)
 		},
 	}
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
 	cmd.Flags().StringVar(&shellCommand, "shell", "", "shell command to execute as the only DAG node")
 	cmd.Flags().StringVar(&harnessFlag, "harness", "", "registered harness adapter name (e.g. claude-code)")
 	cmd.Flags().StringVar(&promptFlag, "prompt", "", "initial user message for --harness")
@@ -393,15 +392,14 @@ func reportHarnessRun(cmd *cobra.Command, res *runtask.ShellRunResult, nodeID st
 
 func newRunListCmd() *cobra.Command {
 	var (
-		workspaceFlag string
-		statusFilter  string
-		limit         int
+		statusFilter string
+		limit        int
 	)
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List runs from the workspace event log",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootFor(workspaceFlag)
+			root, err := workspaceRootFor(workspaceFlagValue(cmd))
 			if err != nil {
 				return err
 			}
@@ -456,20 +454,18 @@ func newRunListCmd() *cobra.Command {
 			return tw.Flush()
 		},
 	}
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
 	cmd.Flags().StringVar(&statusFilter, "status", "", "only show runs with the given final status")
 	cmd.Flags().IntVar(&limit, "limit", 0, "show only the N most recent runs (0 = no limit)")
 	return cmd
 }
 
 func newRunShowCmd() *cobra.Command {
-	var workspaceFlag string
 	cmd := &cobra.Command{
 		Use:   "show <run-id>",
 		Short: "Show the events for one run",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootFor(workspaceFlag)
+			root, err := workspaceRootFor(workspaceFlagValue(cmd))
 			if err != nil {
 				return err
 			}
@@ -513,7 +509,6 @@ func newRunShowCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
 	return cmd
 }
 
@@ -720,8 +715,7 @@ const runWatchPollInterval = 100 * time.Millisecond
 
 func newRunAttachCmd() *cobra.Command {
 	var (
-		workspaceFlag string
-		jsonOutFlag   bool
+		jsonOutFlag bool
 	)
 	cmd := &cobra.Command{
 		Use:   "attach <run-id>",
@@ -738,7 +732,7 @@ Output: one line per event of the form
 With --json, one decoded event record per line.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootFor(workspaceFlag)
+			root, err := workspaceRootFor(workspaceFlagValue(cmd))
 			if err != nil {
 				return err
 			}
@@ -756,7 +750,6 @@ With --json, one decoded event record per line.`,
 			return tailRunEvents(ctx, cmd, root, runID, jsonOutFlag)
 		},
 	}
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
 	cmd.Flags().BoolVar(&jsonOutFlag, "json", false, "emit one decoded event record per line as JSON")
 	cmd.Flags().Bool("debug", false, "include full event payloads under each line")
 	return cmd
