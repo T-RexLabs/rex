@@ -24,7 +24,15 @@ recording the events.log head at snapshot time. Snapshots live at
 .rex/snapshots/<id>/ and are local-only (storage.SNAP.2). V1 ships
 manual triggers; auto-triggers (every-N-events, every-T-duration)
 land alongside the daemon work.`,
+		Example: `  rex snapshot create
+  rex snapshot list
+  rex snapshot restore 20260504T120000Z`,
 	}
+	setRelated(cmd,
+		"rex snapshot create",
+		"rex snapshot list",
+		"rex snapshot restore <snapshot-id>",
+	)
 	addWorkspacePersistentFlag(cmd)
 	cmd.AddCommand(newSnapshotCreateCmd())
 	cmd.AddCommand(newSnapshotListCmd())
@@ -37,6 +45,10 @@ func newSnapshotCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new snapshot of the workspace's git-merged content",
+		Long: `Captures the workspace's git-merged files and records the current
+events.log head in a snapshot manifest.`,
+		Example: `  rex snapshot create
+  rex snapshot --workspace /path/to/ws create --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := strictWorkspaceRoot(cmd)
 			if err != nil {
@@ -55,6 +67,11 @@ func newSnapshotCreateCmd() *cobra.Command {
 			return nil
 		},
 	}
+	setRelated(cmd,
+		"rex snapshot list",
+		"rex snapshot prune --dry-run",
+		"rex snapshot restore <snapshot-id>",
+	)
 	return cmd
 }
 
@@ -62,6 +79,10 @@ func newSnapshotListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List snapshots in the workspace",
+		Long: `Lists the snapshots present under .rex/snapshots/ for the current
+workspace.`,
+		Example: `  rex snapshot list
+  rex snapshot --workspace /path/to/ws list --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := strictWorkspaceRoot(cmd)
 			if err != nil {
@@ -90,6 +111,11 @@ func newSnapshotListCmd() *cobra.Command {
 			return tw.Flush()
 		},
 	}
+	setRelated(cmd,
+		"rex snapshot create",
+		"rex snapshot restore <snapshot-id>",
+		"rex snapshot prune --dry-run",
+	)
 	return cmd
 }
 
@@ -104,6 +130,8 @@ transcripts/ are left untouched.
 Restore is best-effort, not transactional: a crash mid-restore can
 leave the workspace partially restored. Take a fresh snapshot
 immediately before restoring if you need a manual rollback path.`,
+		Example: `  rex snapshot restore 20260504T120000Z
+  rex snapshot --workspace /path/to/ws restore 20260504T120000Z`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := strictWorkspaceRoot(cmd)
@@ -123,6 +151,11 @@ immediately before restoring if you need a manual rollback path.`,
 			return nil
 		},
 	}
+	setRelated(cmd,
+		"rex snapshot list",
+		"rex snapshot create",
+		"rex snapshot prune --dry-run",
+	)
 	return cmd
 }
 
@@ -138,6 +171,8 @@ func newSnapshotPruneCmd() *cobra.Command {
 		Long: `Default policy: keep the 7 most recent snapshots, plus one snapshot per
 calendar month forever. Override with --keep-last and --keep-monthly.
 --dry-run reports what would be deleted without removing anything.`,
+		Example: `  rex snapshot prune --dry-run
+  rex snapshot --workspace /path/to/ws prune --keep-last 5 --keep-monthly=false`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := strictWorkspaceRoot(cmd)
 			if err != nil {
@@ -161,6 +196,11 @@ calendar month forever. Override with --keep-last and --keep-monthly.
 			return reportPrune(cmd, deleted, false)
 		},
 	}
+	setRelated(cmd,
+		"rex snapshot list",
+		"rex snapshot create",
+		"rex snapshot restore <snapshot-id>",
+	)
 	cmd.Flags().IntVar(&keepLast, "keep-last", snapshot.DefaultPolicy.KeepLast, "retain the N most recent snapshots")
 	cmd.Flags().BoolVar(&keepMonthly, "keep-monthly", snapshot.DefaultPolicy.KeepMonthly, "retain one snapshot per calendar month")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what would be deleted without removing anything")

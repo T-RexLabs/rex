@@ -95,6 +95,9 @@ func TestRunStartRequiresShell(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected --shell required error")
 	}
+	if !strings.Contains(err.Error(), "flags in the group") || !strings.Contains(err.Error(), "shell") {
+		t.Fatalf("error wording: %v", err)
+	}
 }
 
 func TestRunStartRequiresExactlyOneFlavor(t *testing.T) {
@@ -110,7 +113,7 @@ func TestRunStartRequiresExactlyOneFlavor(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected exclusivity error")
 	}
-	if !strings.Contains(err.Error(), "exactly one") {
+	if !strings.Contains(err.Error(), "none of the others") || !strings.Contains(err.Error(), "shell") {
 		t.Fatalf("error wording: %v", err)
 	}
 }
@@ -126,7 +129,24 @@ func TestRunStartHarnessRequiresPrompt(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected --prompt required error")
 	}
-	if !strings.Contains(err.Error(), "prompt") {
+	if !strings.Contains(err.Error(), "flags in the group") || !strings.Contains(err.Error(), "prompt") {
+		t.Fatalf("error wording: %v", err)
+	}
+}
+
+func TestRunStartPromptWithoutHarnessFails(t *testing.T) {
+	t.Parallel()
+
+	dir := initWorkspaceForRunTest(t)
+	_, err := executeCommand(t, "run", "start",
+		"--workspace", dir,
+		"--shell", "echo hi",
+		"--prompt", "hi",
+	)
+	if err == nil {
+		t.Fatal("expected prompt without harness to error")
+	}
+	if !strings.Contains(err.Error(), "flags in the group") || !strings.Contains(err.Error(), "harness") {
 		t.Fatalf("error wording: %v", err)
 	}
 }

@@ -27,6 +27,9 @@ audit-log events). Workspace scope only in v1; --all-local /
 Tokens with hyphens, colons, or punctuation are auto-quoted so
 identifier-shaped queries (kebab-case names, "type:event") behave
 intuitively. AND / OR / NOT pass through unquoted.`,
+		Example: `  rex search workspace.created
+  rex search "type:event"
+  rex search sync.ORDER.3 --workspace /path/to/ws`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := strictWorkspaceRoot(cmd)
@@ -70,6 +73,11 @@ intuitively. AND / OR / NOT pass through unquoted.`,
 			return tw.Flush()
 		},
 	}
+	setRelated(cmd,
+		"rex status",
+		"rex log tail",
+		"rex spec list",
+	)
 	cmd.Flags().String(workspaceFlagName, "", "workspace root (default: walk up from cwd)")
 	cmd.Flags().IntVar(&limit, "limit", 25, "max results to return")
 	return cmd

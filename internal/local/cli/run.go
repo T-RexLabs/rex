@@ -36,7 +36,15 @@ V1 daily-drive ships start (shell-only), list, and show. The
 harness-driven flags from cli.RUN.1 (--harness, --prompt, --spec)
 land once the harness adapter registry exists; cancel/watch/signal
 need a daemon model that v1 does not have.`,
+		Example: `  rex run start --shell "echo hello"
+  rex run list
+  rex run attach curious-giraffe`,
 	}
+	setRelated(cmd,
+		"rex run start --shell \"echo hello\"",
+		"rex run list",
+		"rex run attach <run-id>",
+	)
 	addWorkspacePersistentFlag(cmd)
 	cmd.AddCommand(newRunStartCmd())
 	cmd.AddCommand(newRunAttachCmd())
@@ -87,28 +95,20 @@ Two flavors:
 The default invocation is attached: events stream to the terminal
 during execution and the command exits when the run terminates.
 --quiet suppresses the live stream (final summary only).
---detach is reserved for backgrounded runs and is not yet wired —
-v1 has no daemon model, so the run's lifetime is the CLI process.
+		--detach is reserved for backgrounded runs and is not yet wired —
+		v1 has no daemon model, so the run's lifetime is the CLI process.
 
-To re-attach later, run 'rex run attach <run-id>'.`,
+		To re-attach later, run 'rex run attach <run-id>'.`,
+		Example: `  rex run start --shell "echo hello"
+  rex run --workspace /path/to/ws start --shell "make test"
+  rex run start --harness claude-code --prompt "summarize this repo"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if detachFlag {
 				return errors.New("--detach is deferred until backgrounding/daemon support lands (cli.RUN.1)")
 			}
-			shellMode := shellCommand != ""
-			harnessMode := harnessFlag != ""
-			if shellMode == harnessMode {
-				return errors.New("exactly one of --shell or --harness is required")
-			}
-			if harnessMode && promptFlag == "" {
-				return errors.New("--prompt is required with --harness")
-			}
-			root, err := workspaceRootFor(workspaceFlagValue(cmd))
+			root, err := requiredWorkspaceRoot(cmd)
 			if err != nil {
 				return err
-			}
-			if root == "" {
-				return errNoWorkspace
 			}
 
 			ws, err := runtask.Open(root)
@@ -117,14 +117,11 @@ To re-attach later, run 'rex run attach <run-id>'.`,
 			}
 			defer ws.Close()
 
-			ctx := cmd.Context()
-			if ctx == nil {
-				ctx = context.Background()
-			}
+			ctx := commandContext(cmd)
 
 			onEvent := liveEventPrinter(cmd, quietFlag)
 
-			if harnessMode {
+			if harnessFlag != "" {
 				if _, ok := adapter.Default().Lookup(harnessFlag); !ok {
 					return fmt.Errorf("no adapter registered for %q (registered: %s)",
 						harnessFlag, strings.Join(adapter.Default().Names(), ", "))
@@ -166,6 +163,11 @@ To re-attach later, run 'rex run attach <run-id>'.`,
 			return reportShellRun(cmd, res, nodeID)
 		},
 	}
+	setRelated(cmd,
+		"rex run attach <run-id>",
+		"rex run list",
+		"rex run show <run-id>",
+	)
 	cmd.Flags().StringVar(&shellCommand, "shell", "", "shell command to execute as the only DAG node")
 	cmd.Flags().StringVar(&harnessFlag, "harness", "", "registered harness adapter name (e.g. claude-code)")
 	cmd.Flags().StringVar(&promptFlag, "prompt", "", "initial user message for --harness")
@@ -177,6 +179,9 @@ To re-attach later, run 'rex run attach <run-id>'.`,
 	cmd.Flags().BoolVar(&quietFlag, "quiet", false, "suppress the live event stream; print only the final summary")
 	cmd.Flags().BoolVarP(&detachFlag, "detach", "d", false, "(reserved) kick off the run and return immediately — not yet wired")
 	cmd.Flags().Bool("debug", false, "render full event payloads instead of one-line summaries")
+	cmd.MarkFlagsOneRequired("shell", "harness")
+	cmd.MarkFlagsMutuallyExclusive("shell", "harness")
+	cmd.MarkFlagsRequiredTogether("harness", "prompt")
 	return cmd
 }
 
@@ -395,6 +400,10 @@ func newRunListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List runs from the workspace event log",
+		Long: `Reads the workspace event log, folds run lifecycle events, and prints
+recent runs with their effective status.`,
+		Example: `  rex run list
+  rex run --workspace /path/to/ws list --status completed --limit 10`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := requiredWorkspaceRoot(cmd)
 			if err != nil {
@@ -447,6 +456,11 @@ func newRunListCmd() *cobra.Command {
 			return tw.Flush()
 		},
 	}
+	setRelated(cmd,
+		"rex run start --shell \"echo hello\"",
+		"rex run attach <run-id>",
+		"rex run show <run-id>",
+	)
 	cmd.Flags().StringVar(&statusFilter, "status", "", "only show runs with the given final status")
 	cmd.Flags().IntVar(&limit, "limit", 0, "show only the N most recent runs (0 = no limit)")
 	return cmd
@@ -456,7 +470,11 @@ func newRunShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <run-id>",
 		Short: "Show the events for one run",
-		Args:  cobra.ExactArgs(1),
+		Long: `Loads all event-log records for one run and prints either a decoded
+JSON stream or a human-readable transcript of the raw payloads.`,
+		Example: `  rex run show curious-giraffe
+  rex run --workspace /path/to/ws show curious-giraffe --json`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := requiredWorkspaceRoot(cmd)
 			if err != nil {
@@ -498,6 +516,11 @@ func newRunShowCmd() *cobra.Command {
 			return nil
 		},
 	}
+	setRelated(cmd,
+		"rex run attach <run-id>",
+		"rex run list",
+		"rex log tail --type run.completed",
+	)
 	return cmd
 }
 
@@ -719,6 +742,8 @@ Run IDs accept the same git-style prefix matching as 'rex run show'.
 Output: one line per event of the form
   <timestamp>  <event-type>  <one-line summary>
 With --json, one decoded event record per line.`,
+		Example: `  rex run attach curious-giraffe
+  rex run --workspace /path/to/ws attach curious-giraffe --json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := requiredWorkspaceRoot(cmd)
@@ -733,6 +758,11 @@ With --json, one decoded event record per line.`,
 			return tailRunEvents(ctx, cmd, root, runID, jsonOutFlag)
 		},
 	}
+	setRelated(cmd,
+		"rex run show <run-id>",
+		"rex run list",
+		"rex run start --shell \"echo hello\"",
+	)
 	cmd.Flags().BoolVar(&jsonOutFlag, "json", false, "emit one decoded event record per line as JSON")
 	cmd.Flags().Bool("debug", false, "include full event payloads under each line")
 	return cmd
@@ -752,6 +782,10 @@ func newRunWatchAliasCmd() *cobra.Command {
 		Args:       cobra.ExactArgs(1),
 		RunE:       inner.RunE,
 	}
+	setRelated(cmd,
+		"rex run attach <run-id>",
+		"rex run show <run-id>",
+	)
 	cmd.Flags().AddFlagSet(inner.Flags())
 	return cmd
 }

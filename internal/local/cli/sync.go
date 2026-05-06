@@ -25,8 +25,16 @@ the central node, advancing the per-remote watermark on success.
 ` + "`--remote <name>`" + ` looks up the URL from
 ~/.config/rex/remotes.toml (registered via ` + "`rex remote add`" + `).
 ` + "`--url`" + ` overrides any registry lookup.`,
+		Example: `  rex sync
+  rex sync --workspace /path/to/ws --remote primary
+  rex sync --workspace /path/to/ws --url https://central.example.invalid`,
 		RunE: runSyncFn,
 	}
+	setRelated(cmd,
+		"rex pull",
+		"rex push",
+		"rex remote test <name>",
+	)
 	addSyncFlags(cmd)
 	return cmd
 }
@@ -38,8 +46,16 @@ func newPushCmd() *cobra.Command {
 		Long: `Reads events past the per-remote watermark from .rex/events.log
 and POSTs them to the configured remote. Advances the watermark on
 success.`,
+		Example: `  rex push
+  rex push --workspace /path/to/ws --remote primary
+  rex push --workspace /path/to/ws --url https://central.example.invalid`,
 		RunE: runPushFn,
 	}
+	setRelated(cmd,
+		"rex sync",
+		"rex pull",
+		"rex remote test <name>",
+	)
 	addSyncFlags(cmd)
 	return cmd
 }
@@ -51,8 +67,16 @@ func newPullCmd() *cobra.Command {
 		Long: `Streams events past the per-remote watermark from the configured
 remote and appends them to .rex/events.log. Advances the watermark
 on success.`,
+		Example: `  rex pull
+  rex pull --workspace /path/to/ws --remote primary
+  rex pull --workspace /path/to/ws --url https://central.example.invalid`,
 		RunE: runPullFn,
 	}
+	setRelated(cmd,
+		"rex sync",
+		"rex push",
+		"rex remote test <name>",
+	)
 	addSyncFlags(cmd)
 	return cmd
 }

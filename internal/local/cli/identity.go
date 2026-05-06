@@ -21,7 +21,15 @@ func newIdentityCmd() *cobra.Command {
 material lives at ~/.config/rex/identity/ (or the platform
 equivalent). Use ` + "`rex identity show --pub`" + ` to fetch the public
 key in PEM form when registering with a remote.`,
+		Example: `  rex identity show
+  rex identity show --pub
+  rex identity list`,
 	}
+	setRelated(cmd,
+		"rex identity show",
+		"rex identity list",
+		"rex remote bootstrap <name> <url> --token <token>",
+	)
 	addIdentitySharedFlags(cmd)
 	cmd.AddCommand(newIdentityShowCmd())
 	cmd.AddCommand(newIdentityListCmd())
@@ -68,6 +76,9 @@ func newIdentityShowCmd() *cobra.Command {
 first call so the command never fails on a fresh install. Pass
 --pub to print just the public-key PEM, ready for pasting into a
 central node's authorized-keys file.`,
+		Example: `  rex identity show
+  rex identity show alice
+  rex identity show --pub`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store, err := openIdentityStore(cmd)
@@ -125,14 +136,22 @@ central node's authorized-keys file.`,
 			return nil
 		},
 	}
+	setRelated(cmd,
+		"rex identity list",
+		"rex remote bootstrap <name> <url> --token <token>",
+		"rex remote show <name>",
+	)
 	cmd.Flags().BoolVar(&showPub, "pub", false, "print only the public-key PEM block")
 	return cmd
 }
 
 func newIdentityListCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List local identities",
+		Long: `Lists the identities present in the local identity store with their
+fingerprints.`,
+		Example: `  rex identity list`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store, err := openIdentityStore(cmd)
 			if err != nil {
@@ -172,4 +191,10 @@ func newIdentityListCmd() *cobra.Command {
 			return tw.Flush()
 		},
 	}
+	setRelated(cmd,
+		"rex identity show",
+		"rex remote bootstrap <name> <url> --token <token>",
+		"rex remote show <name>",
+	)
+	return cmd
 }

@@ -23,6 +23,9 @@ func newStatusCmd() *cobra.Command {
 per-remote draft counts for the workspace at cwd (cli.STATUS.1,
 sync.DRAFT.2). Run-status surfaces as "(deferred)" until the daemon
 model exists.`,
+		Example: `  rex status
+  rex status --workspace /path/to/ws
+  rex status --workspace /path/to/ws --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := requiredWorkspaceRoot(cmd)
 			if err != nil {
@@ -31,6 +34,11 @@ model exists.`,
 			return runStatus(cmd.OutOrStdout(), root, jsonOutput(cmd))
 		},
 	}
+	setRelated(cmd,
+		"rex search <query>",
+		"rex log tail",
+		"rex serve",
+	)
 	cmd.Flags().String(workspaceFlagName, "", "workspace root (default: walk up from cwd)")
 	return cmd
 }

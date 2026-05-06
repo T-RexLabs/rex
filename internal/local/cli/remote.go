@@ -20,7 +20,15 @@ func newRemoteCmd() *cobra.Command {
 		Long: `Each remote is a named central node URL stored in
 ~/.config/rex/remotes.toml. Other commands look up a remote by name
 via --remote <name> instead of typing --url every time.`,
+		Example: `  rex remote add primary https://central.example.invalid
+  rex remote test primary
+  rex remote show primary`,
 	}
+	setRelated(cmd,
+		"rex remote add <name> <url>",
+		"rex remote test <name>",
+		"rex remote show <name>",
+	)
 	cmd.AddCommand(newRemoteAddCmd())
 	cmd.AddCommand(newRemoteListCmd())
 	cmd.AddCommand(newRemoteShowCmd())
@@ -67,6 +75,8 @@ func newRemoteAddCmd() *cobra.Command {
 		Long: `Adds <name> -> <url> to ~/.config/rex/remotes.toml. The remote is
 not contacted; use ` + "`rex remote test`" + ` to verify connectivity and
 record the server's fingerprint.`,
+		Example: `  rex remote add primary https://central.example.invalid
+  rex remote add staging https://staging.example.invalid --remotes-file ./remotes.toml`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, url := args[0], args[1]
@@ -84,6 +94,11 @@ record the server's fingerprint.`,
 			return nil
 		},
 	}
+	setRelated(cmd,
+		"rex remote test <name>",
+		"rex remote show <name>",
+		"rex push --remote <name>",
+	)
 	addRemoteSharedFlags(cmd)
 	return cmd
 }
@@ -92,6 +107,10 @@ func newRemoteListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List registered remotes",
+		Long: `Lists the remotes registered in the local remotes registry, including
+their last-seen state and recorded fingerprint.`,
+		Example: `  rex remote list
+  rex remote list --remotes-file ./remotes.toml --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			reg, _, err := loadRegistry(cmd)
 			if err != nil {
@@ -129,7 +148,11 @@ func newRemoteShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <name>",
 		Short: "Show one remote's details",
-		Args:  cobra.ExactArgs(1),
+		Long: `Shows the saved URL, fingerprint, and timestamps for one registered
+remote.`,
+		Example: `  rex remote show primary
+  rex remote show primary --remotes-file ./remotes.toml`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			reg, _, err := loadRegistry(cmd)
 			if err != nil {
@@ -159,7 +182,10 @@ func newRemoteRemoveCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "remove <name>",
 		Short: "Unregister a remote",
-		Args:  cobra.ExactArgs(1),
+		Long:  `Removes one remote from the local remotes registry.`,
+		Example: `  rex remote remove primary
+  rex remote remove primary --remotes-file ./remotes.toml`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			reg, path, err := loadRegistry(cmd)
 			if err != nil {
@@ -187,6 +213,9 @@ func newRemoteTestCmd() *cobra.Command {
 records the server's fingerprint (TOFU) and last_seen timestamp; on
 mismatch with a previously-recorded fingerprint, prints a warning and
 does not overwrite — the user must remove and re-add the remote.`,
+		Example: `  rex remote test primary
+  rex remote test primary --remotes-file ./remotes.toml
+  rex remote test primary --json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			reg, path, err := loadRegistry(cmd)
@@ -233,6 +262,11 @@ does not overwrite — the user must remove and re-add the remote.`,
 			return nil
 		},
 	}
+	setRelated(cmd,
+		"rex remote show <name>",
+		"rex push --remote <name>",
+		"rex pull --remote <name>",
+	)
 	addRemoteSharedFlags(cmd)
 	return cmd
 }
@@ -264,11 +298,10 @@ succeeds the local node's identity is the admin of the remote's
 default org. Pair the token printed in the central node's
 startup logs with --token here; both sides should never need to
 do this again for that central node.`,
+		Example: `  rex remote bootstrap primary https://central.example.invalid --token "$TOKEN"
+  rex remote bootstrap primary https://central.example.invalid --token "$TOKEN" --json`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if token == "" {
-				return fmt.Errorf("--token is required (see the central node's startup logs)")
-			}
 			name, url := args[0], args[1]
 			reg, path, err := loadRegistry(cmd)
 			if err != nil {
@@ -304,7 +337,15 @@ do this again for that central node.`,
 			return nil
 		},
 	}
+	setRelated(cmd,
+		"rex remote show <name>",
+		"rex remote test <name>",
+		"rex identity show --pub",
+	)
 	cmd.Flags().StringVar(&token, "token", "", "the one-time admin claim token from the central node")
+	if err := cmd.MarkFlagRequired("token"); err != nil {
+		_ = err
+	}
 	addRemoteSharedFlags(cmd)
 	return cmd
 }

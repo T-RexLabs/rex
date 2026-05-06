@@ -45,12 +45,22 @@ func NewRootCmd(version string) *cobra.Command {
 OpenCode, ...) over a local-first, optionally-replicated workspace
 model. The CLI is verb-noun and deeply nested; see "rex help <noun>"
 for each command group.`,
+		Example: `  rex workspace init
+  rex spec --workspace /path/to/ws list
+  rex run --workspace /path/to/ws start --shell "echo hello rex"
+  rex serve --workspace /path/to/ws`,
 		Version: version,
 		// Don't auto-print usage on every error; cobra's default is
 		// noisy. We handle errors at the leaf level.
 		SilenceUsage:  true,
 		SilenceErrors: false,
 	}
+	setRelated(root,
+		"rex status",
+		"rex search <query>",
+		"rex serve",
+	)
+	installRelatedHelp(root)
 
 	// Global flags. Each leaf command honours them (or ignores them
 	// when not applicable); the parsing and storage live here so the

@@ -21,6 +21,7 @@ import (
 	"github.com/asabla/rex/internal/central/backup"
 	"github.com/asabla/rex/internal/central/config"
 	"github.com/asabla/rex/internal/central/server"
+	"github.com/asabla/rex/internal/cmdhelp"
 )
 
 // version is set at build time via -ldflags. Defaults to "dev" for
@@ -43,13 +44,22 @@ func run(version string, args []string) int {
 
 func newRootCmd(version string) *cobra.Command {
 	root := &cobra.Command{
-		Use:           "rex-central",
-		Short:         "Rex central-node server",
-		Long:          "rex-central runs the central node that local nodes sync against.",
+		Use:   "rex-central",
+		Short: "Rex central-node server",
+		Long:  "rex-central runs the central node that local nodes sync against.",
+		Example: `  rex-central serve --config /etc/rex/central.toml
+  rex-central backup --config /etc/rex/central.toml --output /var/backups/rex
+  rex-central restore --config /etc/rex/central.toml --from /var/backups/rex.dump`,
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: false,
 	}
+	cmdhelp.SetRelated(root,
+		"rex-central serve --config /etc/rex/central.toml",
+		"rex-central backup --config /etc/rex/central.toml --output /var/backups/rex",
+		"rex-central restore --config /etc/rex/central.toml --from /var/backups/rex.dump",
+	)
+	cmdhelp.InstallRelatedHelp(root)
 	root.AddCommand(newServeCmd())
 	root.AddCommand(newBackupCmd())
 	root.AddCommand(newRestoreCmd())
@@ -88,6 +98,9 @@ schema the central migrates on startup (central-node.DB.*).
 Without --db, the server uses an in-memory store; events are
 lost on restart.
 `,
+		Example: `  rex-central serve
+  rex-central serve --config /etc/rex/central.toml
+  rex-central serve --config /etc/rex/central.toml --db 'postgres://user:pass@host/db'`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfgPath := config.PathOrDefault(configPath)
 			cfg, err := config.Load(cfgPath)
@@ -227,6 +240,11 @@ lost on restart.
 			return nil
 		},
 	}
+	cmdhelp.SetRelated(cmd,
+		"rex-central backup --config /etc/rex/central.toml --output /var/backups/rex",
+		"rex-central restore --config /etc/rex/central.toml --from /var/backups/rex.dump",
+		"rex-central --help",
+	)
 	cmd.Flags().StringVar(&configPath, "config", "", "path to central.toml (default: /etc/rex/central.toml; missing file is OK)")
 	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:8080", "TCP address to listen on (overrides config + REX_CENTRAL_ADDR)")
 	cmd.Flags().DurationVar(&shutdownTimeout, "shutdown-timeout", 15*time.Second, "max wait for graceful shutdown (overrides config + REX_CENTRAL_SHUTDOWN_TIMEOUT)")
@@ -271,6 +289,8 @@ env vars < CLI flags precedence as serve. The DSN must point at
 a reachable Postgres; pg_dump must be on PATH (the bundled image
 ships postgresql-client; bare-metal deployments must install it).
 `,
+		Example: `  rex-central backup --config /etc/rex/central.toml --output /var/backups/rex
+  rex-central backup --db 'postgres://user:pass@host/db' --output /tmp/rex-backups`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfigForCommand(cmd, configPath)
 			if err != nil {
@@ -300,6 +320,10 @@ ships postgresql-client; bare-metal deployments must install it).
 			return nil
 		},
 	}
+	cmdhelp.SetRelated(cmd,
+		"rex-central serve --config /etc/rex/central.toml",
+		"rex-central restore --from /path/to/rex.dump",
+	)
 	cmd.Flags().StringVar(&configPath, "config", "", "path to central.toml (default: /etc/rex/central.toml; missing file is OK)")
 	cmd.Flags().StringVar(&outputDir, "output", "", "directory to write the dump into (overrides backup.dir)")
 	cmd.Flags().StringVar(&dsn, "db", "", "Postgres DSN (overrides db.dsn / REX_CENTRAL_DB_DSN)")
@@ -329,6 +353,8 @@ The destructive nature of --clean is intentional: a restore
 overwrites the existing schema with what the dump contained.
 Run against an empty database when in doubt.
 `,
+		Example: `  rex-central restore --config /etc/rex/central.toml --from /var/backups/rex.dump
+  rex-central restore --db 'postgres://user:pass@host/db' --from /tmp/rex.dump`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfigForCommand(cmd, configPath)
 			if err != nil {
@@ -350,6 +376,10 @@ Run against an empty database when in doubt.
 			return nil
 		},
 	}
+	cmdhelp.SetRelated(cmd,
+		"rex-central backup --config /etc/rex/central.toml --output /var/backups/rex",
+		"rex-central serve --config /etc/rex/central.toml",
+	)
 	cmd.Flags().StringVar(&configPath, "config", "", "path to central.toml (default: /etc/rex/central.toml; missing file is OK)")
 	cmd.Flags().StringVar(&fromPath, "from", "", "path to the dump file produced by `rex-central backup`")
 	cmd.Flags().StringVar(&dsn, "db", "", "Postgres DSN (overrides db.dsn / REX_CENTRAL_DB_DSN)")

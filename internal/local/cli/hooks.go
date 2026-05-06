@@ -30,7 +30,14 @@ func newHooksCmd() *cobra.Command {
 		Long: `Hooks are file-based observers that fire on workspace events. Per
 specs/hooks.yaml, v1 supports only post-event observers; pre-event
 gating is deferred.`,
+		Example: `  rex hooks list
+  rex hooks list --workspace /path/to/ws --no-global`,
 	}
+	setRelated(cmd,
+		"rex hooks list",
+		"rex workspace show",
+		"rex log tail",
+	)
 	addWorkspacePersistentFlag(cmd)
 	cmd.AddCommand(newHooksListCmd())
 	return cmd
@@ -49,6 +56,9 @@ func newHooksListCmd() *cobra.Command {
 executable status, and configured timeout. Per-hook timeout is
 parsed from the sidecar <event-name>.config.toml — until TOML
 reading lands, every hook is reported with the default 30s.`,
+		Example: `  rex hooks list
+  rex hooks list --workspace /path/to/ws --no-global
+  rex hooks list --global-dir ~/.config/rex/hooks`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var hooks []hookInfo
 			root, err := currentWorkspaceRoot(cmd)
@@ -111,6 +121,11 @@ reading lands, every hook is reported with the default 30s.`,
 			return tw.Flush()
 		},
 	}
+	setRelated(cmd,
+		"rex workspace show",
+		"rex log tail",
+		"rex hooks",
+	)
 	cmd.Flags().StringVar(&globalFlag, "global-dir", "", "override global hooks directory (default: platform user config)")
 	cmd.Flags().BoolVar(&skipGlobal, "no-global", false, "skip the global hooks directory")
 	return cmd

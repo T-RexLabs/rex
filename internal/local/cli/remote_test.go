@@ -143,6 +143,19 @@ func TestRemoteTestRecordsFingerprint(t *testing.T) {
 	}
 }
 
+func TestRemoteBootstrapRequiresToken(t *testing.T) {
+	t.Parallel()
+
+	reg := tempRegistry(t)
+	_, err := executeCommand(t, "remote", "bootstrap", "primary", "https://example.invalid", "--remotes-file", reg)
+	if err == nil {
+		t.Fatal("bootstrap without token should error")
+	}
+	if !strings.Contains(err.Error(), "required flag") || !strings.Contains(err.Error(), "token") {
+		t.Fatalf("error wording: %v", err)
+	}
+}
+
 func TestPushUsesNamedRemoteFromRegistry(t *testing.T) {
 	t.Parallel()
 

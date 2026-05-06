@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/asabla/rex/internal/cmdhelp"
 	"github.com/spf13/cobra"
 )
 
@@ -51,4 +52,12 @@ func commandContext(cmd *cobra.Command) context.Context {
 		return ctx
 	}
 	return context.Background()
+}
+
+func installRelatedHelp(root *cobra.Command) {
+	cmdhelp.InstallRelatedHelp(root)
+}
+
+func setRelated(cmd *cobra.Command, commands ...string) {
+	cmdhelp.SetRelated(cmd, commands...)
 }

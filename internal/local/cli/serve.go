@@ -34,6 +34,9 @@ The server binds to loopback by default. Listening on a non-loopback
 address is opt-in: pass --addr 0.0.0.0:<port> (or similar) and
 acknowledge that local-machine identity is the trust model — every
 request is treated as the workspace owner.`,
+		Example: `  rex serve
+  rex serve --workspace /path/to/ws
+  rex serve --workspace /path/to/ws --addr 127.0.0.1:7474`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := strictWorkspaceRoot(cmd)
 			if err != nil {
@@ -112,6 +115,11 @@ request is treated as the workspace owner.`,
 			return nil
 		},
 	}
+	setRelated(cmd,
+		"rex status",
+		"rex run list",
+		"rex log tail",
+	)
 	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:7474", "TCP address to bind (loopback default)")
 	cmd.Flags().DurationVar(&shutdownTimeout, "shutdown-timeout", 15*time.Second, "max wait for graceful shutdown")
 	cmd.Flags().String(workspaceFlagName, "", "workspace root to serve (default: walk up from cwd)")

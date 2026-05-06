@@ -23,7 +23,16 @@ func newSpecCmd() *cobra.Command {
 		Long: `Specs are the contract for work done in a workspace. Each spec is a
 YAML file under .rex/specs/<id>.yaml; the format is described by
 specs/spec-format.yaml.`,
+		Example: `  rex spec list
+  rex spec create my-feature
+  rex spec validate
+  rex spec acid overview.SYS.1`,
 	}
+	setRelated(cmd,
+		"rex spec list",
+		"rex spec create <id>",
+		"rex spec validate",
+	)
 	addWorkspacePersistentFlag(cmd)
 	cmd.AddCommand(newSpecCreateCmd())
 	cmd.AddCommand(newSpecValidateCmd())
@@ -50,6 +59,9 @@ the workspace's default template (extra.default_template_id in
 .rex/workspace.yaml) if set, then to a minimal v1-shaped skeleton.
 
 Refuses to overwrite an existing spec unless --force is passed.`,
+		Example: `  rex spec create my-feature
+  rex spec --workspace /path/to/ws create my-feature --name "My feature"
+  rex spec create my-feature --template service`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
@@ -100,6 +112,11 @@ Refuses to overwrite an existing spec unless --force is passed.`,
 			return nil
 		},
 	}
+	setRelated(cmd,
+		"rex spec list",
+		"rex spec validate",
+		"rex spec show <id>",
+	)
 	cmd.Flags().StringVar(&templateFlag, "template", "", "template spec id to inherit shape from (overrides workspace default)")
 	cmd.Flags().StringVar(&nameFlag, "name", "", "human-readable name (default: spec id)")
 	cmd.Flags().StringVar(&stateFlag, "state", "draft", "metadata.state for the new spec")
@@ -173,6 +190,9 @@ workspace.
 
 Per spec-format.VAL.5: exit 0 on success, 1 on any validation error,
 2 on internal validator failure.`,
+		Example: `  rex spec validate
+  rex spec validate execution
+  rex spec validate ./specs/execution.yaml`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mode := specfmt.ModeStrict
 			if lenient {
@@ -224,6 +244,11 @@ Per spec-format.VAL.5: exit 0 on success, 1 on any validation error,
 			return nil
 		},
 	}
+	setRelated(cmd,
+		"rex spec list",
+		"rex spec show <id>",
+		"rex spec acid <ACID>",
+	)
 	cmd.Flags().BoolVar(&lenient, "lenient", false, "treat unknown top-level keys and dangling ACIDs as warnings")
 	return cmd
 }
@@ -233,6 +258,10 @@ func newSpecListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List specs in the workspace",
+		Long: `Lists every spec known in the current workspace, optionally filtered
+by metadata.state.`,
+		Example: `  rex spec list
+  rex spec --workspace /path/to/ws list --state active`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			jsonOut, _ := cmd.Flags().GetBool("json")
 			paths, err := pathsFromArgs(nil, workspaceFlagValue(cmd))
@@ -264,6 +293,11 @@ func newSpecListCmd() *cobra.Command {
 			return nil
 		},
 	}
+	setRelated(cmd,
+		"rex spec create <id>",
+		"rex spec validate",
+		"rex spec show <id>",
+	)
 	cmd.Flags().StringVar(&stateFilter, "state", "", "only show specs with the given metadata.state")
 	return cmd
 }
@@ -272,7 +306,11 @@ func newSpecShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <id-or-path>",
 		Short: "Show a spec's metadata, components, and tasks",
-		Args:  cobra.ExactArgs(1),
+		Long: `Loads one spec by workspace id or explicit file path and prints its
+metadata, tasks, components, and constraints.`,
+		Example: `  rex spec show execution
+  rex spec show ./specs/execution.yaml`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			jsonOut, _ := cmd.Flags().GetBool("json")
 			paths, err := pathsFromArgs(args, workspaceFlagValue(cmd))
@@ -293,6 +331,11 @@ func newSpecShowCmd() *cobra.Command {
 			return nil
 		},
 	}
+	setRelated(cmd,
+		"rex spec validate",
+		"rex spec acid <ACID>",
+		"rex spec list",
+	)
 	return cmd
 }
 
@@ -303,6 +346,8 @@ func newSpecACIDCmd() *cobra.Command {
 		Long: `Accepts both fully-qualified (overview.SYS.1) and short-form
 (SYS.1) ACIDs. Short-form references resolve against every spec in
 the workspace; if exactly one match exists, it is printed.`,
+		Example: `  rex spec acid overview.SYS.1
+  rex spec --workspace /path/to/ws acid SYS.1`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ref, err := specfmt.ParseACID(args[0])
@@ -329,6 +374,11 @@ the workspace; if exactly one match exists, it is printed.`,
 			return printResolution(cmd, res, jsonOut)
 		},
 	}
+	setRelated(cmd,
+		"rex spec show <id>",
+		"rex spec validate",
+		"rex spec list",
+	)
 	return cmd
 }
 

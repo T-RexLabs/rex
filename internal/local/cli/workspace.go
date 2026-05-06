@@ -57,7 +57,15 @@ func newWorkspaceCmd() *cobra.Command {
 		Long: `A workspace is a container of intent — repositories, specs, scheduled
 work, hooks, and connected tools that share one identity and one
 event log. See specs/workspace.yaml for the data model.`,
+		Example: `  rex workspace init ./demo --id demo --name Demo
+  rex workspace show
+  rex workspace reindex --workspace /path/to/ws`,
 	}
+	setRelated(cmd,
+		"rex workspace init",
+		"rex workspace show",
+		"rex workspace reindex",
+	)
 	cmd.AddCommand(newWorkspaceInitCmd())
 	cmd.AddCommand(newWorkspaceShowCmd())
 	cmd.AddCommand(newWorkspaceListCmd())
@@ -73,6 +81,8 @@ func newWorkspaceReindexCmd() *cobra.Command {
 search index from the canonical event log and the workspace's
 git-merged content. Safe to run while the workspace is otherwise
 idle; not safe during concurrent writes.`,
+		Example: `  rex workspace reindex
+  rex workspace reindex --workspace /path/to/ws`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := strictWorkspaceRoot(cmd)
 			if err != nil {
@@ -101,6 +111,11 @@ idle; not safe during concurrent writes.`,
 			return nil
 		},
 	}
+	setRelated(cmd,
+		"rex status",
+		"rex search <query>",
+		"rex workspace show",
+	)
 	cmd.Flags().String(workspaceFlagName, "", "workspace root (default: walk up from cwd)")
 	return cmd
 }
@@ -143,6 +158,9 @@ target path; --id and --name override.
 
 Refuses to clobber an existing .rex/ directory; use --force when you
 mean it.`,
+		Example: `  rex workspace init
+  rex workspace init ./demo --id demo --name Demo
+  rex workspace init ./demo --force`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := "."
@@ -268,6 +286,11 @@ mean it.`,
 			return nil
 		},
 	}
+	setRelated(cmd,
+		"rex workspace show",
+		"rex workspace reindex",
+		"rex status",
+	)
 	cmd.Flags().StringVar(&idFlag, "id", "", "workspace id (default: kebab-cased basename of path)")
 	cmd.Flags().StringVar(&nameFlag, "name", "", "human-readable workspace name (default: basename of path)")
 	cmd.Flags().Bool("force", false, "overwrite an existing .rex/ directory at the target")
@@ -279,7 +302,12 @@ func newWorkspaceShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show [path]",
 		Short: "Show the workspace at the given path (default: walk up from cwd)",
-		Args:  cobra.MaximumNArgs(1),
+		Long: `Resolves a workspace from the supplied path (or the current working
+directory when omitted) and prints its settings and content counts.`,
+		Example: `  rex workspace show
+  rex workspace show /path/to/ws
+  rex workspace show .`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			start := "."
 			if len(args) == 1 {
@@ -322,6 +350,11 @@ func newWorkspaceShowCmd() *cobra.Command {
 			return nil
 		},
 	}
+	setRelated(cmd,
+		"rex status",
+		"rex spec list",
+		"rex workspace reindex",
+	)
 	return cmd
 }
 
@@ -333,6 +366,7 @@ func newWorkspaceListCmd() *cobra.Command {
 Until storage.global-config-layout lands, list falls back to
 showing the current workspace if cwd is inside one, and a
 "no registry yet" hint otherwise.`,
+		Example: `  rex workspace list`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cwd, err := os.Getwd()
 			if err != nil {

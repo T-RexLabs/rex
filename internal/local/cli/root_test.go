@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 // executeCommand runs the root command tree against the given args and
@@ -96,5 +98,65 @@ func TestUnknownCommandFails(t *testing.T) {
 	_, err := executeCommand(t, "fly")
 	if err == nil {
 		t.Fatal("unknown command should error")
+	}
+}
+
+func TestVisibleCommandsHaveLongAndExamples(t *testing.T) {
+	t.Parallel()
+
+	assertCommandHelpShape(t, NewRootCmd("test"))
+}
+
+func TestHelpIncludesExamplesSection(t *testing.T) {
+	t.Parallel()
+
+	out, err := executeCommand(t, "spec", "create", "--help")
+	if err != nil {
+		t.Fatalf("spec create --help: %v", err)
+	}
+	if !strings.Contains(out, "Examples:") {
+		t.Fatalf("help output missing Examples section: %s", out)
+	}
+}
+
+func TestHelpIncludesRelatedCommandsSection(t *testing.T) {
+	t.Parallel()
+
+	out, err := executeCommand(t, "run", "start", "--help")
+	if err != nil {
+		t.Fatalf("run start --help: %v", err)
+	}
+	if !strings.Contains(out, "Related Commands:") {
+		t.Fatalf("help output missing Related Commands section: %s", out)
+	}
+	if !strings.Contains(out, "rex run attach <run-id>") {
+		t.Fatalf("help output missing expected related command: %s", out)
+	}
+	if !strings.Contains(out, "rex run list") {
+		t.Fatalf("help output missing expected related command: %s", out)
+	}
+}
+
+func assertCommandHelpShape(t *testing.T, cmd *cobra.Command) {
+	t.Helper()
+	assertOneCommandHelpShape(t, cmd)
+	for _, sub := range cmd.Commands() {
+		if sub.Hidden || !sub.IsAvailableCommand() || sub.Name() == "help" {
+			continue
+		}
+		assertCommandHelpShape(t, sub)
+	}
+}
+
+func assertOneCommandHelpShape(t *testing.T, cmd *cobra.Command) {
+	t.Helper()
+	if strings.TrimSpace(cmd.Short) == "" {
+		t.Fatalf("command %q missing Short help", cmd.CommandPath())
+	}
+	if strings.TrimSpace(cmd.Long) == "" {
+		t.Fatalf("command %q missing Long help", cmd.CommandPath())
+	}
+	if strings.TrimSpace(cmd.Example) == "" {
+		t.Fatalf("command %q missing Example help", cmd.CommandPath())
 	}
 }

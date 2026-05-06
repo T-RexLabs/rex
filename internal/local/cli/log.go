@@ -34,8 +34,16 @@ the FTS index does (audit.QUERY.2).
 
 With no subcommand, behaves like ` + "`rex log tail`" + ` with
 default flags. Pass --help on tail to see filter options.`,
+		Example: `  rex log
+  rex log --workspace /path/to/ws
+  rex log tail --workspace /path/to/ws --type run.completed`,
 		RunE: tail.RunE,
 	}
+	setRelated(cmd,
+		"rex log tail",
+		"rex search <query>",
+		"rex status",
+	)
 	addWorkspacePersistentFlag(cmd)
 	cmd.AddCommand(tail)
 	return cmd
@@ -63,6 +71,9 @@ or a Go duration ("1h", "24h", "30m") interpreted as "ago".
 
 			--type, --actor, and --workspace match the corresponding record
 			field exactly.`,
+		Example: `  rex log tail
+  rex log tail --workspace /path/to/ws --type run.completed --since 24h
+  rex log tail --workspace /path/to/ws --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := strictWorkspaceRoot(cmd)
 			if err != nil {
@@ -105,6 +116,11 @@ or a Go duration ("1h", "24h", "30m") interpreted as "ago".
 			return tw.Flush()
 		},
 	}
+	setRelated(cmd,
+		"rex search <query>",
+		"rex status",
+		"rex run list",
+	)
 	cmd.Flags().IntVarP(&count, "n", "n", 50, "number of records to show (most recent N)")
 	cmd.Flags().StringVar(&sinceFlag, "since", "", "show records since this RFC3339 time or duration ago (e.g. 1h, 24h)")
 	cmd.Flags().StringVar(&typeFlag, "type", "", "show only records of this event type")
