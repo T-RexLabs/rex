@@ -48,6 +48,7 @@ type Server struct {
 	opts         Options
 	ctx          context.Context
 	harnesses    *harnessCache
+	ownedRuns    *ownedRuns
 	interactions *runInteractionHub
 	mux          *http.ServeMux
 	pages        map[string]*template.Template
@@ -80,6 +81,7 @@ func New(opts Options) (*Server, error) {
 		opts:         opts,
 		ctx:          opts.Context,
 		harnesses:    newHarnessCache(opts.Adapters, opts.Context, opts.WorkspaceRoot, warmHarnesses),
+		ownedRuns:    &ownedRuns{},
 		interactions: newRunInteractionHub(),
 		mux:          http.NewServeMux(),
 		pages:        pages,
@@ -91,6 +93,15 @@ func New(opts Options) (*Server, error) {
 
 // Handler returns the root http.Handler.
 func (s *Server) Handler() http.Handler { return s.mux }
+
+// Shutdown waits for background runs owned by this rex serve process to
+// finish observing cancellation and append their terminal events.
+func (s *Server) Shutdown(ctx context.Context) error {
+	if s == nil || s.ownedRuns == nil {
+		return nil
+	}
+	return s.ownedRuns.wait(ctx)
+}
 
 func (s *Server) registerRoutes() {
 	staticSub, _ := fs.Sub(staticFS, "static")

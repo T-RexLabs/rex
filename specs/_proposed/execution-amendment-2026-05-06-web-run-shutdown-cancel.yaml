@@ -1,0 +1,24 @@
+# Proposed amendment to specs/execution.yaml.
+#
+# Status: proposed.
+# Surfaced by:
+#   - In v1, runs started from the local web UI execute inside the
+#     `rex serve` process rather than a durable daemon.
+#   - On graceful shutdown of `rex serve`, those owned runs must not
+#     be left looking active after restart; the owner process should
+#     cancel them before it exits.
+
+target: execution
+amendment_kind: additive
+
+changes:
+  - kind: update-requirement
+    component: RUN
+    requirement_id: "1"
+    from: "`rex run start [--spec <id>] [--harness <name>] [--prompt <text>]` initiates a run; the prompt and spec context are fed to the harness as the initial message. The default invocation is attached: events stream to the terminal during execution. `--detach` returns once the run is registered and is deferred until backgrounding/daemon support lands."
+    to: "`rex run start [--spec <id>] [--harness <name>] [--prompt <text>]` initiates a run; the prompt and spec context are fed to the harness as the initial message. The default invocation is attached: events stream to the terminal during execution. `--detach` returns once the run is registered and is deferred until backgrounding/daemon support lands. In v1, runs launched from `rex serve` are owned by that process; a graceful `rex serve` shutdown cancels any still-active owned runs before exit rather than leaving them detached."
+
+notes: |
+  This amendment is intentionally scoped to graceful shutdown of the
+  owning `rex serve` process. Hard crashes and SIGKILL remain a known
+  v1 limitation until the daemon model exists.

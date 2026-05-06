@@ -109,7 +109,9 @@ func (s *Server) launchRunAsync(ws *runtask.Workspace, start func(func(eventlog.
 	startedCh := make(chan struct{}, 1)
 	errCh := make(chan error, 1)
 	var started atomic.Bool
+	release := s.ownedRuns.start()
 	go func() {
+		defer release()
 		defer ws.Close()
 		onEvent := func(eventlog.Record) {
 			if started.CompareAndSwap(false, true) {

@@ -1,7 +1,9 @@
 package web
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strings"
@@ -237,4 +239,49 @@ func TestRunStartHarnessRequiresPrompt(t *testing.T) {
 			t.Errorf("missing %q\n%s", want, body[:minInt(len(body), 3000)])
 		}
 	}
+}
+
+func TestServerShutdownCancelsOwnedRunBeforeRestart(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t, "ws-run-shutdown-cancel")
+	serverCtx, cancelServer := context.WithCancel(context.Background())
+	s, err := New(Options{WorkspaceRoot: root, Adapters: testHarnessRegistry(t, "slow"), Context: serverCtx})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	hs := httptest.NewServer(s.Handler())
+
+	form := strings.NewReader("run_type=harness&harness=opencode&prompt=hello")
+	req, _ := http.NewRequest(http.MethodPost, hs.URL+"/runs/start", form)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := noRedirectClient().Do(req)
+	if err != nil {
+		t.Fatalf("POST /runs/start: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		body := readBody(t, resp)
+		t.Fatalf("status: %d\n%s", resp.StatusCode, body)
+	}
+	loc := resp.Header.Get("Location")
+	if !strings.HasPrefix(loc, "/runs/") {
+		t.Fatalf("Location = %q, want /runs/<id>", loc)
+	}
+
+	cancelServer()
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelShutdown()
+	if err := s.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	hs.Close()
+
+	restarted := newTestServer(t, root)
+	body := waitForBody(t, restarted.URL+loc, "pill-cancelled", "run cancelled")
+	if strings.Contains(body, "pill-running") {
+		t.Fatalf("run still rendered as running after restart:\n%s", body[:minInt(len(body), 4000)])
+	}
+
+	_ = waitForBody(t, restarted.URL+"/runs", "pill-cancelled")
 }

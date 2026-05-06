@@ -98,6 +98,15 @@ request is treated as the workspace owner.`,
 				cancelServer()
 				shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 				defer cancel()
+				if err := s.Shutdown(shutdownCtx); err != nil {
+					if errors.Is(err, context.DeadlineExceeded) {
+						_ = srv.Close()
+						fmt.Fprintln(cmd.OutOrStdout(),
+							"background runs did not settle before shutdown timeout; force-closed")
+						return nil
+					}
+					return fmt.Errorf("wait background runs: %w", err)
+				}
 				if err := srv.Shutdown(shutdownCtx); err != nil {
 					if errors.Is(err, context.DeadlineExceeded) {
 						// A handler refused to exit within the
