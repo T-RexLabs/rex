@@ -37,9 +37,23 @@ const (
 const EventVersion uint32 = 1
 
 // RunStartedEvent fires when the Executor begins a Run.
+//
+// SpecRefs and FromTask are optional provenance fields recorded once
+// at run start (execution.RUN.1.1). They link a run back to the spec
+// task / ACIDs it was launched against. Old readers skip unknown
+// fields per overview.SYS.3; old writers omit them, keeping the event
+// shape additive per overview.SYS.4.
 type RunStartedEvent struct {
 	RunID     string    `json:"run_id"`
 	StartedAt time.Time `json:"started_at"`
+	// SpecRefs holds fully-qualified ACIDs the run is launched against.
+	// Sourced from --spec-ref flags, the recipe's enclosing task
+	// references, or both, deduplicated.
+	SpecRefs []string `json:"spec_refs,omitempty"`
+	// FromTask is the fully-qualified task reference of the form
+	// `<spec-id>.<task-id>` when launched via --from-task or the
+	// web-UI "Run this task" affordance. Empty for ad-hoc runs.
+	FromTask string `json:"from_task,omitempty"`
 }
 
 // RunCompletedEvent fires once every reachable Node has succeeded.

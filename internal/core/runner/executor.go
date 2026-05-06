@@ -25,6 +25,15 @@ type ExecConfig struct {
 	Sink     EventSink
 	Registry *PrimitiveRegistry
 
+	// SpecRefs are fully-qualified ACIDs the run is launched against
+	// (execution.RUN.1.1). Recorded once on RunStartedEvent. Empty
+	// for ad-hoc runs.
+	SpecRefs []string
+	// FromTask is the fully-qualified `<spec-id>.<task-id>` reference
+	// when the run was launched from a spec recipe (execution.RUN.1.1).
+	// Empty for ad-hoc runs.
+	FromTask string
+
 	// Now and Sleep are injectable so tests can drive retry timing
 	// without burning real time (overview.ENG.4). When nil, time.Now
 	// and time.Sleep are used.
@@ -80,6 +89,8 @@ func (e *Executor) Run(ctx context.Context) (*RunState, error) {
 	if err := e.emitApply(state, RunStartedEvent{
 		RunID:     e.cfg.RunID,
 		StartedAt: startedAt,
+		SpecRefs:  dedupeNonEmpty(e.cfg.SpecRefs),
+		FromTask:  e.cfg.FromTask,
 	}); err != nil {
 		return state, err
 	}
@@ -274,6 +285,32 @@ func findNode(dag DAG, id NodeID) (Node, bool) {
 		}
 	}
 	return Node{}, false
+}
+
+// dedupeNonEmpty preserves order, drops empty strings, and removes
+// duplicates. Used to canonicalise RunStartedEvent.SpecRefs so the
+// same ACID arriving from `--spec-ref` and from a recipe's task
+// references doesn't appear twice.
+func dedupeNonEmpty(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	seen := make(map[string]struct{}, len(in))
+	for _, v := range in {
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // dependenciesMet reports whether every in-edge to id has a Succeeded

@@ -48,6 +48,11 @@ type RunSummary struct {
 	StartedAt  time.Time
 	EndedAt    time.Time
 	NodeEvents int
+	// SpecRefs and FromTask are folded from RunStartedEvent and let
+	// list/show surfaces filter or display run provenance
+	// (execution.RUN.1.1, execution.RUN.1.2).
+	SpecRefs []string
+	FromTask string
 }
 
 // FoldEvent applies a decoded runner event to the summary. Returns
@@ -71,6 +76,12 @@ func (s *RunSummary) FoldEvent(decoded any) bool {
 	case RunStartedEvent:
 		if s.StartedAt.IsZero() {
 			s.StartedAt = ev.StartedAt
+		}
+		if len(s.SpecRefs) == 0 && len(ev.SpecRefs) > 0 {
+			s.SpecRefs = append(s.SpecRefs, ev.SpecRefs...)
+		}
+		if s.FromTask == "" {
+			s.FromTask = ev.FromTask
 		}
 	case RunCompletedEvent:
 		s.Status = RunStatusCompleted
