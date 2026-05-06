@@ -262,7 +262,7 @@ func renderFrameCardHTML(row runEventRow, fv *frameView) string {
 	case "agent_text":
 		body = `<div class="frame-body frame-text" data-frame-text>` + html.EscapeString(fv.Text) + `</div>`
 	case "agent_thought":
-		body = `<div class="frame-body frame-text frame-thought">` + html.EscapeString(fv.Text) + `</div>`
+		body = `<div class="frame-body frame-text frame-thought" data-frame-text>` + html.EscapeString(fv.Text) + `</div>`
 	case "tool_call":
 		body = `<div class="frame-body frame-tool"><span class="tool-arrow">→</span>` +
 			`<code class="tool-name">` + html.EscapeString(fv.ToolName) + `</code>`

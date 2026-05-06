@@ -72,6 +72,15 @@
             <span class="field-hint">Submitted as the initial prompt to the harness session.</span>
           </label>
 
+          <label class="field full">
+            <span class="field-label">interaction loop</span>
+            <label>
+              <input type="checkbox" name="interactive" value="1" {{if .Interactive}}checked{{end}} {{if ne .RunType "harness"}}disabled{{end}}>
+              keep this harness run open for follow-up replies from the run page
+            </label>
+            <span class="field-hint">Enable this when you expect back-and-forth Q&A in one run session.</span>
+          </label>
+
           {{if .ShowModel}}
           <label class="field" id="run-model-field" {{if not .ModelOptions}}hidden{{end}}>
             <span class="field-label">model</span>

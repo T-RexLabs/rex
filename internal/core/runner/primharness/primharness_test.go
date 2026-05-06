@@ -29,6 +29,9 @@ func TestMain(m *testing.M) {
 	case "slow":
 		runSlowHarness()
 		return
+	case "interactive":
+		runInteractiveHarness()
+		return
 	case "fail":
 		os.Exit(2)
 	}
@@ -77,6 +80,34 @@ func runSlowHarness() {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func runInteractiveHarness() {
+	r := acp.NewReader(os.Stdin)
+	w := acp.NewWriter(os.Stdout)
+
+	newRaw, err := r.Next()
+	if err != nil || newRaw.Message.Method != acp.MethodSessionNew {
+		return
+	}
+	newResp, _ := acp.NewResponse(newRaw.Message.ID, acp.SessionNewResult{SessionID: "mock-interactive"})
+	_ = w.Write(newResp)
+
+	for {
+		promptRaw, err := r.Next()
+		if err != nil {
+			return
+		}
+		if promptRaw.Message.Method != acp.MethodSessionPrompt {
+			continue
+		}
+		n, _ := acp.NewNotification("session/update", map[string]any{
+			"update": map[string]string{"sessionUpdate": "agent_message_chunk", "text": "ack"},
+		})
+		_ = w.Write(n)
+		promptResp, _ := acp.NewResponse(promptRaw.Message.ID, acp.SessionPromptResult{StopReason: "end_turn"})
+		_ = w.Write(promptResp)
 	}
 }
 
@@ -290,5 +321,35 @@ func TestHarnessInvocationFrameObserverConcurrency(t *testing.T) {
 	}
 	if calls.Load() != 5 {
 		t.Fatalf("observer calls: got %d want 5", calls.Load())
+	}
+}
+
+func TestHarnessInvocationSupportsMultipleUserTurns(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		Command: []string{os.Args[0]},
+		Env:     map[string]string{"REX_TEST_HARNESS_MODE": "interactive"},
+		Prompt:  "first",
+	}
+	var turns atomic.Int32
+	out, err := runPrim(t, cfg, Options{
+		OnInput: func(_ context.Context, _ string) (string, error) {
+			switch turns.Add(1) {
+			case 1:
+				return "second", nil
+			default:
+				return "", nil
+			}
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if out.SessionID != "mock-interactive" {
+		t.Fatalf("session: got %q", out.SessionID)
+	}
+	if out.FrameCount != 7 {
+		t.Fatalf("frame count: got %d want 7 (new resp + 2x[user+update+resp])", out.FrameCount)
 	}
 }

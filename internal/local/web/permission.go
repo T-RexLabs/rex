@@ -34,11 +34,9 @@ import (
 // returns 409 Conflict — the runner only honours the first
 // resolution and any later ones would be confusing.
 //
-// Wired-into-runner: as of v1 the harness adapter that emits
-// permission.requested events doesn't ship yet, so this endpoint
-// is exercised by manual seeding and tests. The wire format is
-// stable; once a real adapter lands the same template + handler
-// power the live flow.
+// Wired-into-runner: interactive harness runs resolve
+// session/request_permission through this endpoint. Tests also seed
+// permission events directly to exercise the UI in isolation.
 func (s *Server) handleRunPermission(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("id")
 	if runID == "" {
@@ -124,6 +122,11 @@ func (s *Server) handleRunPermission(w http.ResponseWriter, r *http.Request) {
 	if _, err := ws.Writer.Append(evType, runner.EventVersion, payload); err != nil {
 		http.Error(w, "web: append event: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if decision == "grant" {
+		s.interactions.resolvePermission(runID, reqID, permissionResolution{Granted: true, Note: note})
+	} else {
+		s.interactions.resolvePermission(runID, reqID, permissionResolution{Granted: false, Note: note})
 	}
 	http.Redirect(w, r, "/runs/"+runID+"#"+reqID, http.StatusSeeOther)
 }

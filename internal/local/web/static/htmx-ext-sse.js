@@ -47,6 +47,19 @@
     }
   }
 
+  function dispatchAfterSwap(target) {
+    if (!target) return;
+    var detail = { target: target };
+    var evt;
+    try {
+      evt = new CustomEvent('htmx:afterSwap', { bubbles: true, detail: detail });
+    } catch (_) {
+      evt = document.createEvent('CustomEvent');
+      evt.initCustomEvent('htmx:afterSwap', true, false, detail);
+    }
+    target.dispatchEvent(evt);
+  }
+
   function resolveTarget(el) {
     var sel = el.getAttribute('hx-target');
     if (!sel) return el;
@@ -75,6 +88,7 @@
       es.addEventListener(swapName, function (evt) {
         var target = resolveTarget(el);
         applySwap(target, swapMode, evt.data);
+        dispatchAfterSwap(target);
       });
       es.addEventListener('error', function () {
         // Browser will retry on transient errors; on a hard

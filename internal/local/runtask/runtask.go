@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -242,6 +243,22 @@ type HarnessRunRequest struct {
 	// silently drops; the CLI typically wires this to its own
 	// os.Stderr so the user sees what the bridge is doing.
 	OnStderr func(line string)
+	// OnInput is called after each completed harness turn to
+	// optionally provide the next user prompt in the same ACP
+	// session. Returning "" ends the interaction. Nil keeps the
+	// prior one-shot behaviour (single prompt, single turn).
+	OnInput func(ctx context.Context, sessionID string) (string, error)
+	// OnPermission resolves harness session/request_permission
+	// requests. Nil denies by default.
+	OnPermission func(ctx context.Context, req runner.PermissionRequestedEvent) (PermissionResolution, error)
+}
+
+// PermissionResolution is the user-facing decision Rex sends back to
+// the harness for one permission request.
+type PermissionResolution struct {
+	Granted  bool
+	Approver string
+	Note     string
 }
 
 // StartHarnessRun executes a one-node harness DAG synchronously
@@ -299,13 +316,26 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 	// for harness.frame events too.
 	sink := &writerSink{w: ws.Writer, onEvent: req.OnEvent}
 	frameWriter := buildHarnessFrameWriter(sink, runID, runner.NodeID(nodeID))
+	var permissionSeq atomic.Int64
+	nextPermissionID := func() string {
+		return fmt.Sprintf("%s.permission.%d", runID, permissionSeq.Add(1))
+	}
+	permissionHandler := buildHarnessPermissionHandler(
+		sink,
+		runID,
+		runner.NodeID(nodeID),
+		nextPermissionID,
+		req.OnPermission,
+	)
 
 	reg := runner.NewPrimitiveRegistry()
 	reg.Register(primharness.PrimitiveType, primharness.New(primharness.Options{
-		WorkspaceID: ws.ID,
-		Adapters:    req.Adapters,
-		OnStderr:    req.OnStderr,
-		OnFrame:     frameWriter,
+		WorkspaceID:  ws.ID,
+		Adapters:     req.Adapters,
+		OnStderr:     req.OnStderr,
+		OnFrame:      frameWriter,
+		OnInput:      req.OnInput,
+		OnPermission: permissionHandler,
 	}))
 
 	exec, err := runner.NewExecutor(runner.ExecConfig{
@@ -322,6 +352,91 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 		return nil, err
 	}
 	return &ShellRunResult{RunID: runID, State: state}, nil
+}
+
+func buildHarnessPermissionHandler(
+	sink *writerSink,
+	runID string,
+	nodeID runner.NodeID,
+	nextRequestID func() string,
+	resolve func(ctx context.Context, req runner.PermissionRequestedEvent) (PermissionResolution, error),
+) acp.PermissionHandler {
+	return func(ctx context.Context, req acp.PermissionRequest) (acp.PermissionDecision, error) {
+		requestID := nextRequestID()
+		requested := runner.PermissionRequestedEvent{
+			RunID:       runID,
+			NodeID:      nodeID,
+			RequestID:   requestID,
+			Tool:        req.Tool,
+			Args:        append(json.RawMessage(nil), req.Args...),
+			Reason:      req.Reason,
+			RequestedAt: time.Now().UTC(),
+		}
+		if payload, err := json.Marshal(requested); err == nil {
+			_ = sink.Append(runner.EventTypePermissionRequested, runner.EventVersion, payload)
+		}
+
+		if resolve == nil {
+			note := "rex: no permission resolver installed"
+			denied := runner.PermissionDeniedEvent{
+				RunID:     runID,
+				NodeID:    nodeID,
+				RequestID: requestID,
+				DeniedAt:  time.Now().UTC(),
+				Reason:    note,
+			}
+			if payload, err := json.Marshal(denied); err == nil {
+				_ = sink.Append(runner.EventTypePermissionDenied, runner.EventVersion, payload)
+			}
+			return acp.PermissionDecision{Granted: false, Note: note}, nil
+		}
+
+		resolution, err := resolve(ctx, requested)
+		if err != nil {
+			note := "rex: permission resolver error: " + err.Error()
+			denied := runner.PermissionDeniedEvent{
+				RunID:     runID,
+				NodeID:    nodeID,
+				RequestID: requestID,
+				Approver:  resolution.Approver,
+				DeniedAt:  time.Now().UTC(),
+				Reason:    note,
+			}
+			if payload, mErr := json.Marshal(denied); mErr == nil {
+				_ = sink.Append(runner.EventTypePermissionDenied, runner.EventVersion, payload)
+			}
+			return acp.PermissionDecision{Granted: false, Note: note}, nil
+		}
+
+		note := strings.TrimSpace(resolution.Note)
+		if resolution.Granted {
+			granted := runner.PermissionGrantedEvent{
+				RunID:     runID,
+				NodeID:    nodeID,
+				RequestID: requestID,
+				Approver:  resolution.Approver,
+				GrantedAt: time.Now().UTC(),
+				Note:      note,
+			}
+			if payload, err := json.Marshal(granted); err == nil {
+				_ = sink.Append(runner.EventTypePermissionGranted, runner.EventVersion, payload)
+			}
+			return acp.PermissionDecision{Granted: true, Note: note}, nil
+		}
+
+		denied := runner.PermissionDeniedEvent{
+			RunID:     runID,
+			NodeID:    nodeID,
+			RequestID: requestID,
+			Approver:  resolution.Approver,
+			DeniedAt:  time.Now().UTC(),
+			Reason:    note,
+		}
+		if payload, err := json.Marshal(denied); err == nil {
+			_ = sink.Append(runner.EventTypePermissionDenied, runner.EventVersion, payload)
+		}
+		return acp.PermissionDecision{Granted: false, Note: note}, nil
+	}
 }
 
 // buildHarnessFrameWriter returns a primharness.OnFrame callback

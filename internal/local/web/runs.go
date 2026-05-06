@@ -137,12 +137,13 @@ func loadRunsList(opts Options) (runsListData, error) {
 // replay).
 type runDetailData struct {
 	pageData
-	RunID       string
-	Name        string
-	Status      runner.RunStatus
-	Events      []runEventRow
-	LastEventID string
-	Debug       bool
+	RunID        string
+	Name         string
+	Status       runner.RunStatus
+	Events       []runEventRow
+	LastEventID  string
+	AcceptsInput bool
+	Debug        bool
 }
 
 // loadRunDetail walks events.log and returns the records whose

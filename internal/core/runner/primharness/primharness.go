@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -80,6 +81,7 @@ type Options struct {
 	WorkspaceID  string
 	OnFrame      acp.FrameObserver
 	OnPermission acp.PermissionHandler
+	OnInput      func(ctx context.Context, sessionID string) (string, error)
 
 	// Adapters is the registry consulted when Config.Harness is set.
 	// Nil means "use adapter.Default()", which is what production
@@ -202,48 +204,71 @@ func run(ctx context.Context, opts Options, in runner.PrimitiveInput) (runner.Pr
 		return runner.PrimitiveOutput{}, fmt.Errorf("primharness: session/new: %w", err)
 	}
 
-	// Synthesize a user_message_chunk frame so the run timeline
-	// shows the prompt the operator sent. The harness adapter only
-	// observes inbound frames (responses + harness-sent
-	// notifications); without this, the user's input would never
-	// appear in events.log alongside the model's reply. Routed
-	// through the local observer so the frame counter ticks
-	// whether or not opts.OnFrame is configured.
-	if synth := buildUserPromptFrame(res.SessionID, cfg.Prompt); synth != nil {
-		observer(*synth)
-	}
+	currentPrompt := cfg.Prompt
+	for {
+		// Synthesize a user_message_chunk frame so the run timeline
+		// shows the prompt the operator sent. The harness adapter only
+		// observes inbound frames (responses + harness-sent
+		// notifications); without this, the user's input would never
+		// appear in events.log alongside the model's reply. Routed
+		// through the local observer so the frame counter ticks
+		// whether or not opts.OnFrame is configured.
+		if synth := buildUserPromptFrame(res.SessionID, currentPrompt); synth != nil {
+			observer(*synth)
+		}
 
-	// session/prompt delivers the user's message. The bridge
-	// streams session/update notifications throughout this call
-	// (captured via OnFrame above) and returns a stop_reason when
-	// the model is done. The call is run in a goroutine so the
-	// select below can race it against ctx/timeout cancellation.
-	promptDone := make(chan error, 1)
-	go func() {
-		_, err := client.SendPrompt(cmdCtx, acp.SessionPromptParams{
-			SessionID: res.SessionID,
-			Prompt:    acp.TextPromptBlocks(cfg.Prompt),
-		})
-		promptDone <- err
-	}()
+		// session/prompt delivers one user message turn. The bridge
+		// streams session/update notifications throughout this call
+		// (captured via OnFrame above) and returns a stop_reason when
+		// the model is done. The call is run in a goroutine so the
+		// select below can race it against ctx/timeout cancellation.
+		promptDone := make(chan error, 1)
+		go func(prompt string) {
+			_, err := client.SendPrompt(cmdCtx, acp.SessionPromptParams{
+				SessionID: res.SessionID,
+				Prompt:    acp.TextPromptBlocks(prompt),
+			})
+			promptDone <- err
+		}(currentPrompt)
 
-	var promptErr error
-	select {
-	case promptErr = <-promptDone:
-	case <-cmdCtx.Done():
-		// Cancel via the protocol first, then close transports.
-		cancelCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_ = client.CancelSession(cancelCtx, res.SessionID)
-		cancel()
-		// Drain promptDone so the goroutine returns.
-		<-promptDone
+		var promptErr error
+		select {
+		case promptErr = <-promptDone:
+		case <-cmdCtx.Done():
+			// Cancel via the protocol first, then close transports.
+			cancelCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			_ = client.CancelSession(cancelCtx, res.SessionID)
+			cancel()
+			// Drain promptDone so the goroutine returns.
+			<-promptDone
+		}
+		if promptErr != nil && !errors.Is(cmdCtx.Err(), context.Canceled) && !errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
+			_ = client.Close()
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			return runner.PrimitiveOutput{}, fmt.Errorf("primharness: session/prompt: %w", promptErr)
+		}
+
+		if opts.OnInput == nil {
+			break
+		}
+		nextPrompt, err := opts.OnInput(cmdCtx, res.SessionID)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				break
+			}
+			_ = client.Close()
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			return runner.PrimitiveOutput{}, fmt.Errorf("primharness: await input: %w", err)
+		}
+		nextPrompt = strings.TrimSpace(nextPrompt)
+		if nextPrompt == "" {
+			break
+		}
+		currentPrompt = nextPrompt
 	}
 	_ = client.Close()
-	if promptErr != nil && !errors.Is(cmdCtx.Err(), context.Canceled) && !errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		return runner.PrimitiveOutput{}, fmt.Errorf("primharness: session/prompt: %w", promptErr)
-	}
 
 	waitErr := cmd.Wait()
 	duration := time.Since(startedAt)

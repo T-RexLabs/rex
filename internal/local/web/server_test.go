@@ -99,6 +99,9 @@ func TestStaticAssetsServed(t *testing.T) {
 		if !strings.Contains(strings.ToLower(body), mustContain) {
 			t.Fatalf("%s: missing %q in body of length %d", path, mustContain, len(body))
 		}
+		if path == "/static/htmx-ext-sse.js" && !strings.Contains(body, "htmx:afterSwap") {
+			t.Fatalf("%s: missing htmx afterSwap dispatch", path)
+		}
 	}
 }
 

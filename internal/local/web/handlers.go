@@ -70,6 +70,7 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.NavSection = "runs"
+	data.AcceptsInput = s.interactions.acceptsInput(id)
 	data.Debug = r.URL.Query().Get("debug") == "1"
 	s.render(w, r, "run_detail.tmpl", data)
 }

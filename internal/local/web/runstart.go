@@ -1,11 +1,13 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
 	"sync/atomic"
 
+	"github.com/asabla/rex/internal/core/runner"
 	"github.com/asabla/rex/internal/core/runner/adapter"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
 	"github.com/asabla/rex/internal/local/runtask"
@@ -14,13 +16,14 @@ import (
 // runNewData backs the run_new.tmpl form page.
 type runNewData struct {
 	pageData
-	RunType string
-	Error   string
-	Shell   string
-	Harness string
-	Prompt  string
-	Model   string
-	Mode    string
+	RunType     string
+	Interactive bool
+	Error       string
+	Shell       string
+	Harness     string
+	Prompt      string
+	Model       string
+	Mode        string
 
 	Harnesses    []harnessFormOption
 	ModelOptions []string
@@ -157,12 +160,13 @@ func (s *Server) handleRunStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d := s.prepareRunNewData(runNewData{
-		RunType: strings.TrimSpace(r.FormValue("run_type")),
-		Shell:   strings.TrimSpace(r.FormValue("shell")),
-		Harness: strings.TrimSpace(r.FormValue("harness")),
-		Prompt:  strings.TrimSpace(r.FormValue("prompt")),
-		Model:   strings.TrimSpace(r.FormValue("model")),
-		Mode:    strings.TrimSpace(r.FormValue("mode")),
+		RunType:     strings.TrimSpace(r.FormValue("run_type")),
+		Interactive: strings.TrimSpace(r.FormValue("interactive")) == "1",
+		Shell:       strings.TrimSpace(r.FormValue("shell")),
+		Harness:     strings.TrimSpace(r.FormValue("harness")),
+		Prompt:      strings.TrimSpace(r.FormValue("prompt")),
+		Model:       strings.TrimSpace(r.FormValue("model")),
+		Mode:        strings.TrimSpace(r.FormValue("mode")),
 	})
 
 	switch d.RunType {
@@ -218,7 +222,15 @@ func (s *Server) handleRunStart(w http.ResponseWriter, r *http.Request) {
 		})
 	case "harness":
 		reg := s.harnessRegistry()
+		s.interactions.register(runID, d.Interactive)
 		startedCh, errCh = s.launchRunAsync(ws, func(onEvent func(eventlog.Record)) error {
+			defer s.interactions.unregister(runID)
+			var onInput func(context.Context, string) (string, error)
+			if d.Interactive {
+				onInput = func(ctx context.Context, _ string) (string, error) {
+					return s.interactions.awaitInput(ctx, runID)
+				}
+			}
 			_, err := runtask.StartHarnessRun(s.ctx, ws, runtask.HarnessRunRequest{
 				Harness:  d.Harness,
 				Prompt:   d.Prompt,
@@ -228,6 +240,14 @@ func (s *Server) handleRunStart(w http.ResponseWriter, r *http.Request) {
 				RunID:    runID,
 				Adapters: reg,
 				OnEvent:  onEvent,
+				OnInput:  onInput,
+				OnPermission: func(ctx context.Context, req runner.PermissionRequestedEvent) (runtask.PermissionResolution, error) {
+					res, err := s.interactions.waitPermission(ctx, runID, req.RequestID)
+					if err != nil {
+						return runtask.PermissionResolution{}, err
+					}
+					return runtask.PermissionResolution{Granted: res.Granted, Note: res.Note}, nil
+				},
 			})
 			return err
 		})

@@ -28,6 +28,21 @@
          hx-target="#run-events"
          hx-swap="beforeend"
          data-debug="{{if .Debug}}1{{else}}0{{end}}">
+  {{if .AcceptsInput}}
+    <form class="permission-form" method="post" action="/runs/{{.RunID}}/input">
+      <div class="permission-row">
+        <span class="permission-label">
+          <span class="pill pill-warn"><i class="dot"></i>interactive session</span>
+          <span class="muted small">send a reply to continue this run</span>
+        </span>
+      </div>
+      <div class="permission-row">
+        <input class="field-input" type="text" name="text" placeholder="your reply">
+        <button class="btn btn-primary" type="submit" name="action" value="send">send</button>
+        <button class="btn" type="submit" name="action" value="end">end interaction</button>
+      </div>
+    </form>
+  {{end}}
   <div class="section-head">
     <h2>events</h2>
     <span class="section-meta">live · streaming from <code>/runs/{{.RunID}}/stream</code></span>
@@ -58,7 +73,7 @@
           {{if eq .Frame.Kind "agent_text"}}
             <div class="frame-body frame-text" data-frame-text>{{.Frame.Text}}</div>
           {{else if eq .Frame.Kind "agent_thought"}}
-            <div class="frame-body frame-text frame-thought">{{.Frame.Text}}</div>
+            <div class="frame-body frame-text frame-thought" data-frame-text>{{.Frame.Text}}</div>
           {{else if eq .Frame.Kind "tool_call"}}
             <div class="frame-body frame-tool">
               <span class="tool-arrow">→</span>
