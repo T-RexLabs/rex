@@ -1,0 +1,100 @@
+# Proposed amendment to specs/execution.yaml.
+#
+# Status:    proposed
+# Date:      2026-05-06
+# Surfaced by:
+#   - Companion to spec-format-amendment-2026-05-06-task-run-recipes.
+#     The spec-format amendment adds `tasks[].run` recipes; this
+#     amendment adds the run-side linkage so a run records which
+#     task and ACIDs it was launched against.
+#
+# All proposed changes are ADDITIVE: optional new fields on the
+# `run.started` event and an optional new CLI flag. Existing event
+# consumers and CLI invocations behave unchanged. overview.SYS.4
+# (additive schema evolution) is preserved; old replay paths that
+# do not understand the new fields skip them per overview.SYS.3.
+
+target: execution
+amendment_kind: additive
+
+changes:
+
+  - kind: update-requirement
+    component: RUN
+    requirement_id: "1"
+    from: "`rex run start [--spec <id>] [--harness <name>] [--prompt <text>]` initiates a run; the prompt and spec context are fed to the harness as the initial message. The default invocation is attached: events stream to the terminal during execution. `--detach` returns once the run is registered and is deferred until backgrounding/daemon support lands. In v1, runs launched from `rex serve` are owned by that process; a graceful `rex serve` shutdown cancels any still-active owned runs before exit rather than leaving them detached."
+    to: "`rex run start [--spec <id>] [--harness <name>] [--prompt <text>] [--from-task <spec-id>.<task-id>] [--spec-ref <ACID>...]` initiates a run; the prompt and spec context are fed to the harness as the initial message. `--from-task` resolves a recipe defined under the named task's `run` block (per `spec-format.TASK.6` / `spec-format.RECIPE.*`) and prefills the harness, prompt, and permission-scope fields from it; explicit flags override the recipe's values. `--spec-ref` may be repeated to record additional fully-qualified ACIDs the run is launched against (e.g. constraint references). The default invocation is attached: events stream to the terminal during execution. `--detach` returns once the run is registered and is deferred until backgrounding/daemon support lands. In v1, runs launched from `rex serve` are owned by that process; a graceful `rex serve` shutdown cancels any still-active owned runs before exit rather than leaving them detached."
+
+  - kind: add-sub-requirement
+    component: RUN
+    new_id: "1.1"
+    new_text: |
+      The `run.started` event carries optional fields recording
+      what the run is meant to satisfy:
+
+        `spec_refs` []string       — fully-qualified ACIDs the run
+                                     is launched against (sourced
+                                     from `--spec-ref`, the recipe's
+                                     enclosing task `references`, or
+                                     both, deduplicated)
+        `from_task`  string        — fully-qualified task reference
+                                     of the form
+                                     `<spec-id>.<task-id>` when the
+                                     run was launched via
+                                     `--from-task` or the web-UI
+                                     "Run this task" affordance;
+                                     omitted for ad-hoc runs
+
+      Both fields are optional and additive (overview.SYS.4). Old
+      readers skip unknown fields per overview.SYS.3. The fields
+      are recorded once at run start and never modified afterwards;
+      they are part of the run's provenance, not its mutable state.
+
+  - kind: add-sub-requirement
+    component: RUN
+    new_id: "1.2"
+    new_text: |
+      The CLI and web UI both expose run discovery by spec
+      reference: `rex run list --spec-ref <ACID>` filters runs whose
+      `run.started.spec_refs` contains the ACID, and `/runs?spec=<ACID>`
+      provides the same filter in the web UI. `/specs/<id>` renders
+      a "Runs citing this spec" panel listing runs whose
+      `spec_refs` contain any ACID prefixed by `<id>.`.
+
+notes: |
+  Companion amendment: spec-format-amendment-2026-05-06-task-run-
+  recipes.yaml (defines the `tasks[].run` recipe shape this
+  amendment consumes via `--from-task`).
+
+  Implementation order: this amendment can land before, after, or
+  alongside the spec-format amendment. The two are independent at
+  the storage and event layer:
+
+    - This amendment alone (without the spec-format change) is
+      still useful: `rex run start --spec-ref foo.BAR.1` records
+      provenance even with no recipe in the YAML.
+    - The spec-format amendment alone (without this one) is less
+      useful: recipes can be drafted in YAML but `--from-task`
+      cannot record what task the run came from, so the linkage
+      is one-way (spec → run-launch, never run → spec).
+
+  Recommended order: land this amendment first (small, self-
+  contained), then the spec-format amendment, then the validator
+  + UI work that consumes both.
+
+verification:
+
+  - existing_test: internal/core/runner/events_test.go
+    notes: |
+      Existing `RunStartedEvent` decode tests cover the
+      additive-field case via the registry's
+      `decodeAs[RunStartedEvent]` path. New tests should cover
+      both fields populated, both omitted, and a forward-
+      compatibility case where the on-disk JSON contains an
+      unknown extra field.
+
+  - existing_test: internal/core/runner/match_test.go
+    notes: |
+      Replay matching does not depend on the new fields, but a
+      regression test should confirm replay still works for events
+      written before and after the amendment lands.

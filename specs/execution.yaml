@@ -5,7 +5,7 @@ metadata:
   name: Execution engine (DAG + ACP)
   state: draft
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-06T00:00:00Z
 
 description: |
   Rex's execution engine is an embedded event-sourced DAG executor written
@@ -104,7 +104,35 @@ components:
   RUN:
     name: Run lifecycle and CLI
     requirements:
-      "1": "`rex run start [--spec <id>] [--harness <name>] [--prompt <text>]` initiates a run; the prompt and spec context are fed to the harness as the initial message. The default invocation is attached: events stream to the terminal during execution. `--detach` returns once the run is registered and is deferred until backgrounding/daemon support lands."
+      "1": "`rex run start [--spec <id>] [--harness <name>] [--prompt <text>] [--from-task <spec-id>.<task-id>] [--spec-ref <ACID>...]` initiates a run; the prompt and spec context are fed to the harness as the initial message. `--from-task` resolves a recipe defined under the named task's `run` block (per `spec-format.TASK.6` / `spec-format.RECIPE.*`) and prefills the harness, prompt, and permission-scope fields from it; explicit flags override the recipe's values. `--spec-ref` may be repeated to record additional fully-qualified ACIDs the run is launched against (e.g. constraint references). The default invocation is attached: events stream to the terminal during execution. `--detach` returns once the run is registered and is deferred until backgrounding/daemon support lands. In v1, runs launched from `rex serve` are owned by that process; a graceful `rex serve` shutdown cancels any still-active owned runs before exit rather than leaving them detached."
+      "1.1": |
+        The `run.started` event carries optional fields recording
+        what the run is meant to satisfy:
+
+          `spec_refs` []string       — fully-qualified ACIDs the run
+                                       is launched against (sourced
+                                       from `--spec-ref`, the recipe's
+                                       enclosing task `references`, or
+                                       both, deduplicated)
+          `from_task`  string        — fully-qualified task reference
+                                       of the form
+                                       `<spec-id>.<task-id>` when the
+                                       run was launched via
+                                       `--from-task` or the web-UI
+                                       "Run this task" affordance;
+                                       omitted for ad-hoc runs
+
+        Both fields are optional and additive (overview.SYS.4). Old
+        readers skip unknown fields per overview.SYS.3. The fields
+        are recorded once at run start and never modified afterwards;
+        they are part of the run's provenance, not its mutable state.
+      "1.2": |
+        The CLI and web UI both expose run discovery by spec
+        reference: `rex run list --spec-ref <ACID>` filters runs whose
+        `run.started.spec_refs` contains the ACID, and `/runs?spec=<ACID>`
+        provides the same filter in the web UI. `/specs/<id>` renders
+        a "Runs citing this spec" panel listing runs whose
+        `spec_refs` contain any ACID prefixed by `<id>.`.
       "2": "`rex run attach <run-id>` streams events live via the same file-tail mechanism the web UI uses; replays every existing matching event then tails new ones. `--since-start` is implicit (every prior event is replayed). `rex run watch` is kept as a deprecated alias."
       "3": "`rex run show <run-id>` displays the full transcript and DAG status, working offline"
       "4": "`rex run list` shows recent runs with status, harness, spec, duration"

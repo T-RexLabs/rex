@@ -1,0 +1,366 @@
+# Proposed amendment to specs/spec-format.yaml.
+#
+# Status:    proposed
+# Date:      2026-05-06
+# Surfaced by:
+#   - User request: "find an easy way of building things based on
+#     what's been specified" — making the spec the entry point to
+#     starting a run, not just a contract to cite afterwards.
+#
+# All proposed changes are ADDITIVE: a new optional sub-requirement
+# on TASK plus a new optional component (RECIPE) describing the
+# shape of an embedded runnable scaffold. No existing requirement
+# text changes meaning. spec-format.COMPAT.1 ("v1 spec format is
+# frozen once published — no removal of recognized keys, no
+# semantic changes to existing fields") is preserved: the new
+# `tasks[].run` field is optional and old parsers warn-and-continue
+# under COMPAT.3.
+#
+# Once accepted, fold the new TASK sub-requirement and the new
+# RECIPE component into spec-format.yaml, add a `define-run-recipes`
+# task, bump metadata.updated_at, and move this file to
+# specs/_proposed/_accepted/.
+
+amendment_for: spec-format
+amendment_date: 2026-05-06
+state: proposed
+
+summary: |
+  Today, specs are a contract: implementations cite ACIDs to prove
+  which requirements they satisfy. The linkage runs one direction —
+  from code/runs back to specs — and is established only after the
+  fact, in a commit message or PR description.
+
+  This amendment adds the inverse linkage: a spec task may carry a
+  RECIPE describing how to launch a run that implements it. The
+  recipe is consumed by both surfaces:
+
+    - Web UI: `/specs/<id>` renders a "Run this task" affordance per
+      task that has a recipe; clicking it pre-fills the new-run form.
+    - CLI: `rex run start --from-task <spec-id>.<task-id>` resolves
+      the recipe and starts the run with the same prefilled args.
+
+  The recipe maps directly to the executor's existing primitive set
+  (primshell, primspec, primharness) — no new primitives are
+  introduced. A recipe describes a single primitive invocation, not
+  a multi-node DAG; multi-node spec-driven workflows are deferred.
+
+  Crucially, this amendment is the spec-format half of a two-part
+  change. The matching executor-side change adds an optional
+  `spec_refs []string` to RunStartedEvent so a run records which
+  task/ACIDs it was launched against. That is an `execution.yaml`
+  amendment, not a spec-format one, and is filed separately.
+
+migration_impact: |
+  No content changes required in any of the 14 existing specs. The
+  `tasks[].run` field is optional. A spec without recipes behaves
+  exactly as today; a spec with recipes gains a new affordance in
+  the UI and CLI without touching its existing task list, components,
+  or constraints.
+
+  Validator impact: the new field needs schema validation (kind enum,
+  required-args-per-kind), and template-extension support so a
+  workspace template can mandate or forbid recipes. The validator
+  task is filed as a new spec-format task (`define-run-recipes`).
+
+changes:
+
+  - id: tasks-may-carry-recipes
+    title: Allow tasks to carry an optional run recipe
+    affects: [TASK.2]
+    rationale: |
+      Tasks are already the unit at which work is described. Adding
+      a recipe to a task keeps the authoring locus in one place: the
+      same human who writes the task description writes the snippet
+      that launches the work. The alternative — a separate top-level
+      `runs` block keyed by task id — splits authoring across two
+      sites and makes drift between task and recipe a constant risk.
+
+      The recipe is optional. A task without a recipe degrades
+      gracefully: the UI shows no run affordance for it, and the CLI
+      reports "no recipe" when --from-task is given. Tasks that are
+      not actually runnable (research, design, "discuss with X")
+      simply omit the field.
+
+    edits:
+
+      - target: TASK
+        kind: add-sub-requirement
+        new_id: "6"
+        new_text: |
+          A task may carry an optional `run` field whose shape is
+          defined by the `RECIPE` component. The field is a single
+          recipe object, not a list — a task represents one unit of
+          work and has at most one canonical way to launch it.
+          Multi-step workflows are out of scope for v1 recipes.
+
+      - target: TASK
+        kind: add-sub-requirement
+        new_id: "6.1"
+        new_text: |
+          A recipe is a hint, not a guarantee. The validator confirms
+          the recipe is well-formed (RECIPE schema), but does not
+          attempt to execute it. A recipe whose `kind` references a
+          primitive the local executor does not know about is an
+          error in strict mode and a warning in lenient mode,
+          matching the strict-vs-lenient split in `VAL.2`. This
+          keeps typos like `kind: harnes` from passing the default
+          `rex spec validate` invocation, while still letting read
+          paths under schema drift continue working.
+
+  - id: introduce-recipe-component
+    title: Introduce the RECIPE component
+    affects: [COMP.1]
+    rationale: |
+      The recipe shape has enough internal structure (kind, kind-
+      specific args, optional permission scope, optional prompt
+      templating) to warrant its own component rather than living as
+      sub-requirements of TASK. This keeps TASK focused on
+      describing tasks, and lets RECIPE evolve (new kinds, new
+      argument fields) without bloating TASK.
+
+      The kinds enumerated here mirror the executor's three v1
+      primitives one-to-one. New primitives (added post-v1) gain new
+      kinds via additive amendments; old recipes never break.
+
+    edits:
+
+      - target: COMPONENTS
+        kind: add-component
+        new_id: RECIPE
+        new_name: Run recipe shape
+        new_requirements:
+
+          "1": |
+            A recipe is a YAML mapping with a required `kind` field
+            and kind-specific argument fields. Recognized v1 kinds
+            are `shell`, `spec_validate`, and `harness`. Unknown
+            kinds produce a validator warning, not an error
+            (TASK.6.1).
+
+          "2": |
+            `kind: shell` recipes have a required `command` field
+            (a non-empty list of strings, executed without an
+            intermediate shell — argv[0] is the program, argv[1:]
+            are the arguments). String commands are not accepted;
+            authors that need a shell write
+            `["bash", "-lc", "..."]` explicitly. This avoids
+            shell-quoting footguns and keeps the executor's
+            primshell invocation deterministic. The recipe may
+            include `cwd` (path relative to the workspace root) and
+            `env` (mapping of name to value). Each list element is
+            run through PROMPT.1 substitution before execution.
+
+          "3": |
+            `kind: spec_validate` recipes have an optional `paths`
+            field (list of glob patterns relative to the workspace
+            root); when omitted, the recipe targets `specs/*.yaml`.
+            They may include a `strict` boolean (defaults to true,
+            matching `rex spec validate`'s default mode).
+
+          "4": |
+            `kind: harness` recipes have a required `harness` field
+            (the harness handle, e.g. `claude-code`, `codex`,
+            `opencode`, `copilot`, `cursor`) and a required `prompt`
+            field (string or template — see PROMPT.1). They may
+            include `permission_scope`, a hint to the executor about
+            how aggressively to auto-approve permission requests
+            during the session. The v1 enumerated values are:
+
+              `read_only`     — auto-deny anything that mutates
+                                state; pass read-style requests to
+                                the human prompt as today
+              `workspace`     — auto-approve requests scoped within
+                                the workspace root; everything else
+                                still prompts (the default when
+                                omitted)
+              `unrestricted`  — pass every request to the human
+                                prompt without auto-policy; useful
+                                for exploratory recipes
+
+            This vocabulary is recipe-format-only. The executor's
+            existing PermissionRequested/Granted/Denied flow remains
+            authoritative for individual decisions; the scope is a
+            policy hint, not an override.
+
+          "5": |
+            A recipe may include an optional `description` (string,
+            free-form) that surfaces in the UI alongside the run
+            button and in `--from-task` dry-run output. When omitted,
+            the enclosing task's description is shown.
+
+  - id: prompt-templating
+    title: Define prompt template substitution for harness recipes
+    affects: []
+    rationale: |
+      Harness recipes nearly always want to embed the task's own
+      description and ACIDs into the prompt — that's the point of
+      attaching the recipe to the task. Without templating, authors
+      either duplicate the task text into the prompt (drift risk) or
+      write a thin recipe that says "see task above" (loses context
+      when the harness reads only the prompt).
+
+      Templating is intentionally minimal: a fixed set of double-
+      brace tokens, no expressions, no loops. Anything more powerful
+      lands the format in template-engine-selection territory, which
+      is out of scope.
+
+    edits:
+
+      - target: COMPONENTS
+        kind: add-sub-requirement
+        component: RECIPE
+        new_id: "PROMPT.1"
+        new_text: |
+          Harness `prompt` strings and shell `command` strings may
+          embed the following substitution tokens, evaluated at
+          recipe-resolution time (CLI invocation or web-UI
+          prefill):
+
+            {{spec.id}}              — the enclosing spec's metadata.id
+            {{spec.name}}            — the enclosing spec's metadata.name
+            {{task.id}}              — the enclosing task's id
+            {{task.description}}     — the enclosing task's description
+            {{task.references}}      — the task's references list,
+                                       comma-joined as fully-qualified ACIDs
+
+          Unknown tokens are an error in strict validation mode and
+          a warning in lenient mode (matching the unknown-kind
+          handling in `TASK.6.1`). Templating is a recipe-resolution-
+          time concern; the YAML on disk stores the raw template
+          string.
+
+  - id: template-extensibility
+    title: Workspace templates may constrain recipes
+    affects: [TMPL.2]
+    rationale: |
+      Some workspaces will want every actionable task to have a
+      recipe (org policy: "if it can be run, it must be runnable
+      from the spec"). Other workspaces will want to forbid recipes
+      entirely (policy: "specs are descriptive, not executable").
+      Both are reasonable; neither should be hardcoded.
+
+      The natural extension point is the existing template-
+      extension mechanism. A workspace template may declare
+      recipe-related requirements; the validator's two-pass
+      validation (TMPL.3) applies them after global v1 schema
+      validation.
+
+    edits:
+
+      - target: TMPL
+        kind: add-sub-requirement
+        new_id: "2.1"
+        new_text: |
+          A workspace template may declare a
+          `extra.recipes_required: true` flag (every actionable
+          task must carry a recipe; the template defines what
+          "actionable" means via a list of task states the rule
+          applies to) or `extra.recipes_forbidden: true` (no task
+          may carry a recipe). The two flags are mutually exclusive.
+          The validator runs the appropriate check in the second
+          pass per TMPL.3.
+
+  - id: new-task
+    title: Implement and validate run recipes
+    affects: []
+    rationale: |
+      Add a new task to spec-format's own tasks list so the work to
+      land this amendment is visible inside the spec it amends.
+    edits:
+
+      - target: TASKS
+        kind: add-task
+        new_task:
+          id: define-run-recipes
+          description: |
+            Implement run recipes: extend the Go types under
+            internal/core/specfmt/, add validator support for the
+            RECIPE schema and PROMPT.1 templating, wire
+            `rex run start --from-task` in the CLI, and add the
+            web UI run-button affordance to /specs/<id>.
+          state: todo
+          references: [TASK.6, TASK.6.1, RECIPE.1, RECIPE.2, RECIPE.3, RECIPE.4, RECIPE.5, PROMPT.1, TMPL.2.1]
+
+verification:
+
+  - existing_spec: spec-format.yaml
+    notes: |
+      Self-affected. After folding, this spec gains TASK.6, TASK.6.1,
+      a new RECIPE component, and TMPL.2.1. No existing requirement
+      text changes meaning. The new `define-run-recipes` task is the
+      single piece of new work introduced by the amendment.
+
+  - existing_spec: execution.yaml
+    notes: |
+      Not directly affected by this amendment. The complementary
+      executor change (adding `spec_refs []string` to
+      RunStartedEvent) is a separate execution.yaml amendment;
+      filing it alongside this one keeps the two halves reviewable
+      together.
+
+  - existing_spec: web-ui.yaml
+    notes: |
+      Will gain a small amendment alongside the implementation task
+      to spec the "Run this task" affordance on /specs/<id>. Not
+      blocking for this amendment's signoff.
+
+resolved_during_review:
+
+  - id: shell-command-shape
+    decision: list-only
+    notes: |
+      String commands rejected; authors that need a shell write
+      `["bash", "-lc", "..."]` explicitly. Avoids shell-quoting
+      footguns. Folded into RECIPE.2.
+
+  - id: templating-delimiter
+    decision: mustache
+    notes: |
+      `{{token}}`, not `${token}`. `${...}` would collide with
+      shell expansion in `kind: shell` recipes.
+
+  - id: unknown-kind-handling
+    decision: strict=error, lenient=warning
+    notes: |
+      Folded into TASK.6.1 and PROMPT.1. Matches the existing
+      strict-vs-lenient split in VAL.2.
+
+  - id: spec-level-recipes
+    decision: deferred
+    notes: |
+      No present use case. Adding `spec.run` later is purely
+      additive and does not change anything in this amendment.
+
+open_questions:
+
+  - id: recipe-inputs
+    text: |
+      Should recipes accept author-defined input parameters
+      (e.g. a recipe that prompts the human for a target file
+      path before launching)? Defer. The v1 PROMPT.1 token set is
+      the minimum that makes recipes useful without inventing a
+      forms model.
+
+  - id: template-driven-warning-promotion
+    text: |
+      A workspace template may want to upgrade certain validator
+      warnings to errors (or vice versa) for its own specs.
+      Whether template-driven severity promotion is in scope for
+      v1 is undecided; resolve in the validator implementation
+      task, not here.
+
+extra:
+  authors: [claude]
+  follow_up: |
+    On signoff:
+      1. Fold TASK.6, TASK.6.1, the RECIPE component, PROMPT.1, and
+         TMPL.2.1 into specs/spec-format.yaml.
+      2. Add the `define-run-recipes` task to spec-format.yaml's
+         tasks list.
+      3. Bump metadata.updated_at to the accepted date.
+      4. Re-run `go run ./cmd/rex spec validate specs/*.yaml` and
+         confirm 0 errors / 0 warnings before committing.
+      5. Move this file to specs/_proposed/_accepted/.
+      6. File the matching execution.yaml amendment for
+         RunStartedEvent.spec_refs as a separate proposal.

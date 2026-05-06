@@ -5,7 +5,7 @@ metadata:
   name: Rex spec YAML format
   state: draft
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-03T01:00:00Z
+  updated_at: 2026-05-06T00:00:00Z
 
 description: |
   The YAML format used by every spec in a Rex workspace, including this one.
@@ -45,6 +45,16 @@ tasks:
     state: done
     references: [CORE.1]
 
+  - id: define-run-recipes
+    description: |
+      Implement run recipes: extend the Go types under
+      internal/core/specfmt/, add validator support for the
+      RECIPE schema and PROMPT.1 templating, wire
+      `rex run start --from-task` in the CLI, and add the
+      web UI run-button affordance to /specs/<id>.
+    state: todo
+    references: [TASK.6, TASK.6.1, RECIPE.1, RECIPE.2, RECIPE.3, RECIPE.4, RECIPE.5, PROMPT.1, TMPL.2.1]
+
 components:
 
   CORE:
@@ -80,6 +90,22 @@ components:
       "3.1": References inside `tasks[].references` may use either fully-qualified ACIDs or the short form defined in `spec-format.ACID.1.1`; mixing the two forms in the same list is permitted
       "4": Tasks may have an optional `assigned_to` user handle
       "5": Tasks live alongside acceptance criteria in the same document because in Rex a spec is simultaneously a task list and a contract
+      "6": |
+        A task may carry an optional `run` field whose shape is
+        defined by the `RECIPE` component. The field is a single
+        recipe object, not a list — a task represents one unit of
+        work and has at most one canonical way to launch it.
+        Multi-step workflows are out of scope for v1 recipes.
+      "6.1": |
+        A recipe is a hint, not a guarantee. The validator confirms
+        the recipe is well-formed (RECIPE schema), but does not
+        attempt to execute it. A recipe whose `kind` references a
+        primitive the local executor does not know about is an
+        error in strict mode and a warning in lenient mode,
+        matching the strict-vs-lenient split in `VAL.2`. This
+        keeps typos like `kind: harnes` from passing the default
+        `rex spec validate` invocation, while still letting read
+        paths under schema drift continue working.
 
   COMP:
     name: Components block
@@ -125,8 +151,93 @@ components:
     requirements:
       "1": 'A workspace template is itself a spec with `extra.template: true` and `extra.applies_to` indicating its scope'
       "2": Templates can pre-declare required `metadata` fields, required `components` keys, and required `extra` fields that all specs in the workspace must satisfy
+      "2.1": |
+        A workspace template may declare a
+        `extra.recipes_required: true` flag (every actionable task
+        must carry a `run` recipe; the template defines what
+        "actionable" means via a list of task states the rule
+        applies to) or `extra.recipes_forbidden: true` (no task may
+        carry a recipe). The two flags are mutually exclusive. The
+        validator runs the appropriate check in the second pass per
+        `TMPL.3`.
       "3": Validation runs in two passes — global v1 schema first, then the active workspace template
       "4": 'A spec may declare `extra.template_id: <id>` to opt into a specific template; otherwise the workspace default template applies'
+
+  RECIPE:
+    name: Run recipe shape
+    requirements:
+      "1": |
+        A recipe is a YAML mapping with a required `kind` field and
+        kind-specific argument fields. Recognized v1 kinds are
+        `shell`, `spec_validate`, and `harness`. Unknown kinds are
+        an error in strict mode and a warning in lenient mode (per
+        `TASK.6.1`).
+      "2": |
+        `kind: shell` recipes have a required `command` field (a
+        non-empty list of strings, executed without an intermediate
+        shell — argv[0] is the program, argv[1:] are the arguments).
+        String commands are not accepted; authors that need a shell
+        write `["bash", "-lc", "..."]` explicitly. This avoids
+        shell-quoting footguns and keeps the executor's primshell
+        invocation deterministic. The recipe may include `cwd` (path
+        relative to the workspace root) and `env` (mapping of name
+        to value). Each list element is run through `PROMPT.1`
+        substitution before execution.
+      "3": |
+        `kind: spec_validate` recipes have an optional `paths` field
+        (list of glob patterns relative to the workspace root); when
+        omitted, the recipe targets `specs/*.yaml`. They may include
+        a `strict` boolean (defaults to true, matching `rex spec
+        validate`'s default mode).
+      "4": |
+        `kind: harness` recipes have a required `harness` field (the
+        harness handle, e.g. `claude-code`, `codex`, `opencode`,
+        `copilot`, `cursor`) and a required `prompt` field (string
+        or template — see `PROMPT.1`). They may include
+        `permission_scope`, a hint to the executor about how
+        aggressively to auto-approve permission requests during the
+        session. The v1 enumerated values are:
+
+          `read_only`     — auto-deny anything that mutates state;
+                            pass read-style requests to the human
+                            prompt as today
+          `workspace`     — auto-approve requests scoped within the
+                            workspace root; everything else still
+                            prompts (the default when omitted)
+          `unrestricted`  — pass every request to the human prompt
+                            without auto-policy; useful for
+                            exploratory recipes
+
+        This vocabulary is recipe-format-only. The executor's
+        existing PermissionRequested/Granted/Denied flow remains
+        authoritative for individual decisions; the scope is a
+        policy hint, not an override.
+      "5": |
+        A recipe may include an optional `description` (string,
+        free-form) that surfaces in the UI alongside the run button
+        and in `--from-task` dry-run output. When omitted, the
+        enclosing task's description is shown.
+
+  PROMPT:
+    name: Recipe prompt-template substitution
+    requirements:
+      "1": |
+        Harness `prompt` strings and shell `command` strings may
+        embed the following substitution tokens, evaluated at
+        recipe-resolution time (CLI invocation or web-UI prefill):
+
+          {{spec.id}}              — the enclosing spec's metadata.id
+          {{spec.name}}            — the enclosing spec's metadata.name
+          {{task.id}}              — the enclosing task's id
+          {{task.description}}     — the enclosing task's description
+          {{task.references}}      — the task's references list,
+                                     comma-joined as fully-qualified
+                                     ACIDs
+
+        Unknown tokens are an error in strict validation mode and a
+        warning in lenient mode (matching the unknown-kind handling
+        in `TASK.6.1`). Templating is a recipe-resolution-time
+        concern; the YAML on disk stores the raw template string.
 
   VAL:
     name: Validation behavior (the `rex spec validate` contract)
