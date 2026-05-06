@@ -393,17 +393,6 @@ func pathsFromArgs(args []string, workspaceFlag string) ([]string, error) {
 // walks up from cwd looking for .rex/. Returns "" with no error when
 // neither source yields a workspace — leaf commands handle that with
 // their own friendlier message.
-const workspaceFlagName = "workspace"
-
-func addWorkspacePersistentFlag(cmd *cobra.Command) {
-	cmd.PersistentFlags().String(workspaceFlagName, "", "workspace root (default: walk up from cwd)")
-}
-
-func workspaceFlagValue(cmd *cobra.Command) string {
-	v, _ := cmd.Flags().GetString(workspaceFlagName)
-	return v
-}
-
 func workspaceRootFor(flag string) (string, error) {
 	if flag != "" {
 		return flag, nil

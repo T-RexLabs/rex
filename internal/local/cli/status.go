@@ -16,7 +16,6 @@ import (
 // of the current workspace: identity, state, content counts, and
 // per-remote draft state (cli.STATUS.1, sync.DRAFT.2).
 func newStatusCmd() *cobra.Command {
-	var workspaceFlag string
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show the current workspace's status",
@@ -25,18 +24,14 @@ per-remote draft counts for the workspace at cwd (cli.STATUS.1,
 sync.DRAFT.2). Run-status surfaces as "(deferred)" until the daemon
 model exists.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootFor(workspaceFlag)
+			root, err := requiredWorkspaceRoot(cmd)
 			if err != nil {
 				return err
 			}
-			if root == "" {
-				return errNoWorkspace
-			}
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			return runStatus(cmd.OutOrStdout(), root, jsonOut)
+			return runStatus(cmd.OutOrStdout(), root, jsonOutput(cmd))
 		},
 	}
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
+	cmd.Flags().String(workspaceFlagName, "", "workspace root (default: walk up from cwd)")
 	return cmd
 }
 

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -95,12 +94,13 @@ func resolveSyncContext(cmd *cobra.Command) (root, logPath, url, remote string, 
 		url = r.URL
 	}
 	wsFlag, _ := cmd.Flags().GetString("workspace")
-	root, err = workspaceRootFor(wsFlag)
+	if wsFlag != "" {
+		root, err = strictWorkspaceRoot(cmd)
+	} else {
+		root, err = requiredWorkspaceRoot(cmd)
+	}
 	if err != nil {
 		return "", "", "", "", err
-	}
-	if root == "" {
-		return "", "", "", "", errNoWorkspace
 	}
 	logPath = filepath.Join(root, metaDirName, "events.log")
 	return root, logPath, url, remote, nil
@@ -122,9 +122,8 @@ func runPushFn(cmd *cobra.Command, _ []string) error {
 		return formatSyncError(err)
 	}
 
-	jsonOut, _ := cmd.Flags().GetBool("json")
-	if jsonOut {
-		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+	if jsonOutput(cmd) {
+		return writeJSON(cmd, map[string]any{
 			"head_id":    res.HeadID,
 			"accepted":   res.Accepted,
 			"duplicates": res.Duplicates,
@@ -156,9 +155,8 @@ func runPullFn(cmd *cobra.Command, _ []string) error {
 		return formatSyncError(err)
 	}
 
-	jsonOut, _ := cmd.Flags().GetBool("json")
-	if jsonOut {
-		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+	if jsonOutput(cmd) {
+		return writeJSON(cmd, map[string]any{
 			"pulled": pulled,
 		})
 	}
@@ -184,9 +182,8 @@ func runSyncFn(cmd *cobra.Command, _ []string) error {
 		return formatSyncError(err)
 	}
 
-	jsonOut, _ := cmd.Flags().GetBool("json")
-	if jsonOut {
-		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+	if jsonOutput(cmd) {
+		return writeJSON(cmd, map[string]any{
 			"pulled":     res.Pulled,
 			"head_id":    res.Push.HeadID,
 			"pushed":     res.Push.Accepted,

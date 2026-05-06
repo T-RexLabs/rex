@@ -51,7 +51,7 @@ parsed from the sidecar <event-name>.config.toml — until TOML
 reading lands, every hook is reported with the default 30s.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var hooks []hookInfo
-			root, err := workspaceRootFor(workspaceFlagValue(cmd))
+			root, err := currentWorkspaceRoot(cmd)
 			if err != nil {
 				return err
 			}
@@ -86,8 +86,7 @@ reading lands, every hook is reported with the default 30s.`,
 				return hooks[i].Name < hooks[j].Name
 			})
 
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
+			if jsonOutput(cmd) {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				for _, h := range hooks {
 					if err := enc.Encode(h); err != nil {

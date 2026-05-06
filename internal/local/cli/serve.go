@@ -22,7 +22,6 @@ func newServeCmd(version string) *cobra.Command {
 	var (
 		addr            string
 		shutdownTimeout time.Duration
-		workspaceFlag   string
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -36,7 +35,7 @@ address is opt-in: pass --addr 0.0.0.0:<port> (or similar) and
 acknowledge that local-machine identity is the trust model — every
 request is treated as the workspace owner.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootForOrError(workspaceFlag)
+			root, err := strictWorkspaceRoot(cmd)
 			if err != nil {
 				return err
 			}
@@ -79,7 +78,7 @@ request is treated as the workspace owner.`,
 				close(errCh)
 			}()
 
-			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
+			ctx, stop := signal.NotifyContext(commandContext(cmd), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
 
 			select {
@@ -115,6 +114,6 @@ request is treated as the workspace owner.`,
 	}
 	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:7474", "TCP address to bind (loopback default)")
 	cmd.Flags().DurationVar(&shutdownTimeout, "shutdown-timeout", 15*time.Second, "max wait for graceful shutdown")
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root to serve (default: walk up from cwd)")
+	cmd.Flags().String(workspaceFlagName, "", "workspace root to serve (default: walk up from cwd)")
 	return cmd
 }

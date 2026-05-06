@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -111,9 +110,8 @@ central node's authorized-keys file.`,
 			fp := kp.Fingerprint()
 			actor := (identity.Actor{Role: identity.RoleLocal, Fingerprint: fp}).String()
 
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+			if jsonOutput(cmd) {
+				return writeJSON(cmd, map[string]any{
 					"handle":      string(kp.Handle),
 					"fingerprint": fp.String(),
 					"actor":       actor,
@@ -144,8 +142,7 @@ func newIdentityListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
+			if jsonOutput(cmd) {
 				rows := make([]map[string]any, 0, len(handles))
 				for _, h := range handles {
 					kp, err := store.Load(h)
@@ -157,7 +154,7 @@ func newIdentityListCmd() *cobra.Command {
 						"fingerprint": kp.Fingerprint().String(),
 					})
 				}
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(rows)
+				return writeJSON(cmd, rows)
 			}
 			if len(handles) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "no identities yet (run `rex identity show` to create the default)")

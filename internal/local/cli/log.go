@@ -64,7 +64,7 @@ or a Go duration ("1h", "24h", "30m") interpreted as "ago".
 			--type, --actor, and --workspace match the corresponding record
 			field exactly.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootForOrError(workspaceFlagValue(cmd))
+			root, err := strictWorkspaceRoot(cmd)
 			if err != nil {
 				return err
 			}
@@ -77,8 +77,7 @@ or a Go duration ("1h", "24h", "30m") interpreted as "ago".
 				return err
 			}
 
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
+			if jsonOutput(cmd) {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				for _, rec := range records {
 					if err := enc.Encode(rec); err != nil {

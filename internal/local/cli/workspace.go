@@ -74,8 +74,7 @@ search index from the canonical event log and the workspace's
 git-merged content. Safe to run while the workspace is otherwise
 idle; not safe during concurrent writes.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			workspaceFlag, _ := cmd.Flags().GetString("workspace")
-			root, err := workspaceRootForOrError(workspaceFlag)
+			root, err := strictWorkspaceRoot(cmd)
 			if err != nil {
 				return err
 			}
@@ -90,9 +89,8 @@ idle; not safe during concurrent writes.`,
 				return err
 			}
 
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+			if jsonOutput(cmd) {
+				return writeJSON(cmd, map[string]any{
 					"events": stats.Events,
 					"specs":  stats.Specs,
 				})
@@ -103,7 +101,7 @@ idle; not safe during concurrent writes.`,
 			return nil
 		},
 	}
-	cmd.Flags().String("workspace", "", "workspace root (default: walk up from cwd)")
+	cmd.Flags().String(workspaceFlagName, "", "workspace root (default: walk up from cwd)")
 	return cmd
 }
 

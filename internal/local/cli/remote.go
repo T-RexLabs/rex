@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"text/tabwriter"
 	"time"
@@ -100,9 +98,8 @@ func newRemoteListCmd() *cobra.Command {
 				return err
 			}
 			items := reg.List()
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(items)
+			if jsonOutput(cmd) {
+				return writeJSON(cmd, items)
 			}
 			if len(items) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "no remotes registered")
@@ -142,9 +139,8 @@ func newRemoteShowCmd() *cobra.Command {
 			if !ok {
 				return fmt.Errorf("remote %q not registered", args[0])
 			}
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(r)
+			if jsonOutput(cmd) {
+				return writeJSON(cmd, r)
 			}
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "name:        %s\n", r.Name)
@@ -202,10 +198,7 @@ does not overwrite — the user must remove and re-add the remote.`,
 				return fmt.Errorf("remote %q not registered", args[0])
 			}
 
-			ctx := cmd.Context()
-			if ctx == nil {
-				ctx = context.Background()
-			}
+			ctx := commandContext(cmd)
 			client := syncclient.NewClient(r.URL)
 			state, err := client.State(ctx)
 			if err != nil {
@@ -224,9 +217,8 @@ does not overwrite — the user must remove and re-add the remote.`,
 			if err := remotes.Save(path, reg); err != nil {
 				return err
 			}
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+			if jsonOutput(cmd) {
+				return writeJSON(cmd, map[string]any{
 					"name":             r.Name,
 					"url":              r.URL,
 					"fingerprint":      state.Fingerprint,
@@ -291,10 +283,7 @@ do this again for that central node.`,
 				}
 			}
 
-			ctx := cmd.Context()
-			if ctx == nil {
-				ctx = context.Background()
-			}
+			ctx := commandContext(cmd)
 			signer, err := loadOrCreateDefaultSigner(cmd)
 			if err != nil {
 				return fmt.Errorf("bootstrap %q: %w", name, err)
@@ -305,9 +294,8 @@ do this again for that central node.`,
 				return fmt.Errorf("bootstrap %q: %w", name, err)
 			}
 
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(resp)
+			if jsonOutput(cmd) {
+				return writeJSON(cmd, resp)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(),
 				"%s OK — admin granted in org %q (%s); redeemer fingerprint=%s\n",

@@ -206,8 +206,7 @@ func liveEventPrinter(cmd *cobra.Command, quiet bool) func(eventlog.Record) {
 	if quiet {
 		return nil
 	}
-	jsonOut, _ := cmd.Flags().GetBool("json")
-	if jsonOut {
+	if jsonOutput(cmd) {
 		return nil
 	}
 	debug, _ := cmd.Flags().GetBool("debug")
@@ -332,9 +331,8 @@ func writeEventLine(out io.Writer, rec eventlog.Record, debug bool) {
 // reportShellRun writes the human-friendly tail block for a shell
 // run; used to keep newRunStartCmd readable now that it branches.
 func reportShellRun(cmd *cobra.Command, res *runtask.ShellRunResult, nodeID string) error {
-	jsonOut, _ := cmd.Flags().GetBool("json")
-	if jsonOut {
-		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+	if jsonOutput(cmd) {
+		return writeJSON(cmd, map[string]any{
 			"run_id": res.RunID,
 			"status": string(res.State.Status),
 		})
@@ -367,9 +365,8 @@ func reportShellRun(cmd *cobra.Command, res *runtask.ShellRunResult, nodeID stri
 }
 
 func reportHarnessRun(cmd *cobra.Command, res *runtask.ShellRunResult, nodeID string) error {
-	jsonOut, _ := cmd.Flags().GetBool("json")
-	if jsonOut {
-		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+	if jsonOutput(cmd) {
+		return writeJSON(cmd, map[string]any{
 			"run_id": res.RunID,
 			"status": string(res.State.Status),
 		})
@@ -399,12 +396,9 @@ func newRunListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List runs from the workspace event log",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootFor(workspaceFlagValue(cmd))
+			root, err := requiredWorkspaceRoot(cmd)
 			if err != nil {
 				return err
-			}
-			if root == "" {
-				return errNoWorkspace
 			}
 			summaries, err := readRunSummaries(root)
 			if err != nil {
@@ -426,8 +420,7 @@ func newRunListCmd() *cobra.Command {
 				summaries = summaries[:limit]
 			}
 
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
+			if jsonOutput(cmd) {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				for _, s := range summaries {
 					if err := enc.Encode(s); err != nil {
@@ -465,12 +458,9 @@ func newRunShowCmd() *cobra.Command {
 		Short: "Show the events for one run",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootFor(workspaceFlagValue(cmd))
+			root, err := requiredWorkspaceRoot(cmd)
 			if err != nil {
 				return err
-			}
-			if root == "" {
-				return errNoWorkspace
 			}
 			runID, err := resolveRunID(root, args[0])
 			if err != nil {
@@ -485,8 +475,7 @@ func newRunShowCmd() *cobra.Command {
 				return fmt.Errorf("no events found for run %q", runID)
 			}
 
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
+			if jsonOutput(cmd) {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				for _, rec := range records {
 					if err := enc.Encode(rec); err != nil {
@@ -732,21 +721,15 @@ Output: one line per event of the form
 With --json, one decoded event record per line.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootFor(workspaceFlagValue(cmd))
+			root, err := requiredWorkspaceRoot(cmd)
 			if err != nil {
 				return err
-			}
-			if root == "" {
-				return errNoWorkspace
 			}
 			runID, err := resolveRunID(root, args[0])
 			if err != nil {
 				return err
 			}
-			ctx := cmd.Context()
-			if ctx == nil {
-				ctx = context.Background()
-			}
+			ctx := commandContext(cmd)
 			return tailRunEvents(ctx, cmd, root, runID, jsonOutFlag)
 		},
 	}

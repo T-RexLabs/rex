@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,7 +38,7 @@ func newSnapshotCreateCmd() *cobra.Command {
 		Use:   "create",
 		Short: "Create a new snapshot of the workspace's git-merged content",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootForOrError(workspaceFlagValue(cmd))
+			root, err := strictWorkspaceRoot(cmd)
 			if err != nil {
 				return err
 			}
@@ -47,9 +46,8 @@ func newSnapshotCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(m)
+			if jsonOutput(cmd) {
+				return writeJSON(cmd, m)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(),
 				"snapshot %s created (event head=%s, %d component(s))\n",
@@ -65,7 +63,7 @@ func newSnapshotListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List snapshots in the workspace",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootForOrError(workspaceFlagValue(cmd))
+			root, err := strictWorkspaceRoot(cmd)
 			if err != nil {
 				return err
 			}
@@ -73,9 +71,8 @@ func newSnapshotListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(items)
+			if jsonOutput(cmd) {
+				return writeJSON(cmd, items)
 			}
 			if len(items) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "no snapshots yet")
@@ -109,7 +106,7 @@ leave the workspace partially restored. Take a fresh snapshot
 immediately before restoring if you need a manual rollback path.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootForOrError(workspaceFlagValue(cmd))
+			root, err := strictWorkspaceRoot(cmd)
 			if err != nil {
 				return err
 			}
@@ -117,9 +114,8 @@ immediately before restoring if you need a manual rollback path.`,
 			if err != nil {
 				return err
 			}
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
-				return json.NewEncoder(cmd.OutOrStdout()).Encode(m)
+			if jsonOutput(cmd) {
+				return writeJSON(cmd, m)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(),
 				"restored snapshot %s (created %s, %d component(s))\n",
@@ -143,7 +139,7 @@ func newSnapshotPruneCmd() *cobra.Command {
 calendar month forever. Override with --keep-last and --keep-monthly.
 --dry-run reports what would be deleted without removing anything.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootForOrError(workspaceFlagValue(cmd))
+			root, err := strictWorkspaceRoot(cmd)
 			if err != nil {
 				return err
 			}
@@ -199,9 +195,8 @@ func snapshotsToDelete(items []snapshot.Manifest, policy snapshot.Policy) []stri
 }
 
 func reportPrune(cmd *cobra.Command, ids []string, dryRun bool) error {
-	jsonOut, _ := cmd.Flags().GetBool("json")
-	if jsonOut {
-		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+	if jsonOutput(cmd) {
+		return writeJSON(cmd, map[string]any{
 			"dry_run": dryRun,
 			"deleted": ids,
 		})

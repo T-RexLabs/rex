@@ -15,8 +15,7 @@ import (
 // cli.SHAPE.2 (top-level shortcut for high-frequency operations).
 func newSearchCmd() *cobra.Command {
 	var (
-		workspaceFlag string
-		limit         int
+		limit int
 	)
 	cmd := &cobra.Command{
 		Use:   "search <query>",
@@ -30,7 +29,7 @@ identifier-shaped queries (kebab-case names, "type:event") behave
 intuitively. AND / OR / NOT pass through unquoted.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := workspaceRootForOrError(workspaceFlag)
+			root, err := strictWorkspaceRoot(cmd)
 			if err != nil {
 				return err
 			}
@@ -46,8 +45,7 @@ intuitively. AND / OR / NOT pass through unquoted.`,
 				return err
 			}
 
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
+			if jsonOutput(cmd) {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				for _, r := range results {
 					if err := enc.Encode(r); err != nil {
@@ -72,7 +70,7 @@ intuitively. AND / OR / NOT pass through unquoted.`,
 			return tw.Flush()
 		},
 	}
-	cmd.Flags().StringVar(&workspaceFlag, "workspace", "", "workspace root (default: walk up from cwd)")
+	cmd.Flags().String(workspaceFlagName, "", "workspace root (default: walk up from cwd)")
 	cmd.Flags().IntVar(&limit, "limit", 25, "max results to return")
 	return cmd
 }
