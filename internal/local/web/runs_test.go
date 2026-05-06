@@ -138,6 +138,8 @@ func TestRunDetailRendersHistory(t *testing.T) {
 	for _, want := range []string{
 		`the-run`,
 		`runid-heading`,
+		`id="run-transcript"`,
+		`run-activity-panel`,
 		"run.started",
 		"node.started",
 		"node.succeeded",

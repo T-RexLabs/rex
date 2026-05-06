@@ -258,6 +258,17 @@ func extractStopReason(result json.RawMessage) string {
 // identically.
 func renderFrameCardHTML(row runEventRow, fv *frameView) string {
 	var body string
+	kindLabel := fv.Kind
+	switch fv.Kind {
+	case "agent_text":
+		kindLabel = "message"
+	case "agent_thought":
+		kindLabel = "thought"
+	}
+	roleLabel := fv.Role
+	if roleLabel == "user" {
+		roleLabel = "you"
+	}
 	switch fv.Kind {
 	case "agent_text":
 		body = `<div class="frame-body frame-text" data-frame-text>` + html.EscapeString(fv.Text) + `</div>`
@@ -289,8 +300,8 @@ func renderFrameCardHTML(row runEventRow, fv *frameView) string {
 	}
 
 	header := `<header class="event-head">` +
-		`<span class="frame-role frame-role-` + html.EscapeString(fv.Role) + `">` + html.EscapeString(fv.Role) + `</span>` +
-		`<span class="frame-kind muted small">` + html.EscapeString(fv.Kind)
+		`<span class="frame-role frame-role-` + html.EscapeString(fv.Role) + `">` + html.EscapeString(roleLabel) + `</span>` +
+		`<span class="frame-kind muted small">` + html.EscapeString(kindLabel)
 	if fv.Method != "" {
 		header += ` · <code>` + html.EscapeString(fv.Method) + `</code>`
 	}

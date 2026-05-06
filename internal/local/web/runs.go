@@ -143,6 +143,7 @@ type runDetailData struct {
 	Events       []runEventRow
 	LastEventID  string
 	AcceptsInput bool
+	ActivePrompt *permissionView
 	Debug        bool
 }
 
@@ -274,6 +275,7 @@ func loadRunDetail(opts Options, runID string, hl *Highlighter) (runDetailData, 
 	// Second pass: decorate permission.requested rows with the
 	// matching resolution (if any) so the template can render
 	// either action buttons or a "resolved by X" status row.
+	var activePrompt *permissionView
 	for _, c := range collected {
 		row := c.row
 		if req, ok := c.decoded.(runner.PermissionRequestedEvent); ok {
@@ -288,11 +290,15 @@ func loadRunDetail(opts Options, runID string, hl *Highlighter) (runDetailData, 
 				perm.Resolver = r.Resolver
 				perm.Note = r.Note
 				perm.ResolvedAt = r.ResolvedAt
+			} else {
+				copy := *perm
+				activePrompt = &copy
 			}
 			row.Permission = perm
 		}
 		d.Events = append(d.Events, row)
 	}
+	d.ActivePrompt = activePrompt
 
 	if len(d.Events) == 0 {
 		return d, false, nil

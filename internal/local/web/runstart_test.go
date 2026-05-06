@@ -139,7 +139,7 @@ func TestRunNewRendersHarnessOptions(t *testing.T) {
 		t.Fatalf("GET /runs/new: %v", err)
 	}
 	body := readBody(t, resp)
-	for _, want := range []string{"run type", "harness", "prompt", ">opencode<", ">codex<", ">claude-code<", "run-form.js", "opencode/big-pickle", "gpt-5-codex", ">build<", ">plan<"} {
+	for _, want := range []string{"run type", "harness", "prompt", "interaction loop", ">opencode<", ">codex<", ">claude-code<", "run-form.js", "opencode/big-pickle", "gpt-5-codex", ">build<", ">plan<"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q in /runs/new\n%s", want, body[:minInt(len(body), 3000)])
 		}

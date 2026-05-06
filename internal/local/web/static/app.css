@@ -461,6 +461,43 @@ hr {
   margin: 4px 0 8px;
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
+
+.frame-text.frame-markdown {
+  white-space: normal;
+}
+
+.frame-text.frame-markdown p {
+  margin: 0 0 0.75rem;
+}
+
+.frame-text.frame-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.frame-text.frame-markdown h1,
+.frame-text.frame-markdown h2,
+.frame-text.frame-markdown h3 {
+  margin: 0.25rem 0 0.65rem;
+  font-size: 1em;
+}
+
+.frame-text.frame-markdown ul {
+  margin: 0.35rem 0 0.75rem 1.2rem;
+  padding: 0;
+}
+
+.frame-text.frame-markdown pre {
+  margin: 0.45rem 0 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--r);
+  background: var(--surface-sunk);
+  overflow-x: auto;
+}
+
+.frame-text.frame-markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+}
 .frame-thought {
   color: var(--text-3);
   font-style: italic;
@@ -1056,6 +1093,94 @@ textarea.editor {
  * ============================================================ */
 
 .timeline { display: flex; flex-direction: column; gap: 0; }
+
+.run-chat-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding-bottom: var(--sp-4);
+}
+
+.run-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.run-transcript .event {
+  border-bottom: none;
+  padding: 0;
+}
+
+.run-transcript .event.frame {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: var(--sp-3) var(--sp-4);
+  margin-right: 12%;
+}
+
+.run-transcript .event.frame.frame-agent_text[data-frame-role="user"] {
+  margin-left: 12%;
+  margin-right: 0;
+  border-left: 1px solid var(--border);
+  background: var(--surface-sunk);
+}
+
+.run-transcript .event.frame.frame-agent_text[data-frame-role="assistant"] {
+  background: var(--surface);
+}
+
+.run-transcript .event-permission {
+  margin-left: 0;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--state-warn);
+  border-radius: var(--r);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.run-activity-panel {
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-2);
+}
+
+.run-activity-panel > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.run-activity-panel[open] > summary {
+  margin-bottom: var(--sp-1);
+}
+
+.run-activity-list {
+  margin-top: var(--sp-3);
+}
+
+.run-events-source {
+  margin-top: 0;
+}
+
+.js .run-events-source.routed {
+  display: none;
+}
+
+.run-input-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  margin-top: var(--sp-2);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -8px 20px rgba(0, 0, 0, 0.06);
+}
+
+.js .run-transcript.has-dock .event-permission .permission-form {
+  display: none;
+}
+
+.run-input-dock .field-input {
+  min-height: 2.5rem;
+}
 
 .event {
   border-bottom: 1px solid var(--border);
