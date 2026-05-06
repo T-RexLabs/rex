@@ -45,9 +45,12 @@ func (s *Server) handleSpecDetail(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "spec_detail.tmpl", data)
 }
 
-// handleRunsList renders /runs.
+// handleRunsList renders /runs. ?spec=<ACID-or-spec-id> filters the
+// list to runs whose RunStartedEvent recorded a matching reference
+// (execution.RUN.1.2).
 func (s *Server) handleRunsList(w http.ResponseWriter, r *http.Request) {
-	data, err := loadRunsList(s.opts)
+	specFilter := r.URL.Query().Get("spec")
+	data, err := loadRunsListFiltered(s.opts, specFilter)
 	if err != nil {
 		http.Error(w, "web: "+err.Error(), http.StatusInternalServerError)
 		return

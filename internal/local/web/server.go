@@ -115,6 +115,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /specs/{id}", s.handleSpecDetail)
 	s.mux.HandleFunc("GET /specs/{id}/edit", s.handleSpecEdit)
 	s.mux.HandleFunc("POST /specs/{id}/edit", s.handleSpecSave)
+	s.mux.HandleFunc("POST /specs/{id}/tasks/{taskID}/run", s.handleSpecTaskRun)
 	s.mux.HandleFunc("GET /runs", s.handleRunsList)
 	s.mux.HandleFunc("GET /runs/new", s.handleRunNew)
 	s.mux.HandleFunc("POST /runs/start", s.handleRunStart)

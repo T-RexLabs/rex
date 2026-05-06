@@ -127,12 +127,23 @@ type ShellRunRequest struct {
 	// it from a single shell-style string when the surface only
 	// has a string field (e.g. CLI --shell flag, web form input).
 	Command []string
+	// Dir overrides the working directory. When empty, the workspace
+	// root applies (the existing primshell default).
+	Dir string
+	// Env merges into the child process environment.
+	Env map[string]string
 	// NodeID is the id assigned to the shell node in the DAG.
 	// Defaults to "shell" when empty.
 	NodeID string
 	// RunID is the explicit run id. Defaults to clock.Now() when
 	// empty.
 	RunID string
+	// SpecRefs records ACIDs the run is launched against
+	// (execution.RUN.1.1).
+	SpecRefs []string
+	// FromTask is the `<spec-id>.<task-id>` reference when launched
+	// via a spec recipe (execution.RUN.1.1).
+	FromTask string
 	// OnEvent is invoked with every event the run emits, AFTER it
 	// has been written to the event log. Used by `rex run start`
 	// in attached mode (the default) to render events live as
@@ -164,7 +175,11 @@ func StartShellRun(ctx context.Context, ws *Workspace, req ShellRunRequest) (*Sh
 		nodeID = "shell"
 	}
 
-	cfg, err := json.Marshal(primshell.Config{Command: req.Command})
+	cfg, err := json.Marshal(primshell.Config{
+		Command: req.Command,
+		Dir:     req.Dir,
+		Env:     req.Env,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal shell config: %w", err)
 	}
@@ -187,6 +202,8 @@ func StartShellRun(ctx context.Context, ws *Workspace, req ShellRunRequest) (*Sh
 		DAG:      dag,
 		Sink:     &writerSink{w: ws.Writer, onEvent: req.OnEvent},
 		Registry: reg,
+		SpecRefs: req.SpecRefs,
+		FromTask: req.FromTask,
 	})
 	if err != nil {
 		return nil, err
@@ -230,6 +247,12 @@ type HarnessRunRequest struct {
 	// RunID is the explicit run id. Defaults to clock.Now() when
 	// empty.
 	RunID string
+	// SpecRefs records ACIDs the run is launched against
+	// (execution.RUN.1.1).
+	SpecRefs []string
+	// FromTask is the `<spec-id>.<task-id>` reference when launched
+	// via a spec recipe (execution.RUN.1.1).
+	FromTask string
 	// Adapters is the registry consulted for Harness; nil =
 	// adapter.Default().
 	Adapters *adapter.Registry
@@ -343,6 +366,8 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 		DAG:      dag,
 		Sink:     sink,
 		Registry: reg,
+		SpecRefs: req.SpecRefs,
+		FromTask: req.FromTask,
 	})
 	if err != nil {
 		return nil, err

@@ -58,6 +58,11 @@ type runRow struct {
 	EndedAt    string
 	Duration   string
 	NodeEvents int
+	// SpecRefs and FromTask are recorded on the run.started event
+	// when the run was launched from a spec recipe (execution.RUN.1.1).
+	// Surfaced so the runs list can filter and badge.
+	SpecRefs []string
+	FromTask string
 }
 
 // remoteRow is one entry in the remotes table on the home page.
@@ -205,6 +210,8 @@ func loadRunRows(root string) ([]runRow, error) {
 			Status:     s.EffectiveStatus(),
 			StartedAt:  s.StartedAt.UTC().Format(time.RFC3339),
 			NodeEvents: s.NodeEvents,
+			SpecRefs:   append([]string(nil), s.SpecRefs...),
+			FromTask:   s.FromTask,
 		}
 		if !s.EndedAt.IsZero() {
 			row.EndedAt = s.EndedAt.UTC().Format(time.RFC3339)

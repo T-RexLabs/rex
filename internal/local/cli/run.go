@@ -20,6 +20,7 @@ import (
 	"github.com/asabla/rex/internal/core/runner/adapter"
 	"github.com/asabla/rex/internal/core/runner/primharness"
 	"github.com/asabla/rex/internal/core/runner/primshell"
+	"github.com/asabla/rex/internal/core/specfmt"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
 	"github.com/asabla/rex/internal/local/runtask"
 )
@@ -80,6 +81,8 @@ func newRunStartCmd() *cobra.Command {
 		runIDFlag    string
 		quietFlag    bool
 		detachFlag   bool
+		fromTaskFlag string
+		specRefFlags []string
 	)
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -121,6 +124,58 @@ during execution and the command exits when the run terminates.
 
 			onEvent := liveEventPrinter(cmd, quietFlag)
 
+			// --from-task: resolve the recipe and dispatch to the
+			// matching shape (execution.RUN.1.1, spec-format.RECIPE.*).
+			if fromTaskFlag != "" {
+				resolved, err := resolveTaskRecipe(root, fromTaskFlag, specRefFlags...)
+				if err != nil {
+					return err
+				}
+				switch resolved.Recipe.Kind {
+				case specfmt.RecipeKindHarness:
+					if _, ok := adapter.Default().Lookup(resolved.Recipe.Harness); !ok {
+						return fmt.Errorf("recipe references harness %q which has no adapter registered (registered: %s)",
+							resolved.Recipe.Harness, strings.Join(adapter.Default().Names(), ", "))
+					}
+					node := nodeID
+					if node == "" || node == "shell" {
+						node = "harness"
+					}
+					res, err := runtask.StartHarnessRun(ctx, ws, runtask.HarnessRunRequest{
+						Harness:  resolved.Recipe.Harness,
+						Prompt:   resolved.Prompt,
+						Timeout:  timeoutFlag,
+						NodeID:   node,
+						RunID:    runIDFlag,
+						SpecRefs: resolved.SpecRefs,
+						FromTask: resolved.FromTask,
+						OnEvent:  onEvent,
+						OnStderr: harnessStderrPrinter(cmd, quietFlag),
+					})
+					if err != nil {
+						return err
+					}
+					return reportHarnessRun(cmd, res, node)
+				case specfmt.RecipeKindShell:
+					res, err := runtask.StartShellRun(ctx, ws, runtask.ShellRunRequest{
+						Command:  resolved.Command,
+						Dir:      recipeWorkspaceDir(root, resolved.Recipe.Cwd),
+						Env:      resolved.Recipe.Env,
+						NodeID:   nodeID,
+						RunID:    runIDFlag,
+						SpecRefs: resolved.SpecRefs,
+						FromTask: resolved.FromTask,
+						OnEvent:  onEvent,
+					})
+					if err != nil {
+						return err
+					}
+					return reportShellRun(cmd, res, nodeID)
+				}
+				return fmt.Errorf("recipe kind %q is not yet supported by `rex run start --from-task`", resolved.Recipe.Kind)
+			}
+
+			specRefs := dedupeRefs(specRefFlags)
 			if harnessFlag != "" {
 				if _, ok := adapter.Default().Lookup(harnessFlag); !ok {
 					return fmt.Errorf("no adapter registered for %q (registered: %s)",
@@ -138,6 +193,7 @@ during execution and the command exits when the run terminates.
 					Timeout:  timeoutFlag,
 					NodeID:   node,
 					RunID:    runIDFlag,
+					SpecRefs: specRefs,
 					OnEvent:  onEvent,
 					OnStderr: harnessStderrPrinter(cmd, quietFlag),
 				})
@@ -152,10 +208,11 @@ during execution and the command exits when the run terminates.
 				return err
 			}
 			res, err := runtask.StartShellRun(ctx, ws, runtask.ShellRunRequest{
-				Command: argv,
-				NodeID:  nodeID,
-				RunID:   runIDFlag,
-				OnEvent: onEvent,
+				Command:  argv,
+				NodeID:   nodeID,
+				RunID:    runIDFlag,
+				SpecRefs: specRefs,
+				OnEvent:  onEvent,
 			})
 			if err != nil {
 				return err
@@ -179,8 +236,10 @@ during execution and the command exits when the run terminates.
 	cmd.Flags().BoolVar(&quietFlag, "quiet", false, "suppress the live event stream; print only the final summary")
 	cmd.Flags().BoolVarP(&detachFlag, "detach", "d", false, "(reserved) kick off the run and return immediately — not yet wired")
 	cmd.Flags().Bool("debug", false, "render full event payloads instead of one-line summaries")
-	cmd.MarkFlagsOneRequired("shell", "harness")
-	cmd.MarkFlagsMutuallyExclusive("shell", "harness")
+	cmd.Flags().StringVar(&fromTaskFlag, "from-task", "", "load a recipe from <spec-id>.<task-id> and prefill --harness/--prompt/--shell from it (execution.RUN.1.1)")
+	cmd.Flags().StringSliceVar(&specRefFlags, "spec-ref", nil, "fully-qualified ACID this run satisfies; may be repeated (execution.RUN.1.1)")
+	cmd.MarkFlagsOneRequired("shell", "harness", "from-task")
+	cmd.MarkFlagsMutuallyExclusive("shell", "harness", "from-task")
 	cmd.MarkFlagsRequiredTogether("harness", "prompt")
 	return cmd
 }
@@ -394,16 +453,25 @@ func reportHarnessRun(cmd *cobra.Command, res *runtask.ShellRunResult, nodeID st
 
 func newRunListCmd() *cobra.Command {
 	var (
-		statusFilter string
-		limit        int
+		statusFilter   string
+		specRefFilters []string
+		fromTaskFilter string
+		limit          int
 	)
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List runs from the workspace event log",
 		Long: `Reads the workspace event log, folds run lifecycle events, and prints
-recent runs with their effective status.`,
+recent runs with their effective status.
+
+Filters narrow the list to runs whose RunStartedEvent carries the
+matching provenance (execution.RUN.1.2): --spec-ref filters by ACID
+in run.started.spec_refs, --from-task filters by the
+<spec-id>.<task-id> the run was launched from.`,
 		Example: `  rex run list
-  rex run --workspace /path/to/ws list --status completed --limit 10`,
+  rex run --workspace /path/to/ws list --status completed --limit 10
+  rex run list --spec-ref sync.ORDER.3
+  rex run list --from-task spec-format.define-run-recipes`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := requiredWorkspaceRoot(cmd)
 			if err != nil {
@@ -417,6 +485,25 @@ recent runs with their effective status.`,
 				filtered := summaries[:0]
 				for _, s := range summaries {
 					if string(s.Status) == statusFilter {
+						filtered = append(filtered, s)
+					}
+				}
+				summaries = filtered
+			}
+			if len(specRefFilters) > 0 {
+				wanted := dedupeRefs(specRefFilters)
+				filtered := summaries[:0]
+				for _, s := range summaries {
+					if matchesAnyRef(s.SpecRefs, wanted) {
+						filtered = append(filtered, s)
+					}
+				}
+				summaries = filtered
+			}
+			if fromTaskFilter != "" {
+				filtered := summaries[:0]
+				for _, s := range summaries {
+					if s.FromTask == fromTaskFilter {
 						filtered = append(filtered, s)
 					}
 				}
@@ -462,8 +549,27 @@ recent runs with their effective status.`,
 		"rex run show <run-id>",
 	)
 	cmd.Flags().StringVar(&statusFilter, "status", "", "only show runs with the given final status")
+	cmd.Flags().StringSliceVar(&specRefFilters, "spec-ref", nil, "filter to runs that record this fully-qualified ACID; may be repeated (execution.RUN.1.2)")
+	cmd.Flags().StringVar(&fromTaskFilter, "from-task", "", "filter to runs launched from this <spec-id>.<task-id> (execution.RUN.1.2)")
 	cmd.Flags().IntVar(&limit, "limit", 0, "show only the N most recent runs (0 = no limit)")
 	return cmd
+}
+
+// matchesAnyRef returns true when at least one of `wanted` appears in
+// `have`. Used by `rex run list --spec-ref` to filter runs whose
+// RunStartedEvent referenced any of the requested ACIDs.
+func matchesAnyRef(have, wanted []string) bool {
+	if len(have) == 0 {
+		return false
+	}
+	for _, w := range wanted {
+		for _, h := range have {
+			if h == w {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func newRunShowCmd() *cobra.Command {
@@ -531,6 +637,8 @@ type runSummary struct {
 	StartedAt  time.Time        `json:"started_at"`
 	EndedAt    time.Time        `json:"ended_at,omitempty"`
 	NodeEvents int              `json:"node_events"`
+	SpecRefs   []string         `json:"spec_refs,omitempty"`
+	FromTask   string           `json:"from_task,omitempty"`
 }
 
 // readRunSummaries scans the workspace's events.log and aggregates one
@@ -587,6 +695,8 @@ func readRunSummaries(workspaceRoot string) ([]runSummary, error) {
 			StartedAt:  s.StartedAt,
 			EndedAt:    s.EndedAt,
 			NodeEvents: s.NodeEvents,
+			SpecRefs:   append([]string(nil), s.SpecRefs...),
+			FromTask:   s.FromTask,
 		})
 	}
 	return out, nil

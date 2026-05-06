@@ -115,10 +115,24 @@ func newRunEventRow(rec eventlog.Record, hl *Highlighter) runEventRow {
 // runsListData backs runs_list.tmpl.
 type runsListData struct {
 	pageData
-	Runs []runRow
+	Runs       []runRow
+	SpecFilter string
 }
 
 func loadRunsList(opts Options) (runsListData, error) {
+	return loadRunsListFiltered(opts, "")
+}
+
+// loadRunsListFiltered narrows the runs list to those whose
+// run.started event recorded the given fully-qualified ACID, or
+// whose `from_task` reference begins with the given spec id (so
+// passing a bare spec id like `execution` matches every run launched
+// from any of its tasks). Empty filter returns every run.
+//
+// Implements the spec-id-prefix half of execution.RUN.1.2:
+// `/specs/<id>` shows runs whose spec_refs contain any ACID
+// prefixed by `<id>.` plus runs launched from that spec.
+func loadRunsListFiltered(opts Options, specFilter string) (runsListData, error) {
 	base := pageData{BindAddr: opts.BindAddr, Version: opts.Version}
 	ws, _ := loadWorkspaceSummary(opts.WorkspaceRoot)
 	base.Workspace = ws
@@ -127,7 +141,40 @@ func loadRunsList(opts Options) (runsListData, error) {
 	if err != nil {
 		return runsListData{}, err
 	}
-	return runsListData{pageData: base, Runs: runs}, nil
+	if specFilter != "" {
+		filtered := runs[:0]
+		for _, r := range runs {
+			if matchesSpecFilter(r, specFilter) {
+				filtered = append(filtered, r)
+			}
+		}
+		runs = filtered
+	}
+	return runsListData{pageData: base, Runs: runs, SpecFilter: specFilter}, nil
+}
+
+// matchesSpecFilter returns true when r is launched against the
+// supplied filter token. The filter may be:
+//   - a fully-qualified ACID (e.g. `sync.ORDER.3`) — matches when
+//     the run's spec_refs contains it exactly
+//   - a bare spec id (e.g. `sync`) — matches when any spec_ref is
+//     prefixed by `<id>.` or the from_task is prefixed by `<id>.`
+func matchesSpecFilter(r runRow, filter string) bool {
+	for _, ref := range r.SpecRefs {
+		if ref == filter {
+			return true
+		}
+		if strings.HasPrefix(ref, filter+".") {
+			return true
+		}
+	}
+	if r.FromTask == filter {
+		return true
+	}
+	if strings.HasPrefix(r.FromTask, filter+".") {
+		return true
+	}
+	return false
 }
 
 // runDetailData backs run_detail.tmpl.

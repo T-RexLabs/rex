@@ -5,6 +5,7 @@
   <div class="header-row">
     <h1>{{.Spec.Name}}</h1>
     <div class="header-actions">
+      <a class="btn" href="/runs?spec={{.Spec.ID}}">view runs</a>
       <a class="btn" href="/specs/{{.Spec.ID}}/edit">edit</a>
     </div>
   </div>
@@ -113,6 +114,12 @@
                     <a class="acid acid-sm" data-acid="{{.}}" href="#" title="copy acid">{{.}}</a>
                   {{end}}
                 </div>
+              {{end}}
+              {{if .HasRecipe}}
+                <form class="task-run" method="post" action="/specs/{{$.Spec.ID}}/tasks/{{.ID}}/run">
+                  <button type="submit" class="btn btn-primary">run this task</button>
+                  <span class="muted">via <code>{{.RecipeKind}}</code> recipe</span>
+                </form>
               {{end}}
             </div>
           </div>

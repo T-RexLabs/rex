@@ -5,6 +5,12 @@
   <h1>runs</h1>
   <div class="meta">
     <span>{{len .Runs}} run{{if ne (len .Runs) 1}}s{{end}}</span>
+    {{if .SpecFilter}}
+      <span>·</span>
+      <span>filtered by <code>{{.SpecFilter}}</code></span>
+      <span>·</span>
+      <a href="/runs">clear</a>
+    {{end}}
   </div>
 </header>
 

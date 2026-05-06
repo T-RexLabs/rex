@@ -48,16 +48,35 @@ type specView struct {
 	UpdatedAt        string
 	Description      string
 	DescriptionParas []string
-	Tasks            []specfmt.Task
+	Tasks            []taskView
 	Components       map[string]specfmt.Component
 	ComponentOrder   []string
 	Constraints      map[string]specfmt.Constraint
 	ConstraintOrder  []string
 }
 
+// taskView wraps a spec task for rendering. Recipe-presence and
+// recipe-kind are pulled out so the template can decide whether to
+// surface a "Run this task" affordance without reaching into the
+// nested recipe object.
+type taskView struct {
+	specfmt.Task
+	HasRecipe  bool
+	RecipeKind string
+}
+
 func newSpecView(doc *specfmt.Document) *specView {
 	if doc == nil {
 		return nil
+	}
+	tasks := make([]taskView, len(doc.Tasks))
+	for i, t := range doc.Tasks {
+		tv := taskView{Task: t}
+		if t.Run != nil {
+			tv.HasRecipe = true
+			tv.RecipeKind = string(t.Run.Kind)
+		}
+		tasks[i] = tv
 	}
 	return &specView{
 		ID:               doc.Metadata.ID,
@@ -67,7 +86,7 @@ func newSpecView(doc *specfmt.Document) *specView {
 		UpdatedAt:        doc.Metadata.UpdatedAt,
 		Description:      doc.Description,
 		DescriptionParas: splitParagraphs(doc.Description),
-		Tasks:            doc.Tasks,
+		Tasks:            tasks,
 		Components:       doc.Components,
 		ComponentOrder:   doc.ComponentOrder(),
 		Constraints:      doc.Constraints,
