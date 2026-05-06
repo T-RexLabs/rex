@@ -85,14 +85,17 @@ type frameView struct {
 // payload; the resolution fields are filled in only after a
 // matching .granted / .denied event has landed.
 type permissionView struct {
-	RequestID  string
-	Tool       string
-	Reason     string
-	Resolved   bool
-	Decision   string // "granted" | "denied"
-	Resolver   string
-	Note       string
-	ResolvedAt string
+	RequestID   string
+	Tool        string
+	Reason      string
+	Args        template.HTML // chroma-highlighted JSON of the request args
+	HasArgs     bool
+	RequestedAt string
+	Resolved    bool
+	Decision    string // "granted" | "denied"
+	Resolver    string
+	Note        string
+	ResolvedAt  string
 }
 
 // newRunEventRow builds a runEventRow with chroma-highlighted JSON
@@ -375,9 +378,18 @@ func loadRunDetail(opts Options, runID string, hl *Highlighter) (runDetailData, 
 		row := c.row
 		if req, ok := c.decoded.(runner.PermissionRequestedEvent); ok {
 			perm := &permissionView{
-				RequestID: req.RequestID,
-				Tool:      req.Tool,
-				Reason:    req.Reason,
+				RequestID:   req.RequestID,
+				Tool:        req.Tool,
+				Reason:      req.Reason,
+				RequestedAt: req.RequestedAt.UTC().Format(time.RFC3339Nano),
+			}
+			if len(req.Args) > 0 && string(req.Args) != "null" {
+				perm.HasArgs = true
+				if hl != nil {
+					perm.Args = hl.HighlightJSON(req.Args)
+				} else {
+					perm.Args = template.HTML(html.EscapeString(PrettyJSON(req.Args)))
+				}
 			}
 			if r, ok := resolutions[req.RequestID]; ok {
 				perm.Resolved = true

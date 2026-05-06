@@ -511,11 +511,11 @@ func TestRunDetailRendersPermissionPromptForm(t *testing.T) {
 	}
 	body := readBody(t, resp)
 	for _, want := range []string{
-		"awaiting decision",
+		"Permission required",
 		`name="request_id" value="req-1"`,
 		`name="decision" value="grant"`,
 		`name="decision" value="deny"`,
-		"event-permission",
+		"permission-card--pending",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q in run-detail with pending permission:\n%s", want, body[:minInt(len(body), 3000)])
@@ -538,10 +538,10 @@ func TestRunDetailRendersResolvedPermission(t *testing.T) {
 	}
 	body := readBody(t, resp)
 	for _, want := range []string{
-		`pill-ok`,
-		"granted",
+		`permission-card--resolved`,
+		`permission-granted`,
+		"Allowed",
 		"operator",
-		"permission-resolution",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q in resolved-permission view:\n%s", want, body[:minInt(len(body), 3000)])
@@ -585,7 +585,7 @@ func TestRunPermissionPostWritesGrantEvent(t *testing.T) {
 		t.Fatalf("GET: %v", err)
 	}
 	body := readBody(t, resp2)
-	if !strings.Contains(body, "permission-resolution") || !strings.Contains(body, "granted") {
+	if !strings.Contains(body, "permission-card--resolved") || !strings.Contains(body, "permission-granted") {
 		t.Errorf("expected resolved permission card after POST: %s", body[:minInt(len(body), 3000)])
 	}
 }

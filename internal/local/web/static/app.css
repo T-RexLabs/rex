@@ -491,7 +491,8 @@ hr {
   padding: 0.6rem 0.8rem;
   border-radius: var(--r);
   background: var(--surface-sunk);
-  overflow-x: auto;
+  overflow: auto;
+  max-height: 38rem;
 }
 
 .frame-text.frame-markdown code {
@@ -509,12 +510,17 @@ hr {
 
 .frame-tool {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-family: ui-monospace, monospace;
+  flex-direction: column;
+  gap: var(--sp-2);
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   margin: 4px 0;
+}
+.frame-tool .tool-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
 }
 .frame-tool .tool-arrow {
   color: var(--text-3);
@@ -522,18 +528,43 @@ hr {
 }
 .frame-tool .tool-name {
   color: var(--text);
-  font-weight: 500;
+  font-weight: 600;
+  background: transparent;
+  padding: 0;
+  font-size: var(--fs-md);
+  letter-spacing: -0.01em;
 }
 .frame-tool .tool-subtitle {
   color: var(--text-2);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
 }
 .frame-tool .tool-subtitle[hidden] { display: none; }
+.frame-tool .pill { margin-left: auto; }
+
+/* Tool cards have a slim head — just the timestamp, right-aligned.
+ * The tool name + summary live in the body, so the role/kind badges
+ * the prose cards use would be visual noise here. */
+.event-head--tool {
+  margin-bottom: 2px;
+}
+.event-head--tool .event-time {
+  margin-left: auto;
+}
 .frame-tool .tool-args {
   flex-basis: 100%;
   margin-top: 4px;
 }
 .frame-tool .tool-args summary {
   cursor: pointer;
+}
+.frame-tool .tool-args pre {
+  max-height: 32rem;
+  overflow: auto;
 }
 .frame-tool .tool-output {
   flex-basis: 100%;
@@ -544,6 +575,8 @@ hr {
   font-size: var(--fs-xs);
   white-space: pre-wrap;
   word-break: break-word;
+  max-height: 32rem;
+  overflow: auto;
 }
 .frame-tool .tool-output[hidden] { display: none; }
 
@@ -1180,6 +1213,28 @@ textarea.editor {
   margin-right: 12%;
 }
 
+/* Tool cards: the status pill drives the left edge color so a
+ * scroll-back scans for failures without needing to read each
+ * card. Pending/running gets a warning tint, errors get red. */
+.run-transcript .event.frame.frame-tool_call,
+.run-transcript .event.frame.frame-tool_result {
+  border-left: 3px solid var(--border);
+  background: var(--surface);
+}
+.run-transcript .event.frame.frame-tool_call:has([data-tool-status]:is(.pill-pending, .pill-running)),
+.run-transcript .event.frame.frame-tool_result:has([data-tool-status]:is(.pill-pending, .pill-running)) {
+  border-left-color: var(--state-warn);
+}
+.run-transcript .event.frame.frame-tool_call:has([data-tool-status].pill-error),
+.run-transcript .event.frame.frame-tool_result:has([data-tool-status].pill-error) {
+  border-left-color: var(--state-error);
+  background: color-mix(in srgb, var(--state-error) 4%, var(--surface));
+}
+.run-transcript .event.frame.frame-tool_call:has([data-tool-status]:is(.pill-ok, .pill-completed)),
+.run-transcript .event.frame.frame-tool_result:has([data-tool-status]:is(.pill-ok, .pill-completed)) {
+  border-left-color: color-mix(in srgb, var(--state-ok) 60%, var(--border));
+}
+
 .run-transcript .event.frame.frame-agent_text[data-frame-role="user"] {
   margin-left: 12%;
   margin-right: 0;
@@ -1226,21 +1281,95 @@ textarea.editor {
   display: none;
 }
 
-.run-input-dock {
+/* ============================================================
+ * Run dock — two visually distinct variants
+ *
+ * The dock is the persistent action surface at the bottom of the
+ * run page. It has two modes that must NEVER be confused:
+ *   .run-dock--permission — the agent is blocked waiting for a
+ *                           permission decision. Loud, warning
+ *                           band, semantic green/red buttons.
+ *   .run-dock--reply      — the run is interactive and waiting
+ *                           for the next user message. Muted.
+ *
+ * The single composed shell .run-dock keeps the sticky bottom +
+ * shadow; variants override colors, spacing, and emphasis.
+ * ============================================================ */
+
+.run-dock {
   position: sticky;
   bottom: 0;
   z-index: 10;
   margin-top: var(--sp-2);
-  border-top: 1px solid var(--border);
-  box-shadow: 0 -8px 20px rgba(0, 0, 0, 0.06);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.06);
 }
 
-.js .run-transcript.has-dock .event-permission .permission-form {
+.run-dock .field-input { min-height: 2.5rem; }
+.run-dock-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.run-dock-row .field-input { flex: 1; min-width: 240px; }
+.run-dock-hint { padding-left: 2px; }
+
+/* Permission variant — warning band on top, lock glyph, semantic
+ * buttons. Pulses once on first appearance to draw the eye. */
+.run-dock--permission {
+  border-color: var(--state-warn);
+  border-top: 4px solid var(--state-warn);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--state-warn) 8%, var(--surface)) 0%,
+    var(--surface) 64%);
+  animation: rex-dock-permission-in 320ms ease-out;
+}
+.run-dock--permission .run-dock-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.run-dock--permission .run-dock-heading {
+  font-weight: 600;
+  font-size: var(--fs-md);
+  letter-spacing: -0.01em;
+}
+.run-dock--permission .run-dock-reason {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  padding-left: 28px; /* align under the lock glyph */
+}
+.run-dock--permission .permission-glyph {
+  font-size: 18px;
+  filter: saturate(1.2);
+}
+
+/* Reply variant — quiet, no banner, just a composer. */
+.run-dock--reply {
+  border-color: var(--border);
+}
+
+/* When the dock is showing a pending permission, suppress the
+ * inline form on the matching card so the user only acts in one
+ * place. The dock's sticky position keeps the action visible. */
+.js .run-transcript.has-dock .permission-card--pending .permission-form--inline {
   display: none;
 }
+.js .run-transcript.has-dock .permission-card--pending {
+  opacity: 0.85;
+}
 
-.run-input-dock .field-input {
-  min-height: 2.5rem;
+@keyframes rex-dock-permission-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
 }
 
 .event {
@@ -1291,60 +1420,172 @@ textarea.editor {
 /* ============================================================
  * 19a. Permission cards (web-ui.LIVE.3)
  *
- * Renders inside an .event whose decoded type is
- * permission.requested. Two visual states:
- *   - unresolved: a form with note input + approve/deny buttons
- *   - resolved:   a quiet "decision · approver · time" status row
- *
- * The whole event card grows a left accent bar (warn for
- * unresolved, state-color for resolved) so a long timeline
- * scans for outstanding decisions visually without the user
- * having to read every payload.
+ * Two visual states, very different visual weights:
+ *   .permission-card--pending  — the agent is blocked. Loud:
+ *                                warning border, lock glyph,
+ *                                args inline, semantic buttons.
+ *   .permission-card--resolved — historical record. A single-
+ *                                line chip with click-to-expand
+ *                                so a long run reads at a glance.
  * ============================================================ */
 
-.event-permission {
-  border-left: 3px solid var(--state-warn);
-  padding-left: var(--sp-3);
-  margin-left: -3px;
-}
-.event-permission:has(.permission-granted) { border-left-color: var(--state-ok); }
-.event-permission:has(.permission-denied)  { border-left-color: var(--state-error); }
-
-.permission-form {
-  margin-top: var(--sp-3);
-  padding: var(--sp-3) var(--sp-4);
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  background: var(--surface);
+.permission-card {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
-}
-.permission-row {
-  display: flex;
-  align-items: center;
   gap: var(--sp-2);
-  flex-wrap: wrap;
-}
-.permission-row .field-input { flex: 1; min-width: 200px; }
-.permission-label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-
-.permission-resolution {
-  margin-top: var(--sp-3);
   padding: var(--sp-3) var(--sp-4);
   border: 1px solid var(--border);
   border-radius: var(--r);
   background: var(--surface);
+}
+
+/* Pending — the visual loudness is intentional. */
+.permission-card--pending {
+  border-left: 4px solid var(--state-warn);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--state-warn) 6%, var(--surface)) 0%,
+    var(--surface) 50%);
+  box-shadow: 0 1px 0 0 color-mix(in srgb, var(--state-warn) 16%, transparent),
+              0 4px 16px -8px color-mix(in srgb, var(--state-warn) 32%, transparent);
+}
+
+.permission-head {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
+  gap: var(--sp-2);
+}
+.permission-glyph {
+  font-size: 16px;
+  line-height: 1;
+}
+.permission-title {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  flex: 1;
+}
+.permission-tool {
+  background: color-mix(in srgb, var(--state-warn) 14%, transparent);
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--state-warn) 32%, transparent);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.permission-time {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.permission-reason {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-sunk);
+  border-radius: 3px;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.permission-args-block,
+.permission-expand {
+  font-size: var(--fs-xs);
+}
+.permission-args-block summary,
+.permission-expand summary {
+  cursor: pointer;
+  user-select: none;
+}
+.permission-args {
+  margin-top: var(--sp-2);
+  max-height: 320px;
+  overflow: auto;
+  font-size: var(--fs-xs);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-sunk);
+  border-radius: 3px;
+}
+
+/* Inline form on the pending card — suppressed when the global
+ * dock is the active surface (.has-dock on .run-transcript). */
+.permission-form--inline {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-top: var(--sp-1);
+}
+.permission-note-input { flex: 1; min-width: 240px; }
+
+/* Resolved — collapse to a one-line chip with details disclosed
+ * on demand. Color-codes the glyph so a quick scroll-back shows
+ * what was allowed vs denied. */
+.permission-card--resolved {
+  padding: 6px var(--sp-3);
+  border-left-width: 1px;
+  background: var(--surface);
+}
+.permission-card--resolved.permission-granted { border-left: 3px solid var(--state-ok); }
+.permission-card--resolved.permission-denied  { border-left: 3px solid var(--state-error); }
+
+.permission-card--resolved .permission-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
   flex-wrap: wrap;
 }
-.permission-meta { margin-left: auto; }
+.permission-card--resolved .permission-chip-label {
+  color: var(--text-2);
+}
+.permission-card--resolved.permission-granted .permission-chip-label { color: var(--state-ok); }
+.permission-card--resolved.permission-denied  .permission-chip-label { color: var(--state-error); }
+.permission-card--resolved .permission-tool {
+  background: var(--surface-sunk);
+  border-color: var(--border);
+}
+.permission-card--resolved .permission-expand {
+  margin-left: auto;
+}
+.permission-card--resolved .permission-expand[open] {
+  flex-basis: 100%;
+  margin-left: 0;
+  margin-top: var(--sp-2);
+}
+.permission-card--resolved .permission-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.permission-meta-line { margin: 0; }
+
+/* ============================================================
+ * 19b. Allow / Deny buttons — semantic colors
+ *
+ * The btn-allow / btn-deny pair are the only places we use
+ * full-saturation green / red. Reserved for permission decisions
+ * so visual weight tracks "this changes state."
+ * ============================================================ */
+.btn-allow {
+  background: var(--state-ok);
+  color: var(--accent-fg);
+  border-color: var(--state-ok);
+}
+.btn-allow:hover {
+  background: color-mix(in srgb, var(--state-ok) 88%, black);
+}
+.btn-deny {
+  background: var(--surface);
+  color: var(--state-error);
+  border-color: color-mix(in srgb, var(--state-error) 40%, var(--border));
+}
+.btn-deny:hover {
+  background: color-mix(in srgb, var(--state-error) 6%, var(--surface));
+  border-color: var(--state-error);
+}
 
 /* ============================================================
  * 20. Run identifier heading (run-detail page)

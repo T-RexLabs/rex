@@ -140,10 +140,20 @@
     return prev;
   }
 
+  // The transcript is what the agent did, not just what it said.
+  // Tool calls, tool results, and chain-of-thought are first-class
+  // citizens in the timeline. Pure meta frames (session/update,
+  // usage ticks) and lifecycle events stay in the activity panel
+  // because they're operational noise, not work.
   function isTranscriptNode(node) {
     if (!node || !node.classList) return false;
-    if (node.classList.contains('frame-agent_text')) return true;
-    if (node.classList.contains('event-permission')) return true;
+    var cl = node.classList;
+    if (cl.contains('frame-agent_text')) return true;
+    if (cl.contains('frame-agent_thought')) return true;
+    if (cl.contains('frame-tool_call')) return true;
+    if (cl.contains('frame-tool_result')) return true;
+    if (cl.contains('event-permission')) return true;
+    if (cl.contains('permission-card')) return true;
     return false;
   }
 
@@ -408,8 +418,8 @@
     renderFrameText(merged);
     if (!inTranscript) {
       setActivityStatus(summarizeActivity(merged));
-    } else if (merged.classList && merged.classList.contains('event-permission')) {
-      setActivityStatus('awaiting permission decision');
+    } else if (merged.classList && (merged.classList.contains('event-permission') || merged.classList.contains('permission-card--pending'))) {
+      setActivityStatus('permission required');
     }
     if (merged && merged.classList && merged.classList.contains('event-compact-lifecycle')) {
       var label = merged.querySelector('.compact-label code');
@@ -428,7 +438,7 @@
   }
 
   function initComposerShortcuts() {
-    var form = document.querySelector('.run-input-dock');
+    var form = document.querySelector('.run-dock, .run-input-dock');
     if (!form) return;
     var transcript = document.getElementById('run-transcript');
     if (transcript) transcript.classList.add('has-dock');
