@@ -19,6 +19,12 @@ import (
 const (
 	// EventTypeWorkspaceCreated fires from `rex workspace init`.
 	EventTypeWorkspaceCreated = "workspace.created"
+
+	// Repo-attach lifecycle (workspace.REPO.4.1). All audit-class
+	// via audit.TYPES.1's "every workspace state change" clause.
+	EventTypeRepoAdded   = "repo.added"
+	EventTypeRepoLinked  = "repo.linked"
+	EventTypeRepoRemoved = "repo.removed"
 )
 
 // EventVersion is the schema version for audit-package event payloads.
@@ -32,6 +38,9 @@ const EventVersion uint32 = 1
 var auditEventTypes = func() map[string]struct{} {
 	out := map[string]struct{}{
 		EventTypeWorkspaceCreated: {},
+		EventTypeRepoAdded:        {},
+		EventTypeRepoLinked:       {},
+		EventTypeRepoRemoved:      {},
 
 		// Runner events are audit-class per TYPES.1 ("every harness
 		// invocation start/end ... every workspace state change").
@@ -80,4 +89,33 @@ type WorkspaceCreatedEvent struct {
 	// is auto-created on workspace init; the field is the place for
 	// that to land additively.
 	CreatedBy string `json:"created_by,omitempty"`
+}
+
+// RepoAddedEvent is the payload for EventTypeRepoAdded — fires
+// from `rex repo add` after the clone succeeds and the
+// registration in workspace.yaml is persisted (workspace.REPO.4.1).
+type RepoAddedEvent struct {
+	WorkspaceID string `json:"workspace_id"`
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	URL         string `json:"url"`
+}
+
+// RepoLinkedEvent is the payload for EventTypeRepoLinked — fires
+// from `rex repo link` (workspace.REPO.4.1). No URL field by
+// design: linked repos have no rex-managed origin.
+type RepoLinkedEvent struct {
+	WorkspaceID string `json:"workspace_id"`
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+}
+
+// RepoRemovedEvent is the payload for EventTypeRepoRemoved — fires
+// from `rex repo remove` (workspace.REPO.4.1). Purged is true iff
+// the working copy was deleted (i.e. `--purge` was passed).
+type RepoRemovedEvent struct {
+	WorkspaceID string `json:"workspace_id"`
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	Purged      bool   `json:"purged"`
 }

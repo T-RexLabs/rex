@@ -37,7 +37,8 @@ tasks:
 
   - id: repo-attach-mechanics
     description: Implement `rex repo add` (clone into workspace) and `rex repo link` (point at existing checkout)
-    state: todo
+    state: done
+    note: "Implemented in internal/local/cli/repo.go (add/link/list/remove); audit events RepoAdded/Linked/Removed registered in internal/core/audit/types.go per REPO.4.1."
     references: [REPO.1, REPO.2, REPO.3, REPO.4]
 
   - id: work-tag-model
@@ -70,6 +71,32 @@ components:
       "1": "`workspace.yaml` is a git-merged YAML file at `.rex/workspace.yaml` containing workspace settings"
       "2": "Required keys: `id`, `name`, `created_at`, `state`"
       "3": "Optional keys: `description`, `default_repo`, `repos` (list of attached repo definitions), `harness_defaults`, `default_template_id`, `multi_repo_mode` (one of `all`, `primary`)"
+      "3.1": |
+        Each entry in `workspace.yaml`'s `repos` list is a YAML
+        mapping with this shape:
+
+          name: <kebab-case-id>     required; unique per workspace;
+                                    serves as the join key for
+                                    `default_repo` and
+                                    `rex repo show/remove`.
+          path: <relative-posix>    required; POSIX-style, relative
+                                    to the workspace root. Must
+                                    resolve under the workspace
+                                    tree after normalization (no
+                                    `..` escapes). Validators
+                                    reject entries whose path
+                                    escapes the workspace.
+          url:  <git-url>           optional. Present iff the repo
+                                    was added via `rex repo add`
+                                    (cloned by rex). Absent iff
+                                    the repo was added via
+                                    `rex repo link` (existing
+                                    checkout). The presence/absence
+                                    of `url` is the single source
+                                    of truth for cloned-vs-linked.
+
+        No other fields are recognized in v1; future fields are
+        additive (overview.SYS.4).
       "4": "Edits to `workspace.yaml` are committed to the workspace event log; edits made offline are flagged as drafts until synced"
 
   REPO:
@@ -77,8 +104,30 @@ components:
     requirements:
       "1": "A workspace may have zero, one, or many attached repositories; zero-repo workspaces are first-class"
       "2": "`rex repo add <git-url> [path]` clones the repo into the workspace and registers it in `workspace.yaml`"
+      "2.1": |
+        `rex repo add` shells out to the system `git` binary on
+        PATH to perform the clone. This stays within
+        overview.ENG.1 (no new runtime *services*) and avoids the
+        dependency weight of a pure-Go git library. If `git` is
+        not on PATH, `rex repo add` exits non-zero with a clear
+        error before touching disk. `rex repo link` does not
+        invoke git at all — it validates that the target is a
+        directory and registers it.
       "3": "`rex repo link <existing-path>` registers an existing local checkout without cloning; useful when the user already has the repo elsewhere"
       "4": "Detached repos: `rex repo remove <name>` unregisters but does not delete the working copy; `rex repo remove --purge` deletes the working copy as well"
+      "4.1": |
+        Three audit-class events back the repo-attach lifecycle,
+        all audit-class via audit.TYPES.1's "every workspace
+        state change" clause:
+
+          repo.added    payload: {workspace_id, name, path, url}
+          repo.linked   payload: {workspace_id, name, path}
+          repo.removed  payload: {workspace_id, name, path, purged}
+
+        `purged` on `repo.removed` records whether the working
+        copy was deleted (true when invoked with `--purge`, false
+        otherwise). EventVersion is 1; new fields are additive
+        (overview.SYS.4).
       "5": "When a harness is invoked, the multi-repo policy is resolved in this order: task-level override > spec-level override > workspace-level `multi_repo_mode` > default `all`"
       "6": "v1 does not support per-harness worktrees; concurrent runs in a workspace are serialized (see `execution.yaml` constraint EXEC-CONC)"
 

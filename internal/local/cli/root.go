@@ -73,6 +73,7 @@ for each command group.`,
 	// parents are introduced here so the tree shape is visible at a
 	// glance and `rex --help` lists them in a stable order.
 	root.AddCommand(newWorkspaceCmd())
+	root.AddCommand(newRepoCmd())
 	root.AddCommand(newSpecCmd())
 	root.AddCommand(newRunCmd())
 	root.AddCommand(newHooksCmd())

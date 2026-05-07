@@ -1,0 +1,41 @@
+# Spec-bookkeeping reconciliation pass — workspace.
+#
+# Status: accepted.
+# Date:   2026-05-07.
+# Folded: 2026-05-07 — workspace.repo-attach-mechanics flipped to
+# done in specs/workspace.yaml with a clarifying note. Companion to
+# workspace-amendment-2026-05-07-repo-attach-design (which pinned
+# the schema + clone mechanism + audit events).
+#
+# Implementation lives in:
+#   - internal/local/cli/repo.go (add/link/list/remove subcommands,
+#     yaml.Node round-trip for workspace.yaml so unknown fields like
+#     a hand-edited `default_repo` survive the rewrite)
+#   - internal/local/cli/repo_test.go (link, list, remove --purge,
+#     unknown-field preservation, real `git clone` against an
+#     on-disk bare upstream)
+#   - internal/core/audit/types.go (RepoAdded / RepoLinked /
+#     RepoRemoved event types and payload structs, registered in
+#     auditEventTypes so audit.Append accepts them)
+#
+# All four task references are satisfied:
+#   - REPO.1 zero/one/many repos: workspace.yaml repos[] tolerates
+#     any length, including empty (saveRepoEntries drops the key
+#     entirely when the slice is empty so the file stays clean).
+#   - REPO.2 `rex repo add <git-url> [path]`: implemented; clone
+#     happens via the system git binary per REPO.2.1.
+#   - REPO.3 `rex repo link <existing-path>`: implemented; rejects
+#     non-directories and any path that escapes the workspace
+#     root, no git invocation.
+#   - REPO.4 `rex repo remove <name> [--purge]`: implemented;
+#     RepoRemoved.purged records the flag for the audit trail.
+
+target: workspace
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: repo-attach-mechanics
+    from: todo
+    to: done
+    proof: "internal/local/cli/repo.go ships add/link/list/remove with workspace.SETTINGS.3.1 entry shape, REPO.2.1 git-shell-out, and REPO.4.1 audit events; covered by 9 tests in internal/local/cli/repo_test.go (linking, listing, remove --purge, unknown-field preservation, real `git clone` against an on-disk bare upstream)"

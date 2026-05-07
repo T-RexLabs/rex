@@ -1,0 +1,181 @@
+# Proposed amendment — workspace `repos` schema + repo-attach CLI
+# design pass.
+#
+# Status: accepted.
+# Date:   2026-05-07.
+# Folded: 2026-05-07 — SETTINGS.3.1, REPO.2.1, REPO.4.1 added to
+# specs/workspace.yaml.
+#
+# Surfaced by:
+#   Pre-implementation review for the workspace.repo-attach-mechanics
+#   task (REPO.1-4). The spec describes the CLI surface (`rex repo
+#   add/link/remove`) and pins paths-relative-to-workspace-root
+#   (storage.WS.STRUCT.3), but leaves the shape of each entry in
+#   `workspace.yaml`'s `repos` list undefined (workspace.SETTINGS.3
+#   lists it as "list of attached repo definitions" with no schema).
+#   The `--purge` flag (REPO.4) also requires deciding what
+#   distinguishes "cloned" from "linked" so purge semantics are
+#   unambiguous.
+#
+# This amendment makes four additive decisions, all on
+# specs/workspace.yaml. Two clarifying notes (no requirement
+# changes), one new sub-requirement under SETTINGS pinning the
+# entry shape, and one new sub-requirement under REPO pinning the
+# clone mechanism. Existing requirements stay valid.
+#
+# No changes to other specs are needed:
+#   - storage.WS.STRUCT.3 (paths relative to workspace root) is
+#     already authoritative — this amendment honours it.
+#   - audit.TYPES.1 already enumerates "every spec change ... every
+#     workspace state change" as audit-class; the three new repo
+#     events fall under workspace state changes and need no
+#     audit-spec change to be recorded.
+
+target: workspace
+amendment_kind: additive
+
+# -----------------------------------------------------------------
+# Decision 1: Shape of one entry in workspace.yaml's `repos` list.
+#
+# Three required fields plus one optional:
+#
+#   name: <kebab-case>      identifier used by `rex repo show/remove`;
+#                           unique per workspace; not the same as the
+#                           git remote name (those live in the
+#                           checkout's own .git/config)
+#   path: <relative-posix>  path relative to the workspace root,
+#                           POSIX-style, must resolve to a location
+#                           under the workspace tree (no `..`
+#                           segments after normalization)
+#   url:  <git-url>         OPTIONAL. Present iff this repo was
+#                           added via `rex repo add` (i.e. cloned by
+#                           rex). Absent iff added via `rex repo
+#                           link` (i.e. an existing checkout pointed
+#                           at). The presence/absence of `url` is
+#                           the single source of truth for whether
+#                           a repo is "cloned" vs "linked".
+#
+# A separate `linked: bool` field would be redundant with
+# `url: <empty>`; not adding it.
+#
+# `default_repo` (already mentioned in SETTINGS.3) refers to a repo
+# by `name`, not by `path`. No change to that requirement; just
+# clarifying the join key here.
+# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------
+# Decision 2: Path constraint — repos live under the workspace tree.
+#
+# storage.WS.STRUCT.3 already says workspace.yaml records repo
+# paths relative to the workspace root. This amendment makes the
+# implication explicit: a `repos[].path` that resolves outside the
+# workspace tree is rejected by `rex repo add` and `rex repo link`,
+# and `rex spec validate` flags any pre-existing entry whose path
+# escapes the workspace root as an error (not a warning).
+#
+# The motivation is operational: `rex repo remove --purge` deletes
+# the working copy, and the safety boundary for that delete is
+# "can't go outside the workspace." Without a hard path constraint
+# the user could `rex repo link /` and `rex repo remove --purge`
+# their home directory.
+# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------
+# Decision 3: Clone mechanism for `rex repo add`.
+#
+# Rex shells out to the system `git` binary on PATH for cloning.
+# Rationale:
+#
+#   - overview.ENG.1 forbids new external runtime *services*
+#     (servers/daemons/databases). The `git` CLI is a tool, not a
+#     service, so this stays within the invariant.
+#   - overview.ENG.2 forbids cgo in the local binary. Adding a
+#     pure-Go git library (e.g. go-git) avoids the cgo concern,
+#     but go-git is a heavy module-tree addition (~80 indirect
+#     dependencies in v5) for one thin operation. Shelling out is
+#     simpler and matches how `rex run start --shell` already
+#     spawns external commands.
+#   - The pre-flight check for `git` on PATH is a one-liner; the
+#     error path tells the user which command was missing.
+#
+# `rex repo link` does not invoke `git` at all — it accepts any
+# directory the user points it at (validated as a directory, not
+# necessarily a working copy; rex does not enforce that the
+# linked path is a git checkout in v1).
+# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------
+# Decision 4: Audit events emitted by repo-attach operations.
+#
+# Three new event types, all audit-class via the existing
+# audit.TYPES.1 "every workspace state change" clause:
+#
+#   repo.added   payload: {workspace_id, name, path, url}
+#   repo.linked  payload: {workspace_id, name, path}
+#   repo.removed payload: {workspace_id, name, path, purged}
+#
+# Naming follows the existing `<noun>.<verb>` convention used by
+# workspace.created and the runner's run.* / node.* / permission.*
+# events. EventVersion stays at 1; future field additions are
+# additive (overview.SYS.4).
+# -----------------------------------------------------------------
+
+changes:
+
+  - kind: add-sub-requirement
+    component: SETTINGS
+    new_id: "3.1"
+    new_text: |
+      Each entry in `workspace.yaml`'s `repos` list is a YAML
+      mapping with this shape:
+
+        name: <kebab-case-id>     required; unique per workspace;
+                                  serves as the join key for
+                                  `default_repo` and `rex repo
+                                  show/remove`.
+        path: <relative-posix>    required; POSIX-style, relative
+                                  to the workspace root. Must
+                                  resolve under the workspace tree
+                                  after normalization (no `..`
+                                  escapes). Validators reject
+                                  entries whose path escapes the
+                                  workspace.
+        url:  <git-url>           optional. Present iff the repo
+                                  was added via `rex repo add`
+                                  (cloned by rex). Absent iff the
+                                  repo was added via `rex repo
+                                  link` (existing checkout). The
+                                  presence/absence of `url` is the
+                                  single source of truth for
+                                  cloned-vs-linked.
+
+      No other fields are recognized in v1; future fields are
+      additive (overview.SYS.4).
+
+  - kind: add-sub-requirement
+    component: REPO
+    new_id: "2.1"
+    new_text: |
+      `rex repo add` shells out to the system `git` binary on PATH
+      to perform the clone. This stays within overview.ENG.1 (no
+      new runtime *services*) and avoids the dependency weight of
+      a pure-Go git library. If `git` is not on PATH, `rex repo
+      add` exits non-zero with a clear error before touching disk.
+      `rex repo link` does not invoke git at all — it validates
+      that the target is a directory and registers it.
+
+  - kind: add-sub-requirement
+    component: REPO
+    new_id: "4.1"
+    new_text: |
+      Three audit-class events back the repo-attach lifecycle, all
+      audit-class via audit.TYPES.1's "every workspace state
+      change" clause:
+
+        repo.added    payload: {workspace_id, name, path, url}
+        repo.linked   payload: {workspace_id, name, path}
+        repo.removed  payload: {workspace_id, name, path, purged}
+
+      `purged` on `repo.removed` records whether the working copy
+      was deleted (true when invoked with `--purge`, false
+      otherwise). EventVersion is 1; new fields are additive.
