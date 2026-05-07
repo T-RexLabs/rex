@@ -32,7 +32,8 @@ tasks:
 
   - id: harness-adapter-registry
     description: "Implement adapters for Claude Code, Codex, OpenCode, GitHub Copilot, Cursor — using their ACP wrappers where they exist"
-    state: todo
+    state: done
+    note: "Claude Code, Codex, OpenCode adapters all register via internal/core/runner/adapter/all/all.go; ADAPT.2 explicitly defers Copilot + Cursor."
     references: [ADAPT.1, ADAPT.2, ADAPT.3]
 
   - id: dag-executor

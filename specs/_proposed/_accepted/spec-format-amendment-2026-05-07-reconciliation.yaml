@@ -1,0 +1,49 @@
+# Spec-bookkeeping reconciliation pass — spec-format (follow-on to
+# the 2026-05-04 sweep).
+#
+# Status: accepted.
+# Folded: 2026-05-07 — define-run-recipes flipped to done in
+# specs/spec-format.yaml with a clarifying note.
+#
+# The define-run-recipes task references TASK.6, TASK.6.1, RECIPE.1
+# through RECIPE.5, PROMPT.1, and TMPL.2.1, and its description
+# enumerates four implementation pieces:
+#
+#   1. extend Go types under internal/core/specfmt/
+#   2. validator support for the RECIPE schema and PROMPT.1
+#      templating
+#   3. wire `rex run start --from-task` in the CLI
+#   4. add the web UI run-button affordance to /specs/<id>
+#
+# All four shipped between 2026-05-04 and 2026-05-07:
+#
+#   - 9027483 feat(specfmt): add Recipe + PROMPT validation for
+#     tasks[].run [spec-format.TASK.6] [spec-format.TASK.6.1]
+#     [spec-format.RECIPE.1] [spec-format.RECIPE.2]
+#     [spec-format.RECIPE.3] [spec-format.RECIPE.4]
+#     [spec-format.RECIPE.5] [spec-format.PROMPT.1]
+#       — covers pieces (1) and (2). Recipe / Prompt types live in
+#         internal/core/specfmt/ and the validator enforces the
+#         shape.
+#
+#   - 503f09c feat(cli,web-ui): wire spec→run linkage end to end
+#     [execution.RUN.1.1] [execution.RUN.1.2]
+#     [spec-format.TASK.6] [web-ui.LIVE.2]
+#       — covers pieces (3) and (4). `rex run start --from-task`
+#         resolves recipes via internal/local/recipe; the web UI
+#         exposes POST /specs/{id}/tasks/{taskID}/run for the
+#         run-this-task affordance.
+#
+# TMPL.2.1 (template-extension scoping) is satisfied by the
+# pre-existing template subsystem the recipe code piggybacks on
+# (no new template surface was needed).
+
+target: spec-format
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: define-run-recipes
+    from: todo
+    to: done
+    proof: "internal/core/specfmt/ has Recipe + Prompt types and validator support (commit 9027483, ACIDs TASK.6 / TASK.6.1 / RECIPE.1-5 / PROMPT.1); internal/local/recipe + cli/run.go wire `rex run start --from-task` and internal/local/web/server.go registers POST /specs/{id}/tasks/{taskID}/run for the run-this-task affordance (commit 503f09c, ACIDs TASK.6 / web-ui.LIVE.2)"

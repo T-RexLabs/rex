@@ -52,7 +52,8 @@ tasks:
       RECIPE schema and PROMPT.1 templating, wire
       `rex run start --from-task` in the CLI, and add the
       web UI run-button affordance to /specs/<id>.
-    state: todo
+    state: done
+    note: "Recipe + Prompt types and validator in internal/core/specfmt/ (commit 9027483); `rex run start --from-task` and POST /specs/{id}/tasks/{taskID}/run shipped in commit 503f09c."
     references: [TASK.6, TASK.6.1, RECIPE.1, RECIPE.2, RECIPE.3, RECIPE.4, RECIPE.5, PROMPT.1, TMPL.2.1]
 
 components:

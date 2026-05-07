@@ -1,0 +1,54 @@
+# Spec-bookkeeping reconciliation pass — execution (follow-on to
+# the 2026-05-04 sweep).
+#
+# Status: accepted.
+# Folded: 2026-05-07 — harness-adapter-registry flipped to done in
+# specs/execution.yaml with a clarifying note.
+#
+# Since 2026-05-04 the codex (internal/core/runner/adapter/codex/)
+# and opencode (internal/core/runner/adapter/opencode/) adapters
+# landed alongside the existing claudecode adapter; all three are
+# blank-imported from internal/core/runner/adapter/all/all.go so
+# they self-register on cmd/rex startup. ADAPT.2 explicitly defers
+# Copilot and Cursor, which are the only harnesses left out of the
+# v1 set. Adapter files are 143 / 120 / 177 lines — well under the
+# ADAPT.4 < 200-line target — and adding a new harness is one new
+# file plus one Register call (ADAPT.3). The task can flip to done.
+#
+# Tasks staying todo (rationale refresh):
+#
+#   - dag-executor — still PARTIAL. Approval gating exists at the
+#     edge level (Node.RequiresApproval, internal/core/runner/types.go)
+#     but no human_approval primitive ships, and there is no
+#     parallel/branch fan-out scheduling in the executor.
+#
+#   - dag-primitives — still PARTIAL. Three of the nine PRIM.* node
+#     types ship: shell_exec, spec_validate, harness_invocation.
+#     human_approval / branch / parallel / wait / indexing /
+#     scheduled_trigger are unimplemented.
+#
+#   - run-lifecycle-cli — still PARTIAL but the rationale shifted:
+#     `rex run start` (default attached), `rex run attach`, `rex run
+#     show`, `rex run list` all ship. `rex run watch` is preserved as
+#     a deprecated alias for `attach`. Still missing: `rex run cancel`
+#     (RUN.5), `rex run signal` (cli.RUN.6), `rex run approve` /
+#     `rex run deny` (cli.RUN.7).
+#
+#   - schedule-engine — still TODO. No SCHED.* implementation; cron,
+#     webhook, and file-watch triggers are all unbuilt.
+#
+#   - permission-prompt-flow — still PARTIAL. Web UI permission
+#     cards ship (web-ui.LIVE.3 referenced from commit 6868323) and
+#     the runner emits permission.requested / granted / denied
+#     events (PERM.1). The CLI prompt path and the not-watching
+#     queue/timeout policy (PERM.3) are unimplemented.
+
+target: execution
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: harness-adapter-registry
+    from: todo
+    to: done
+    proof: "internal/core/runner/adapter/all/all.go blank-imports claudecode, codex, opencode subpackages — each registers via init() against adapter.Default(); adapter sources are 143/120/177 lines (ADAPT.4 < 200 target); ADAPT.2 defers Copilot + Cursor explicitly"
