@@ -151,11 +151,11 @@ var recognizedPermissionScopes = map[PermissionScope]struct{}{
 // blesses. The set must stay small — anything beyond simple metadata is
 // out of scope per the amendment.
 var recognizedPromptTokens = map[string]struct{}{
-	"spec.id":           {},
-	"spec.name":         {},
-	"task.id":           {},
-	"task.description":  {},
-	"task.references":   {},
+	"spec.id":          {},
+	"spec.name":        {},
+	"task.id":          {},
+	"task.description": {},
+	"task.references":  {},
 }
 
 // Validate checks doc against the spec-format.yaml v1 schema and

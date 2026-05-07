@@ -77,10 +77,8 @@ func LoadFromTaskRef(workspaceRoot, ref string, extraRefs []string) (*Resolved, 
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", specPath, err)
 	}
-	if doc.Metadata.ID != specID {
-		// Filename matched but metadata.id didn't — probably an
-		// alias. Still serviceable.
-	}
+	// metadata.id may differ from the filename when the file is an
+	// alias for another spec; we still proceed and look up the task.
 
 	var task *specfmt.Task
 	for i := range doc.Tasks {

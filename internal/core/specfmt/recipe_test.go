@@ -5,27 +5,6 @@ import (
 	"testing"
 )
 
-// recipeDocSrc returns a minimal-valid spec wrapping the supplied
-// task body. Keeps the per-test YAML free of boilerplate.
-func recipeDocSrc(taskBody string) string {
-	return `
-spec_version: 1
-metadata:
-  id: t
-  name: T
-  state: draft
-components:
-  X:
-    name: X
-    requirements:
-      "1": one
-tasks:
-  - id: ` + "`t1`" + `
-    description: a task
-    state: todo
-` + taskBody
-}
-
 func TestRecipeShellValid(t *testing.T) {
 	t.Parallel()
 

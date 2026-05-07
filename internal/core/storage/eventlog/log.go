@@ -234,12 +234,12 @@ func (r *Reader) Next() (Record, error) {
 
 	body := make([]byte, size)
 	if _, err := io.ReadFull(r.br, body); err != nil {
-		return Record{}, fmt.Errorf("%w: truncated body: %v", ErrCorruptRecord, err)
+		return Record{}, fmt.Errorf("%w: truncated body: %w", ErrCorruptRecord, err)
 	}
 
 	var rec Record
 	if err := json.Unmarshal(body, &rec); err != nil {
-		return Record{}, fmt.Errorf("%w: %v", ErrCorruptRecord, err)
+		return Record{}, fmt.Errorf("%w: %w", ErrCorruptRecord, err)
 	}
 	return rec, nil
 }

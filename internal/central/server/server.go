@@ -371,7 +371,7 @@ func (s *Server) verifyRecord(rec eventlog.Record) error {
 	}
 	sig, err := hexDecodeString(rec.Signature)
 	if err != nil {
-		return fmt.Errorf("%w: decode signature: %v", ErrInvalidSignature, err)
+		return fmt.Errorf("%w: decode signature: %w", ErrInvalidSignature, err)
 	}
 	return s.keystore.Verify(actor.Fingerprint, canonical, sig)
 }

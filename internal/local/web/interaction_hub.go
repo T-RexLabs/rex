@@ -89,13 +89,6 @@ func (h *runInteractionHub) unregister(runID string) {
 	run.mu.Unlock()
 }
 
-func (h *runInteractionHub) has(runID string) bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	_, ok := h.runs[runID]
-	return ok
-}
-
 func (h *runInteractionHub) acceptsInput(runID string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()

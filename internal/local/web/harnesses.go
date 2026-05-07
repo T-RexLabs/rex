@@ -19,7 +19,7 @@ type harnessCache struct {
 	options []harnessFormOption
 }
 
-func newHarnessCache(reg *adapter.Registry, ctx context.Context, workspaceRoot string, warm bool) *harnessCache {
+func newHarnessCache(ctx context.Context, reg *adapter.Registry, workspaceRoot string, warm bool) *harnessCache {
 	reg = normalizeHarnessRegistry(reg)
 	c := &harnessCache{options: staticHarnessOptions(reg)}
 	if !warm {

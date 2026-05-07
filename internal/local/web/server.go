@@ -80,7 +80,7 @@ func New(opts Options) (*Server, error) {
 	s := &Server{
 		opts:         opts,
 		ctx:          opts.Context,
-		harnesses:    newHarnessCache(opts.Adapters, opts.Context, opts.WorkspaceRoot, warmHarnesses),
+		harnesses:    newHarnessCache(opts.Context, opts.Adapters, opts.WorkspaceRoot, warmHarnesses),
 		ownedRuns:    &ownedRuns{},
 		interactions: newRunInteractionHub(),
 		mux:          http.NewServeMux(),

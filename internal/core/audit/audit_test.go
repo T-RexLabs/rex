@@ -152,7 +152,7 @@ func TestAppenderWritesThroughToReader(t *testing.T) {
 	if rec.Type != EventTypeWorkspaceCreated {
 		t.Fatalf("type: got %q", rec.Type)
 	}
-	if _, err := r.Next(); err != io.EOF {
+	if _, err := r.Next(); !errors.Is(err, io.EOF) {
 		t.Fatalf("expected EOF after one record, got %v", err)
 	}
 }

@@ -16,10 +16,12 @@ func TestCommandContextFallsBackToBackground(t *testing.T) {
 	}
 }
 
+type ctxTestKey struct{}
+
 func TestCommandContextUsesExplicitContext(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.WithValue(context.Background(), struct{}{}, "x")
+	ctx := context.WithValue(context.Background(), ctxTestKey{}, "x")
 	cmd := &cobra.Command{}
 	cmd.SetContext(ctx)
 	if got := commandContext(cmd); got != ctx {

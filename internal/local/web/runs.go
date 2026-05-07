@@ -122,10 +122,6 @@ type runsListData struct {
 	SpecFilter string
 }
 
-func loadRunsList(opts Options) (runsListData, error) {
-	return loadRunsListFiltered(opts, "")
-}
-
 // loadRunsListFiltered narrows the runs list to those whose
 // run.started event recorded the given fully-qualified ACID, or
 // whose `from_task` reference begins with the given spec id (so
