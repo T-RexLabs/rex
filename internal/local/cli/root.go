@@ -74,6 +74,7 @@ for each command group.`,
 	// glance and `rex --help` lists them in a stable order.
 	root.AddCommand(newWorkspaceCmd())
 	root.AddCommand(newRepoCmd())
+	root.AddCommand(newScheduleCmd())
 	root.AddCommand(newSpecCmd())
 	root.AddCommand(newRunCmd())
 	root.AddCommand(newHooksCmd())

@@ -39,10 +39,12 @@ const EventVersion uint32 = 1
 // RunStartedEvent fires when the Executor begins a Run.
 //
 // SpecRefs and FromTask are optional provenance fields recorded once
-// at run start (execution.RUN.1.1). They link a run back to the spec
-// task / ACIDs it was launched against. Old readers skip unknown
-// fields per overview.SYS.3; old writers omit them, keeping the event
-// shape additive per overview.SYS.4.
+// at run start (execution.RUN.1.1). Trigger is a third optional
+// provenance field recording the originating trigger when the run
+// was started by the schedule daemon (execution.RUN.1.3 / SCHED.3).
+// All three are omitted for ad-hoc runs. Old readers skip unknown
+// fields per overview.SYS.3; old writers omit them, keeping the
+// event shape additive per overview.SYS.4.
 type RunStartedEvent struct {
 	RunID     string    `json:"run_id"`
 	StartedAt time.Time `json:"started_at"`
@@ -54,6 +56,24 @@ type RunStartedEvent struct {
 	// `<spec-id>.<task-id>` when launched via --from-task or the
 	// web-UI "Run this task" affordance. Empty for ad-hoc runs.
 	FromTask string `json:"from_task,omitempty"`
+	// Trigger records the originating trigger when the run was
+	// started by the schedule daemon (execution.RUN.1.3). Nil for
+	// ad-hoc runs. Unknown trigger kinds are tolerated by readers
+	// (overview.SYS.3) so post-v1 trigger types load cleanly.
+	Trigger *RunTrigger `json:"trigger,omitempty"`
+}
+
+// RunTrigger records the schedule that initiated a run. Field set
+// is intentionally small and additive; "webhook" is reserved for v1.5.
+type RunTrigger struct {
+	// Kind is one of "cron", "file_watch". Reserved: "webhook".
+	Kind string `json:"kind"`
+	// Schedule is the .rex/schedules/<basename>.yaml that fired,
+	// without extension.
+	Schedule string `json:"schedule"`
+	// Reason is a free-form human-readable explanation: the cron
+	// expression that matched, the file paths that changed, etc.
+	Reason string `json:"reason,omitempty"`
 }
 
 // RunCompletedEvent fires once every reachable Node has succeeded.

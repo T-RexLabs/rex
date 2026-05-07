@@ -1,0 +1,252 @@
+# Proposed amendment — schedule engine design pass (v1 smaller variant).
+#
+# Status: accepted.
+# Date:   2026-05-08.
+# Folded: 2026-05-08 — execution.SCHED.{1.4, 2.1, 2.2}, RUN.1.3,
+# PRIM.9.1 added; cli.SCHED component + schedule-commands task added.
+#
+# Surfaced by:
+#   Pre-implementation review for execution.schedule-engine (the
+#   last non-MCP "v1 promised but missing" big rock). The spec
+#   describes three trigger types and gestures at "workflow YAML"
+#   without ever defining one; v1 has no daemon and no multi-node
+#   workflow shape. The user picked the smaller variant for v1:
+#
+#     - foreground daemon (`rex schedule run`); no rex-serve coupling,
+#       no system-cron delegation
+#     - single-node runs only — schedules embed a recipe (spec-format
+#       RECIPE.* shape), not a workflow file we'd have to invent
+#     - webhook trigger deferred (it depends on central-side execution
+#       which is itself v1.5 per overview.SCOPE.1)
+#     - fsnotify accepted as a new Go module dep (pure-Go, no cgo)
+#     - originating trigger recorded as an additive field on
+#       RunStartedEvent rather than a `scheduled_trigger` primitive
+#
+# This amendment makes those choices explicit on three specs.
+
+target: multi
+amendment_kind: additive
+
+# -----------------------------------------------------------------
+# Decision 1: Scope cut — v1 ships cron + file-watch only.
+#
+# `SCHED.1.2` (webhook) requires a central-node endpoint; central-
+# side execution is deferred to v1.5 (overview.SCOPE.1, EXEC-SCOPE.1),
+# so the webhook trigger is deferred as a unit. No data-model change
+# is needed — the requirement just gets a deferral note.
+#
+# `SCHED.1.3` (file-watch) is implemented via fsnotify
+# (github.com/fsnotify/fsnotify). New Go module dep but pure-Go;
+# overview.ENG.2 (no cgo) is honored, overview.ENG.1 (no new
+# runtime *services*) is also honored — fsnotify is a library, not
+# a daemon.
+# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------
+# Decision 2: Schedule YAML shape.
+#
+# Schedules live in `.rex/schedules/<name>.yaml` (git-merged per
+# storage.WS.2.3). The shape pins `name`, exactly one trigger
+# block, and a `run` block that reuses the spec-format RECIPE
+# schema verbatim (so harness + shell + spec_validate runs all
+# work without defining a new "what to run" type).
+#
+#   spec_version: 1
+#   name: nightly-tests              # kebab; matches filename basename
+#   trigger:
+#     kind: cron                     # or `file_watch`
+#     cron: "0 3 * * *"              # required when kind=cron; 5-field
+#     paths: ["src/**/*.go"]         # required when kind=file_watch
+#     debounce_ms: 1000              # optional; default 500ms
+#   run:                             # spec-format.RECIPE.* schema
+#     kind: shell
+#     command: ["go", "test", "./..."]
+#
+# Exactly one trigger per schedule (multi-trigger fan-in is post-v1).
+# The run block enforces all RECIPE.* validation; PROMPT.1 token
+# substitution is unavailable here (no enclosing task) and the
+# validator rejects {{}} tokens in schedule recipes with a clear
+# error pointing the user at task-bound recipes if they want
+# templating.
+# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------
+# Decision 3: `rex schedule run` is a foreground daemon.
+#
+# A new long-running command, distinct from `rex serve` (the web
+# UI). It walks `.rex/schedules/`, sets up cron tickers and
+# fsnotify watchers, and fires runs through the same DAG executor
+# the rest of the system uses. SIGINT terminates cleanly.
+#
+# Concurrency stays on the workspace-serial rule from EXEC-CONC.1:
+# if a schedule fires while a previous fire of any schedule is
+# still running, the new fire queues. The daemon does not coalesce
+# repeated fires on the same schedule — every fire produces a run.
+#
+# The daemon does not survive `rex schedule run` exit: cron last-
+# fired state is in-memory only, debounce timers are in-memory only.
+# That is acceptable for v1 (cron is stateless; missed fires while
+# down are not "made up" — the same property system cron has).
+# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------
+# Decision 4: Originating trigger on RunStartedEvent.
+#
+# Add `trigger` as an additive field on RunStartedEvent (next to
+# `spec_refs` and `from_task` from execution.RUN.1.1). Empty for
+# ad-hoc runs. Schema:
+#
+#   trigger:
+#     kind:     "cron" | "file_watch"  // reserved: "webhook" v1.5
+#     schedule: <kebab>                // .rex/schedules/<name>.yaml basename
+#     reason:   <free-form>            // e.g. matched paths, cron expr
+#
+# `scheduled_trigger` primitive (PRIM.9) becomes a no-op for v1 —
+# the trigger is a property of the run, not a node. PRIM.9 is
+# deferred until multi-node workflows ship; until then the field
+# on RunStartedEvent satisfies SCHED.3 ("the originating trigger
+# is recorded in the run.started event") on its own.
+# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------
+# Decision 5: CLI surface.
+#
+# A new `rex schedule` parent with five leaves. cli.yaml adds a
+# SCHED component and a schedule-commands task to track them.
+#
+#   rex schedule list                    list .rex/schedules/*.yaml
+#   rex schedule show <name>             pretty-print one
+#   rex schedule add <name> <flags>      scaffold + open in $EDITOR
+#   rex schedule remove <name>           delete the file
+#   rex schedule trigger <name>          fire one schedule once (test path)
+#   rex schedule run                     foreground daemon (Decision 3)
+#
+# Shape mirrors `rex repo` (verb-noun, --json on read paths,
+# --workspace honoured everywhere).
+# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------
+# Decision 6: Audit events.
+#
+# Two new audit-class event types, both under audit.TYPES.1's
+# "every workspace state change" clause:
+#
+#   schedule.added    {workspace_id, name, path, trigger_kind}
+#   schedule.removed  {workspace_id, name, path}
+#
+# Schedule fires are NOT a new event type — they manifest as
+# RunStartedEvent.trigger. EventVersion stays at 1 per
+# overview.SYS.4.
+# -----------------------------------------------------------------
+
+changes:
+
+  # -- execution.yaml ---------------------------------------------
+
+  - kind: add-sub-requirement
+    target_spec: execution
+    component: SCHED
+    new_id: "1.4"
+    new_text: |
+      v1 ships cron and file-watch triggers only. Webhook
+      (`SCHED.1.2`) is deferred to v1.5 alongside central-side
+      execution (overview.SCOPE.1) — the central endpoint cannot
+      meaningfully exist before central runs do. File-watch is
+      implemented via the pure-Go `github.com/fsnotify/fsnotify`
+      library; overview.ENG.2 (no cgo) is preserved.
+
+  - kind: add-sub-requirement
+    target_spec: execution
+    component: SCHED
+    new_id: "2.1"
+    new_text: |
+      A schedule file at `.rex/schedules/<name>.yaml` is a YAML
+      document with this shape:
+
+        spec_version: 1
+        name: <kebab-id>          required; matches filename basename
+        trigger:                  exactly one block per schedule
+          kind: cron | file_watch
+          cron: "<5-field>"       required when kind=cron
+          paths: [<glob>...]      required when kind=file_watch
+          debounce_ms: <int>      optional; default 500 (file_watch only)
+        run:                      spec-format.RECIPE.* schema verbatim
+          kind: shell|harness|spec_validate
+          ...
+
+      Multi-trigger schedules are post-v1; the validator rejects
+      multiple trigger blocks. PROMPT.1 token substitution is
+      not available in schedule recipes (no enclosing task); the
+      validator rejects `{{ ... }}` tokens here with an error
+      pointing the user at task-bound recipes for templating.
+
+  - kind: add-sub-requirement
+    target_spec: execution
+    component: SCHED
+    new_id: "2.2"
+    new_text: |
+      `rex schedule run` is the v1 daemon shape: a foreground
+      command that walks `.rex/schedules/`, registers cron
+      tickers and fsnotify watchers, and fires runs through the
+      same DAG executor every other run uses. SIGINT terminates
+      cleanly. Concurrency follows EXEC-CONC.1 (workspace-serial)
+      — fires that arrive while a run is in flight queue. Cron
+      last-fired state and file-watch debounce timers are
+      in-memory only; missed fires while the daemon is down are
+      not "made up", matching system-cron semantics.
+
+  - kind: add-sub-requirement
+    target_spec: execution
+    component: RUN
+    new_id: "1.3"
+    new_text: |
+      `RunStartedEvent` carries an optional `trigger` field
+      recording the originating trigger when the run was started
+      by the schedule daemon:
+
+        trigger:
+          kind:     "cron" | "file_watch"   // "webhook" reserved for v1.5
+          schedule: <kebab>                 // .rex/schedules/<name>.yaml basename
+          reason:   <free-form>             // e.g. matched paths, cron expression
+
+      Field is omitted for ad-hoc runs; readers skip unknown
+      fields per overview.SYS.3 and unknown trigger kinds per the
+      same rule. Together with `spec_refs` (RUN.1.1) and
+      `from_task` (RUN.1.1) this completes the run-provenance
+      record.
+
+  - kind: add-sub-requirement
+    target_spec: execution
+    component: PRIM
+    new_id: "9.1"
+    new_text: |
+      The `scheduled_trigger` primitive (PRIM.9) is a no-op in v1.
+      With the smaller v1 variant — single-node runs launched
+      directly by the schedule daemon — the originating trigger
+      is a property of the run, not a graph node. The trigger
+      surface is the additive `trigger` field on RunStartedEvent
+      (RUN.1.3). PRIM.9 ships once multi-node workflow YAML lands
+      (deferred alongside the workflow-format spec).
+
+  # -- cli.yaml ---------------------------------------------------
+
+  - kind: add-component
+    target_spec: cli
+    component: SCHED
+    body:
+      name: Schedule subcommands
+      requirements:
+        "1": "`rex schedule list` — list all schedules in `.rex/schedules/`"
+        "2": "`rex schedule show <name>` — pretty-print one schedule's YAML"
+        "3": "`rex schedule add <name> --cron <expr>` (or `--paths <glob>...`) — scaffold a new schedule file and open in $EDITOR"
+        "4": "`rex schedule remove <name>` — delete the schedule file"
+        "5": "`rex schedule trigger <name>` — fire the schedule once (test path) without starting the daemon"
+        "6": "`rex schedule run` — start the foreground schedule daemon (execution.SCHED.2.2)"
+
+  - kind: add-task
+    target_spec: cli
+    new_task:
+      id: schedule-commands
+      description: "Implement `rex schedule add/list/show/remove/trigger/run`"
+      state: todo
+      references: [SCHED.1, SCHED.2, SCHED.3, SCHED.4, SCHED.5, SCHED.6]

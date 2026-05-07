@@ -58,6 +58,12 @@ tasks:
     state: todo
     references: [HOOKS.1, SNAP.1, LOG.1, SEARCH.1, TOOLS.1]
 
+  - id: schedule-commands
+    description: "Implement `rex schedule add/list/show/remove/trigger/run` (execution.SCHED.*)"
+    state: done
+    note: "All six subcommands ship in internal/local/cli/schedule.go."
+    references: [SCHED.1, SCHED.2, SCHED.3, SCHED.4, SCHED.5, SCHED.6]
+
   - id: output-formatting
     description: "Implement consistent table/JSON output, color, --quiet, --json across all read commands"
     state: todo
@@ -153,6 +159,16 @@ components:
       "1": "`rex tools list` — list MCP servers and integrations attached to the workspace"
       "2": "`rex tools mcp add/list/show/remove/test/rotate-credentials` — MCP server management"
       "3": "`rex tools integration add/list/show/remove/test` — app integration management"
+
+  SCHED:
+    name: Schedule subcommands
+    requirements:
+      "1": "`rex schedule list` — list all schedules in `.rex/schedules/`"
+      "2": "`rex schedule show <name>` — pretty-print one schedule's YAML"
+      "3": "`rex schedule add <name> --cron <expr>` (or `--paths <glob>...`) — scaffold a new schedule file and open in $EDITOR"
+      "4": "`rex schedule remove <name>` — delete the schedule file"
+      "5": "`rex schedule trigger <name>` — fire the schedule once (test path) without starting the daemon"
+      "6": "`rex schedule run` — start the foreground schedule daemon (execution.SCHED.2.2)"
 
   FMT:
     name: Output formatting

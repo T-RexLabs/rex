@@ -33,6 +33,10 @@ type ExecConfig struct {
 	// when the run was launched from a spec recipe (execution.RUN.1.1).
 	// Empty for ad-hoc runs.
 	FromTask string
+	// Trigger records the originating schedule trigger when the run
+	// was launched by the schedule daemon (execution.RUN.1.3). Nil
+	// for ad-hoc runs.
+	Trigger *RunTrigger
 
 	// Now and Sleep are injectable so tests can drive retry timing
 	// without burning real time (overview.ENG.4). When nil, time.Now
@@ -91,6 +95,7 @@ func (e *Executor) Run(ctx context.Context) (*RunState, error) {
 		StartedAt: startedAt,
 		SpecRefs:  dedupeNonEmpty(e.cfg.SpecRefs),
 		FromTask:  e.cfg.FromTask,
+		Trigger:   e.cfg.Trigger,
 	}); err != nil {
 		return state, err
 	}

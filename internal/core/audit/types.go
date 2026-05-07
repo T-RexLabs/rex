@@ -25,6 +25,13 @@ const (
 	EventTypeRepoAdded   = "repo.added"
 	EventTypeRepoLinked  = "repo.linked"
 	EventTypeRepoRemoved = "repo.removed"
+
+	// Schedule lifecycle (cli.SCHED.* + execution.SCHED.*). Schedule
+	// fires manifest as RunStartedEvent.Trigger; only register/
+	// unregister actions are first-class events (audit.TYPES.1's
+	// "every workspace state change" clause).
+	EventTypeScheduleAdded   = "schedule.added"
+	EventTypeScheduleRemoved = "schedule.removed"
 )
 
 // EventVersion is the schema version for audit-package event payloads.
@@ -41,6 +48,8 @@ var auditEventTypes = func() map[string]struct{} {
 		EventTypeRepoAdded:        {},
 		EventTypeRepoLinked:       {},
 		EventTypeRepoRemoved:      {},
+		EventTypeScheduleAdded:    {},
+		EventTypeScheduleRemoved:  {},
 
 		// Runner events are audit-class per TYPES.1 ("every harness
 		// invocation start/end ... every workspace state change").
@@ -118,4 +127,21 @@ type RepoRemovedEvent struct {
 	Name        string `json:"name"`
 	Path        string `json:"path"`
 	Purged      bool   `json:"purged"`
+}
+
+// ScheduleAddedEvent is the payload for EventTypeScheduleAdded —
+// fires from `rex schedule add`.
+type ScheduleAddedEvent struct {
+	WorkspaceID string `json:"workspace_id"`
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	TriggerKind string `json:"trigger_kind"`
+}
+
+// ScheduleRemovedEvent is the payload for EventTypeScheduleRemoved
+// — fires from `rex schedule remove`.
+type ScheduleRemovedEvent struct {
+	WorkspaceID string `json:"workspace_id"`
+	Name        string `json:"name"`
+	Path        string `json:"path"`
 }

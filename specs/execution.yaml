@@ -53,7 +53,8 @@ tasks:
 
   - id: schedule-engine
     description: "Implement scheduled work: cron triggers (local), webhook triggers (central), file-watch triggers (local)"
-    state: todo
+    state: done
+    note: "v1 ships cron + file-watch via internal/core/schedule/ + `rex schedule run`; webhook is deferred to v1.5 per SCHED.1.4 (depends on central-side execution, overview.SCOPE.1)."
     references: [SCHED.1, SCHED.2, SCHED.3]
 
   - id: permission-prompt-flow
@@ -100,6 +101,15 @@ components:
       "7": "`wait` — pauses for a duration or until an external signal (timer or `rex run signal <run-id> <name>`)"
       "8": "`indexing` — refreshes the workspace's search index after content changes"
       "9": "`scheduled_trigger` — the entrypoint for runs initiated by cron, webhook, or file-watch (see SCHED)"
+      "9.1": |
+        `scheduled_trigger` is a no-op in v1. With the smaller v1
+        variant (single-node runs launched directly by the
+        schedule daemon — execution.SCHED.2.2), the originating
+        trigger is a property of the run, not a graph node. The
+        trigger surface is the additive `trigger` field on
+        RunStartedEvent (RUN.1.3). PRIM.9 ships once multi-node
+        workflow YAML lands (deferred alongside the
+        workflow-format spec).
       "10": "Approval is a flag on any node (`requires_approval: true`), not exclusive to `human_approval`; this allows e.g. gating a `shell_exec` behind approval"
 
   RUN:
@@ -134,6 +144,21 @@ components:
         provides the same filter in the web UI. `/specs/<id>` renders
         a "Runs citing this spec" panel listing runs whose
         `spec_refs` contain any ACID prefixed by `<id>.`.
+      "1.3": |
+        `RunStartedEvent` carries an optional `trigger` field
+        recording the originating trigger when the run was started
+        by the schedule daemon:
+
+          trigger:
+            kind:     "cron" | "file_watch"   // "webhook" reserved for v1.5
+            schedule: <kebab>                 // .rex/schedules/<name>.yaml basename
+            reason:   <free-form>             // e.g. matched paths, cron expression
+
+        Field is omitted for ad-hoc runs; readers skip unknown
+        fields per overview.SYS.3 and unknown trigger kinds per
+        the same rule. Together with `spec_refs` (RUN.1.1) and
+        `from_task` (RUN.1.1) this completes the run-provenance
+        record. Implements SCHED.3.
       "2": "`rex run attach <run-id>` streams events live via the same file-tail mechanism the web UI uses; replays every existing matching event then tails new ones. `--since-start` is implicit (every prior event is replayed). `rex run watch` is kept as a deprecated alias."
       "3": "`rex run show <run-id>` displays the full transcript and DAG status, working offline"
       "4": "`rex run list` shows recent runs with status, harness, spec, duration"
@@ -146,7 +171,45 @@ components:
       "1.1": "Cron triggers fire on the local node's clock; the cron expression is in standard 5-field format"
       "1.2": "Webhook triggers expose a central-node endpoint with HMAC signature verification; only valid for workspaces synced to that central node"
       "1.3": "File-watch triggers monitor paths under the workspace via the host OS's filesystem-event API"
+      "1.4": |
+        v1 ships cron and file-watch triggers only. Webhook
+        (`SCHED.1.2`) is deferred to v1.5 alongside central-side
+        execution (overview.SCOPE.1) — the central endpoint cannot
+        meaningfully exist before central runs do. File-watch is
+        implemented via the pure-Go `github.com/fsnotify/fsnotify`
+        library; overview.ENG.2 (no cgo) is preserved.
       "2": "Schedule definitions live in `.rex/schedules/<name>.yaml` (git-merged); each one points at a workflow YAML and may set environment overrides"
+      "2.1": |
+        A schedule file at `.rex/schedules/<name>.yaml` is a YAML
+        document with this shape:
+
+          spec_version: 1
+          name: <kebab-id>          required; matches filename basename
+          trigger:                  exactly one block per schedule
+            kind: cron | file_watch
+            cron: "<5-field>"       required when kind=cron
+            paths: [<glob>...]      required when kind=file_watch
+            debounce_ms: <int>      optional; default 500 (file_watch only)
+          run:                      spec-format.RECIPE.* schema verbatim
+            kind: shell|harness|spec_validate
+            ...
+
+        Multi-trigger schedules are post-v1; the validator rejects
+        multiple trigger blocks. `PROMPT.1` token substitution is
+        not available in schedule recipes (no enclosing task); the
+        validator rejects `{{ ... }}` tokens here with an error
+        pointing the user at task-bound recipes for templating.
+      "2.2": |
+        `rex schedule run` is the v1 daemon shape: a foreground
+        command that walks `.rex/schedules/`, registers cron
+        tickers and fsnotify watchers, and fires runs through the
+        same DAG executor every other run uses. SIGINT terminates
+        cleanly. Concurrency follows EXEC-CONC.1
+        (workspace-serial) — fires that arrive while a run is in
+        flight queue. Cron last-fired state and file-watch
+        debounce timers are in-memory only; missed fires while the
+        daemon is down are not "made up", matching system-cron
+        semantics.
       "3": "When a scheduled run fires, it executes through the same DAG executor as any other run; the originating trigger is recorded in the `run.started` event"
 
   PERM:

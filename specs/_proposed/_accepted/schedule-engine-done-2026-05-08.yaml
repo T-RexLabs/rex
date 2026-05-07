@@ -1,0 +1,43 @@
+# Spec-bookkeeping reconciliation pass — schedule-engine done.
+#
+# Status: accepted.
+# Date:   2026-05-08.
+# Folded: 2026-05-08 — execution.schedule-engine and cli.schedule-commands
+# flipped to done in their respective specs with clarifying notes.
+# Companion to schedule-engine-design-2026-05-08.
+#
+# Implementation lives in:
+#   - internal/core/schedule/   (Schedule type, validator, daemon —
+#     cron via robfig/cron, file-watch via fsnotify)
+#   - internal/local/cli/schedule.go  (rex schedule add/list/show/
+#     remove/trigger/run; six subcommands)
+#   - internal/core/runner/events.go  (RunStartedEvent.Trigger field
+#     + RunTrigger struct, execution.RUN.1.3)
+#   - internal/local/runtask/runtask.go  (Trigger threaded through
+#     ShellRunRequest + HarnessRunRequest into the executor)
+#   - internal/core/audit/types.go  (schedule.added + schedule.removed
+#     audit-class events)
+#
+# Webhook trigger (SCHED.1.2) stays deferred to v1.5 per SCHED.1.4
+# — the central endpoint cannot meaningfully exist before central
+# runs do (overview.SCOPE.1). The v1 schedule-engine task is "done"
+# in the sense the user picked: cron + file-watch shipped, webhook
+# explicitly out of scope.
+
+target: multi
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    target_spec: execution
+    task_id: schedule-engine
+    from: todo
+    to: done
+    proof: "internal/core/schedule/{schedule,daemon}.go ship cron + file-watch triggers; daemon registered via `rex schedule run` (cli/schedule.go); RunStartedEvent.Trigger + RunTrigger added in core/runner/events.go; webhook deferred to v1.5 per SCHED.1.4 (overview.SCOPE.1)"
+
+  - kind: update-task-state
+    target_spec: cli
+    task_id: schedule-commands
+    from: todo
+    to: done
+    proof: "internal/local/cli/schedule.go wires `rex schedule add/list/show/remove/trigger/run` (six subcommands); covered by 7 tests in schedule_test.go and 19 tests in core/schedule/{schedule,daemon}_test.go"

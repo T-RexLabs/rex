@@ -144,6 +144,9 @@ type ShellRunRequest struct {
 	// FromTask is the `<spec-id>.<task-id>` reference when launched
 	// via a spec recipe (execution.RUN.1.1).
 	FromTask string
+	// Trigger records the originating schedule trigger when launched
+	// by the schedule daemon (execution.RUN.1.3). Nil for ad-hoc runs.
+	Trigger *runner.RunTrigger
 	// OnEvent is invoked with every event the run emits, AFTER it
 	// has been written to the event log. Used by `rex run start`
 	// in attached mode (the default) to render events live as
@@ -204,6 +207,7 @@ func StartShellRun(ctx context.Context, ws *Workspace, req ShellRunRequest) (*Sh
 		Registry: reg,
 		SpecRefs: req.SpecRefs,
 		FromTask: req.FromTask,
+		Trigger:  req.Trigger,
 	})
 	if err != nil {
 		return nil, err
@@ -253,6 +257,9 @@ type HarnessRunRequest struct {
 	// FromTask is the `<spec-id>.<task-id>` reference when launched
 	// via a spec recipe (execution.RUN.1.1).
 	FromTask string
+	// Trigger records the originating schedule trigger when launched
+	// by the schedule daemon (execution.RUN.1.3). Nil for ad-hoc runs.
+	Trigger *runner.RunTrigger
 	// Adapters is the registry consulted for Harness; nil =
 	// adapter.Default().
 	Adapters *adapter.Registry
@@ -368,6 +375,7 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 		Registry: reg,
 		SpecRefs: req.SpecRefs,
 		FromTask: req.FromTask,
+		Trigger:  req.Trigger,
 	})
 	if err != nil {
 		return nil, err
