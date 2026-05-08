@@ -33,6 +33,8 @@ func MatchesRun(decoded any, runID string) bool {
 		return ev.RunID == runID
 	case HarnessFrameEvent:
 		return ev.RunID == runID
+	case RunCancellationRequestedEvent:
+		return ev.RunID == runID
 	}
 	return false
 }

@@ -204,6 +204,14 @@ func StartShellRun(ctx context.Context, ws *Workspace, req ShellRunRequest) (*Sh
 	reg := runner.NewPrimitiveRegistry()
 	reg.Register(primshell.PrimitiveType, primshell.New(primshell.Options{WorkspaceDir: ws.Root}))
 
+	// Wire the cancel watcher (cli.RUN.5 / execution.RUN.5): a
+	// `rex run cancel` from a separate process writes a
+	// run.cancellation_requested event; the watcher tails the log
+	// and cancels our context with a typed cause when it lands.
+	runCtx, cancelRun := context.WithCancelCause(ctx)
+	defer cancelRun(nil)
+	go runner.WatchForCancel(runCtx, EventLogPath(ws.Root), runID, cancelRun)
+
 	exec, err := runner.NewExecutor(runner.ExecConfig{
 		RunID:    runID,
 		DAG:      dag,
@@ -217,7 +225,7 @@ func StartShellRun(ctx context.Context, ws *Workspace, req ShellRunRequest) (*Sh
 	if err != nil {
 		return nil, err
 	}
-	state, err := exec.Run(ctx)
+	state, err := exec.Run(runCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -377,6 +385,14 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 		OnPermission: permissionHandler,
 	}))
 
+	// Wire the cancel watcher (cli.RUN.5) — same pattern as the
+	// shell-run path. The harness primitive will see ctx
+	// cancellation and send ACP session/cancel before the
+	// underlying process tears down.
+	runCtx, cancelRun := context.WithCancelCause(ctx)
+	defer cancelRun(nil)
+	go runner.WatchForCancel(runCtx, EventLogPath(ws.Root), runID, cancelRun)
+
 	exec, err := runner.NewExecutor(runner.ExecConfig{
 		RunID:    runID,
 		DAG:      dag,
@@ -390,7 +406,7 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 	if err != nil {
 		return nil, err
 	}
-	state, err := exec.Run(ctx)
+	state, err := exec.Run(runCtx)
 	if err != nil {
 		return nil, err
 	}

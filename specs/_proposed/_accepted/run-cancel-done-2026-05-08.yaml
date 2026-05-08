@@ -1,0 +1,56 @@
+# Spec-bookkeeping reconciliation pass — run-cancel done.
+#
+# Status: accepted.
+# Date:   2026-05-08.
+# Folded: 2026-05-08 — cli.run-commands and execution.run-lifecycle-cli
+# both flipped to done after `rex run cancel` shipped.
+#
+# Coverage of cli.RUN.1..RUN.5 / execution.RUN.1..RUN.5 references
+# (each task references the same five-item set):
+#
+#   RUN.1  rex run start            (existing; --from-task / --spec-ref
+#                                     / --work-type added in earlier PRs)
+#   RUN.2  rex run attach           (existing; rex run watch alias)
+#   RUN.3  rex run show             (existing)
+#   RUN.4  rex run list             (existing; --spec-ref / --from-task
+#                                     filters added in earlier PRs)
+#   RUN.5  rex run cancel           (this commit)
+#
+# Implementation
+#   - internal/core/runner/cancel_watch.go: WatchForCancel tails the
+#     workspace's events.log for run.cancellation_requested events
+#     targeting our run id and translates them into context cancellation
+#     via context.CancelCauseFunc with a typed CancelRequestedError cause.
+#   - internal/core/runner/events.go: new EventTypeRunCancellationRequested
+#     + RunCancellationRequestedEvent payload, registered in RegisterEvents,
+#     classifyEvent, and MatchesRun so the existing run-id resolution
+#     surfaces it.
+#   - internal/local/runtask/runtask.go: both StartShellRun and
+#     StartHarnessRun spawn a WatchForCancel goroutine alongside the
+#     executor. Context cancellation propagates through ACP for harness
+#     runs (session/cancel) and through os/exec for shell runs.
+#   - internal/local/cli/run.go: newRunCancelCmd writes the event;
+#     resolveRunID handles prefix + friendly-slug input.
+#
+# Best-effort semantic: if no process is currently running the named
+# run, the event still lands but nothing reacts. Matches the v1
+# no-daemon model; matches the spec's RUN.5 wording "requests
+# cancellation" rather than "cancels".
+
+target: multi
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    target_spec: cli
+    task_id: run-commands
+    from: todo
+    to: done
+    proof: "internal/local/cli/run.go ships the full RUN.1-5 set: start (with --from-task / --spec-ref / --work-type / quiet/json), attach + watch alias, show, list (with --status / --spec-ref / --from-task / --limit), cancel (this commit)"
+
+  - kind: update-task-state
+    target_spec: execution
+    task_id: run-lifecycle-cli
+    from: todo
+    to: done
+    proof: "Same surface as cli.run-commands; RUN.5 (cancel) wires the watcher in runtask + writes RunCancellationRequestedEvent in cli; covered by 4 watcher tests + 3 CLI cancel tests + the existing run-lifecycle suite"

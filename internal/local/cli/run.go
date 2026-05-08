@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/asabla/rex/internal/core/event"
+	"github.com/asabla/rex/internal/core/identity"
 	"github.com/asabla/rex/internal/core/runner"
 	"github.com/asabla/rex/internal/core/runner/adapter"
 	"github.com/asabla/rex/internal/core/runner/primharness"
@@ -47,6 +48,108 @@ need a daemon model that v1 does not have.`,
 	cmd.AddCommand(newRunWatchAliasCmd())
 	cmd.AddCommand(newRunListCmd())
 	cmd.AddCommand(newRunShowCmd())
+	cmd.AddCommand(newRunCancelCmd())
+	return cmd
+}
+
+// newRunCancelCmd implements `rex run cancel <run-id>` per
+// cli.RUN.5 / execution.RUN.5. Writes a run.cancellation_requested
+// event to the workspace event log; running processes (rex run
+// start in attached mode, rex serve, rex schedule run) tail the
+// log and cancel their context when the event lands.
+//
+// v1 is best-effort by design: if no process is currently running
+// the named run, the event is still recorded — a future re-attach
+// or replay will see it but no action follows. The CLI returns
+// success either way; the user-visible result is whether the
+// running process notices and exits.
+func newRunCancelCmd() *cobra.Command {
+	var (
+		reasonFlag string
+	)
+	cmd := &cobra.Command{
+		Use:   "cancel <run-id>",
+		Short: "Request cancellation of an in-flight run",
+		Long: `Resolves <run-id> against the workspace's event log (same prefix /
+friendly-slug rules as 'rex run show') and writes a
+run.cancellation_requested event. Any process currently executing
+the named run — 'rex run start' attached, 'rex serve' for runs it
+owns, or 'rex schedule run' for fired schedules — sees the event
+on its next watcher tick (~100ms) and cancels its context. The
+executor then emits the canonical run.cancelled event when the
+node exits.
+
+For harness runs, ctx cancellation propagates through ACP as
+session/cancel; the harness has up to its configured timeout to
+wind down before the process is terminated. For shell runs, the
+process gets SIGKILL via os/exec when the parent context
+finishes.
+
+Best-effort: if no process is running the named run, the event
+still lands but nothing reacts. 'rex run cancel' returns success
+either way.`,
+		Example: `  rex run cancel curious-giraffe
+  rex run cancel curious-giraffe --reason "wrong path; redoing"`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := requiredWorkspaceRoot(cmd)
+			if err != nil {
+				return err
+			}
+			runID, err := resolveRunID(root, args[0])
+			if err != nil {
+				return err
+			}
+
+			signer, err := loadOrCreateDefaultSigner(cmd)
+			if err != nil {
+				return err
+			}
+			settings, err := readWorkspaceSettings(root)
+			if err != nil {
+				return err
+			}
+
+			writer, err := eventlog.OpenWriter(eventlog.WriterConfig{
+				Path:        eventLogPath(root),
+				WorkspaceID: settings.ID,
+				Actor:       signer.Actor().String(),
+				Sign:        identity.SignFunc(signer),
+			})
+			if err != nil {
+				return fmt.Errorf("open events.log: %w", err)
+			}
+			defer writer.Close()
+
+			payload := runner.RunCancellationRequestedEvent{
+				RunID:       runID,
+				RequestedAt: time.Now().UTC(),
+				Requester:   signer.Actor().String(),
+				Reason:      reasonFlag,
+			}
+			body, err := json.Marshal(payload)
+			if err != nil {
+				return fmt.Errorf("marshal: %w", err)
+			}
+			if _, err := writer.Append(runner.EventTypeRunCancellationRequested, runner.EventVersion, body); err != nil {
+				return fmt.Errorf("append: %w", err)
+			}
+
+			if jsonOutput(cmd) {
+				return writeJSON(cmd, map[string]any{
+					"run_id": runID,
+					"reason": reasonFlag,
+					"actor":  signer.Actor().String(),
+				})
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "cancellation requested for %s\n",
+				runner.FriendlyName(runID))
+			return nil
+		},
+	}
+	addWorkspacePersistentFlag(cmd)
+	cmd.Flags().StringVar(&reasonFlag, "reason", "", "free-form reason recorded with the request")
+	setRelated(cmd, "rex run attach <run-id>", "rex run show <run-id>", "rex run list")
 	return cmd
 }
 

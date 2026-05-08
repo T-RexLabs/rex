@@ -41,7 +41,8 @@ tasks:
 
   - id: run-commands
     description: "Implement run subcommands"
-    state: todo
+    state: done
+    note: "All five RUN.1-5 surfaces ship: start, attach (+ watch alias), show, list, cancel. RUN.6 (signal) and RUN.7 (approve/deny) are out of this task's references and remain todo for a follow-up PR."
     references: [RUN.1, RUN.2, RUN.3, RUN.4, RUN.5]
 
   - id: remote-commands

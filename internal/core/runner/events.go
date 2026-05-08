@@ -29,6 +29,13 @@ const (
 	// for responses); the executor and primitives stay agnostic to
 	// what the harness actually said. (execution.ACP.3)
 	EventTypeHarnessFrame = "harness.frame"
+
+	// EventTypeRunCancellationRequested is emitted by `rex run cancel`
+	// from a separate process and observed by the running process's
+	// cancel watcher (cli.RUN.5 / execution.RUN.5). The watcher
+	// translates it into ctx cancellation; the executor then emits
+	// the canonical run.cancelled event when it returns.
+	EventTypeRunCancellationRequested = "run.cancellation_requested"
 )
 
 // EventVersion is the schema version the runner currently emits. Bump
@@ -114,6 +121,18 @@ type RunCompletedEvent struct {
 type RunCancelledEvent struct {
 	RunID       string    `json:"run_id"`
 	CancelledAt time.Time `json:"cancelled_at"`
+	Reason      string    `json:"reason,omitempty"`
+}
+
+// RunCancellationRequestedEvent is emitted by `rex run cancel` from
+// a separate process. The running process's cancel watcher
+// translates an observed event into ctx cancellation; the
+// canonical RunCancelledEvent is then emitted by the executor when
+// it returns. Empty Requester is allowed but discouraged.
+type RunCancellationRequestedEvent struct {
+	RunID       string    `json:"run_id"`
+	RequestedAt time.Time `json:"requested_at"`
+	Requester   string    `json:"requester,omitempty"`
 	Reason      string    `json:"reason,omitempty"`
 }
 
@@ -238,6 +257,7 @@ func RegisterEvents(r *event.Registry) {
 	r.Register(EventTypePermissionGranted, EventVersion, decodeAs[PermissionGrantedEvent])
 	r.Register(EventTypePermissionDenied, EventVersion, decodeAs[PermissionDeniedEvent])
 	r.Register(EventTypeHarnessFrame, EventVersion, decodeAs[HarnessFrameEvent])
+	r.Register(EventTypeRunCancellationRequested, EventVersion, decodeAs[RunCancellationRequestedEvent])
 }
 
 func decodeAs[T any](_ uint32, payload []byte) (any, error) {
@@ -277,6 +297,8 @@ func classifyEvent(evt any) (string, uint32, error) {
 		return EventTypePermissionDenied, EventVersion, nil
 	case HarnessFrameEvent:
 		return EventTypeHarnessFrame, EventVersion, nil
+	case RunCancellationRequestedEvent:
+		return EventTypeRunCancellationRequested, EventVersion, nil
 	}
 	return "", 0, fmt.Errorf("runner: unknown event type %T", evt)
 }

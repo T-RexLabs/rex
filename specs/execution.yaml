@@ -48,7 +48,8 @@ tasks:
 
   - id: run-lifecycle-cli
     description: "Implement `rex run start` (attached by default), `rex run attach`, `rex run cancel`, `rex run show`, `rex run list`"
-    state: todo
+    state: done
+    note: "All five RUN.* surfaces ship; cancel uses an event-log signal (run.cancellation_requested + WatchForCancel) so v1's no-daemon model still gives `rex run cancel` working semantics."
     references: [RUN.1, RUN.2, RUN.3, RUN.4, RUN.5]
 
   - id: schedule-engine
