@@ -435,6 +435,77 @@ func (idx *Index) Search(query string, opts SearchOptions) ([]Result, error) {
 	return out, nil
 }
 
+// EventResult is one match from SearchEvents.
+type EventResult struct {
+	EventID     string  `json:"event_id"`
+	Type        string  `json:"type"`
+	WorkspaceID string  `json:"workspace_id"`
+	Snippet     string  `json:"snippet"`
+	Score       float64 `json:"score"`
+}
+
+// SearchEventsOptions configure a SearchEvents call.
+type SearchEventsOptions struct {
+	// Limit caps the result count (default 25).
+	Limit int
+	// Types optionally restricts results to events with the listed
+	// type strings. Empty = no type filter. The CLI's audit-search
+	// path passes the audit-class type set here.
+	Types []string
+}
+
+// SearchEvents runs an FTS5 query against events_fts only,
+// optionally restricted to a set of event types. Same scoring +
+// snippet shape as Search but no spec-rows mixed in. Used by
+// `rex log search` to narrow to audit-class events without
+// dragging spec results through (audit.QUERY.2).
+func (idx *Index) SearchEvents(query string, opts SearchEventsOptions) ([]EventResult, error) {
+	if idx == nil || idx.db == nil {
+		return nil, errors.New("search: nil Index")
+	}
+	if strings.TrimSpace(query) == "" {
+		return nil, errors.New("search: query is required")
+	}
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 25
+	}
+	q := escapeFTSQuery(query)
+
+	sqlStr := `SELECT event_id, type, workspace_id,
+			snippet(events_fts, -1, '<<', '>>', '...', 12) AS sn,
+			rank
+		 FROM events_fts
+		 WHERE events_fts MATCH ?`
+	args := []any{q}
+	if len(opts.Types) > 0 {
+		placeholders := strings.Repeat("?,", len(opts.Types))
+		placeholders = placeholders[:len(placeholders)-1]
+		sqlStr += " AND type IN (" + placeholders + ")"
+		for _, t := range opts.Types {
+			args = append(args, t)
+		}
+	}
+	sqlStr += " ORDER BY rank LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := idx.db.Query(sqlStr, args...)
+	if err != nil {
+		return nil, fmt.Errorf("search: query events: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]EventResult, 0, limit)
+	for rows.Next() {
+		var r EventResult
+		if err := rows.Scan(&r.EventID, &r.Type, &r.WorkspaceID, &r.Snippet, &r.Score); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // sortResults stable-sorts in place by score ascending.
 func sortResults(rs []Result) {
 	// stdlib sort.Slice would do but we keep this manual to avoid

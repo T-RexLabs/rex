@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/asabla/rex/internal/core/audit"
+	"github.com/asabla/rex/internal/core/search"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
 )
 
@@ -46,6 +47,86 @@ default flags. Pass --help on tail to see filter options.`,
 	)
 	addWorkspacePersistentFlag(cmd)
 	cmd.AddCommand(tail)
+	cmd.AddCommand(newLogSearchCmd())
+	return cmd
+}
+
+func newLogSearchCmd() *cobra.Command {
+	var (
+		limit     int
+		auditOnly bool
+		typeFlag  string
+	)
+	cmd := &cobra.Command{
+		Use:   "search <query>",
+		Short: "Full-text search the audit log via the FTS5 index",
+		Long: `Runs an FTS5 query against .rex/index.sqlite (audit.QUERY.2). By
+default only audit-class event types are searched; pass
+--audit-only=false to widen the scope to every indexed event.
+--type narrows further to one specific type.
+
+The query syntax accepts FTS5 features (phrase, prefix, AND/OR/NOT)
+plus column qualifiers like ` + "`type:run.completed`" + `. Special
+characters in tokens (hyphen, colon, dot, comma) are auto-quoted so
+typing kebab-case ids works without escaping.`,
+		Example: `  rex log search "permission denied"
+  rex log search hello --type run.started
+  rex log search workspace.created --audit-only=false`,
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := strictWorkspaceRoot(cmd)
+			if err != nil {
+				return err
+			}
+			query := strings.Join(args, " ")
+			idx, err := search.Open(root)
+			if err != nil {
+				return err
+			}
+			defer idx.Close()
+
+			opts := search.SearchEventsOptions{Limit: limit}
+			switch {
+			case typeFlag != "":
+				opts.Types = []string{typeFlag}
+			case auditOnly:
+				opts.Types = audit.EventTypes()
+			}
+
+			results, err := idx.SearchEvents(query, opts)
+			if err != nil {
+				return err
+			}
+
+			if jsonOutput(cmd) {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				for _, r := range results {
+					if err := enc.Encode(r); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+			if len(results) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "no matches")
+				return nil
+			}
+			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 2, 2, ' ', 0)
+			fmt.Fprintln(tw, "TYPE\tEVENT_ID\tSNIPPET")
+			for _, r := range results {
+				fmt.Fprintf(tw, "%s\t%s\t%s\n", r.Type, hlcShort(r.EventID), r.Snippet)
+			}
+			return tw.Flush()
+		},
+	}
+	setRelated(cmd,
+		"rex log tail",
+		"rex search <query>",
+		"rex run list",
+	)
+	cmd.Flags().IntVar(&limit, "limit", 25, "maximum number of matches to return")
+	cmd.Flags().BoolVar(&auditOnly, "audit-only", true, "restrict to audit-class event types")
+	cmd.Flags().StringVar(&typeFlag, "type", "", "restrict to one specific event type (overrides --audit-only)")
 	return cmd
 }
 

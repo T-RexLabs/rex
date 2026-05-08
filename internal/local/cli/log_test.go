@@ -247,3 +247,102 @@ func TestLogTailAuditOnlyTrueByDefault(t *testing.T) {
 		}
 	}
 }
+
+func TestLogSearchFindsWorkspaceCreated(t *testing.T) {
+	t.Parallel()
+
+	dir := initLogWorkspace(t)
+	out, err := executeCommand(t, "log", "search", "--workspace", dir, "workspace.created")
+	if err != nil {
+		t.Fatalf("log search: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "workspace.created") {
+		t.Fatalf("expected match for workspace.created, got: %q", out)
+	}
+}
+
+func TestLogSearchNoMatch(t *testing.T) {
+	t.Parallel()
+
+	dir := initLogWorkspace(t)
+	out, err := executeCommand(t, "log", "search", "--workspace", dir, "no-such-token-anywhere")
+	if err != nil {
+		t.Fatalf("log search: %v", err)
+	}
+	if !strings.Contains(out, "no matches") {
+		t.Fatalf("expected no-matches notice, got: %q", out)
+	}
+}
+
+func TestLogSearchTypeNarrowsResults(t *testing.T) {
+	t.Parallel()
+
+	dir := initLogWorkspace(t)
+	// Add a repo so we have a second event type to search against.
+	if err := os.MkdirAll(filepath.Join(dir, "vendored"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if _, err := executeCommand(t, "repo", "link", "--workspace", dir, "vendored"); err != nil {
+		t.Fatalf("repo link: %v", err)
+	}
+
+	// --type narrows to the named event type only.
+	out, err := executeCommand(t, "log", "search", "--workspace", dir,
+		"--type", "repo.linked", "vendored")
+	if err != nil {
+		t.Fatalf("log search --type: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "repo.linked") {
+		t.Fatalf("expected repo.linked match: %q", out)
+	}
+	if strings.Contains(out, "workspace.created") {
+		t.Fatalf("--type should have excluded workspace.created: %q", out)
+	}
+}
+
+func TestLogSearchAuditOnlyExcludesNonAudit(t *testing.T) {
+	t.Parallel()
+
+	dir := initLogWorkspace(t)
+	// Override default with --audit-only=false; should still
+	// return workspace.created (which is audit-class anyway).
+	out, err := executeCommand(t, "log", "search", "--workspace", dir,
+		"--audit-only=false", "workspace.created")
+	if err != nil {
+		t.Fatalf("log search --audit-only=false: %v", err)
+	}
+	if !strings.Contains(out, "workspace.created") {
+		t.Fatalf("expected match: %q", out)
+	}
+}
+
+func TestLogSearchJSON(t *testing.T) {
+	t.Parallel()
+
+	dir := initLogWorkspace(t)
+	out, err := executeCommand(t, "log", "search", "--workspace", dir, "--json", "workspace.created")
+	if err != nil {
+		t.Fatalf("log search --json: %v", err)
+	}
+	lines := splitNonEmpty(out)
+	if len(lines) == 0 {
+		t.Fatalf("no json lines: %q", out)
+	}
+	var first map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &first); err != nil {
+		t.Fatalf("json parse: %v\n%s", err, out)
+	}
+	if first["type"] != "workspace.created" {
+		t.Fatalf("unexpected first row: %v", first)
+	}
+}
+
+func TestLogSearchMissingArgErrors(t *testing.T) {
+	t.Parallel()
+
+	dir := initLogWorkspace(t)
+	_, err := executeCommand(t, "log", "search", "--workspace", dir)
+	if err == nil {
+		t.Fatal("expected error when query is omitted")
+	}
+}

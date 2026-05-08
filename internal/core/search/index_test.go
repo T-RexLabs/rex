@@ -267,6 +267,67 @@ func TestSearchEmptyQueryErrors(t *testing.T) {
 	}
 }
 
+func TestSearchEventsFiltersByType(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t)
+	idx, _ := Open(root)
+	defer idx.Close()
+
+	mk := func(id, typ, payload string) eventlog.Record {
+		return eventlog.Record{
+			ID: id, Type: typ, Version: 1, Actor: "a", WorkspaceID: "ws",
+			Payload: json.RawMessage(payload),
+		}
+	}
+	_ = idx.UpsertEvent(mk("e1", "run.completed", `{"text":"common-word in run"}`))
+	_ = idx.UpsertEvent(mk("e2", "node.started", `{"text":"common-word in node"}`))
+	_ = idx.UpsertEvent(mk("e3", "schedule.added", `{"text":"common-word in schedule"}`))
+
+	// No filter — all three match.
+	results, err := idx.SearchEvents("common-word", SearchEventsOptions{})
+	if err != nil {
+		t.Fatalf("SearchEvents: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+
+	// Single-type filter narrows to one.
+	results, err = idx.SearchEvents("common-word", SearchEventsOptions{
+		Types: []string{"run.completed"},
+	})
+	if err != nil {
+		t.Fatalf("SearchEvents: %v", err)
+	}
+	if len(results) != 1 || results[0].EventID != "e1" {
+		t.Fatalf("type filter shape: %+v", results)
+	}
+
+	// Multi-type filter accepts a list.
+	results, err = idx.SearchEvents("common-word", SearchEventsOptions{
+		Types: []string{"run.completed", "schedule.added"},
+	})
+	if err != nil {
+		t.Fatalf("SearchEvents: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("multi-type filter: %+v", results)
+	}
+}
+
+func TestSearchEventsEmptyQueryErrors(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t)
+	idx, _ := Open(root)
+	defer idx.Close()
+
+	if _, err := idx.SearchEvents("  ", SearchEventsOptions{}); err == nil {
+		t.Fatal("empty query should error")
+	}
+}
+
 func TestSearchLimit(t *testing.T) {
 	t.Parallel()
 
