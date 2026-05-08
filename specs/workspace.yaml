@@ -43,7 +43,8 @@ tasks:
 
   - id: work-tag-model
     description: Implement the work-type tagging that distinguishes question/non-spec/spec/management/scheduled work
-    state: todo
+    state: done
+    note: "WorkType wired on RunStartedEvent + ExecConfig + runtask requests; --work-type flag on `rex run start` with inference (--from-task -> spec; default -> non_spec); schedule daemon stamps `scheduled`."
     references: [WORK.1, WORK.2, WORK.3]
 
 components:

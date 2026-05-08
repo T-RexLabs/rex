@@ -37,6 +37,9 @@ type ExecConfig struct {
 	// was launched by the schedule daemon (execution.RUN.1.3). Nil
 	// for ad-hoc runs.
 	Trigger *RunTrigger
+	// WorkType is the workspace.WORK.2 tag the run is launched
+	// under. Empty defaults to "non_spec".
+	WorkType string
 
 	// Now and Sleep are injectable so tests can drive retry timing
 	// without burning real time (overview.ENG.4). When nil, time.Now
@@ -90,12 +93,17 @@ func (e *Executor) Run(ctx context.Context) (*RunState, error) {
 	state.RunID = e.cfg.RunID
 	startedAt := e.cfg.Now()
 
+	workType := e.cfg.WorkType
+	if workType == "" {
+		workType = WorkTypeNonSpec
+	}
 	if err := e.emitApply(state, RunStartedEvent{
 		RunID:     e.cfg.RunID,
 		StartedAt: startedAt,
 		SpecRefs:  dedupeNonEmpty(e.cfg.SpecRefs),
 		FromTask:  e.cfg.FromTask,
 		Trigger:   e.cfg.Trigger,
+		WorkType:  workType,
 	}); err != nil {
 		return state, err
 	}

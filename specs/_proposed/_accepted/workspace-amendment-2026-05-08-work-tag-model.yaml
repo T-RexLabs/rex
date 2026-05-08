@@ -1,0 +1,36 @@
+# Spec-bookkeeping reconciliation pass — workspace.work-tag-model done.
+#
+# Status: accepted.
+# Date:   2026-05-08.
+# Folded: 2026-05-08 — workspace.work-tag-model flipped to done.
+#
+# Implementation:
+#   - internal/core/runner/events.go adds WorkType field on
+#     RunStartedEvent (additive per overview.SYS.4) plus the five
+#     WorkType* constants from workspace.WORK.2 and IsValidWorkType().
+#   - internal/core/runner/executor.go threads ExecConfig.WorkType
+#     into the emitted RunStartedEvent, defaulting empty -> "non_spec".
+#   - internal/local/runtask/runtask.go threads WorkType into
+#     ShellRunRequest + HarnessRunRequest -> ExecConfig.
+#   - internal/local/cli/run.go adds --work-type flag with inference:
+#       explicit --work-type wins; --from-task implies "spec";
+#       everything else falls back to "non_spec". Invalid values
+#       surface as a clear CLI error.
+#   - internal/local/cli/schedule.go's dispatcher stamps
+#     WorkType=scheduled (workspace.WORK.2.5) on every fire,
+#     overriding any recipe-side default — the schedule daemon is
+#     authoritative on origin.
+#
+# Tests cover the four execution paths: ad-hoc shell defaults to
+# non_spec; explicit --work-type overrides; --from-task infers spec;
+# scheduled fires stamp scheduled. Invalid --work-type rejected.
+
+target: workspace
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: work-tag-model
+    from: todo
+    to: done
+    proof: "RunStartedEvent.WorkType wired through executor + runtask + CLI; --work-type flag with inference (--from-task -> spec; default -> non_spec); schedule daemon stamps WorkType=scheduled per WORK.2.5; covered by 5 tests in run_worktype_test.go"

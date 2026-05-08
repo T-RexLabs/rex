@@ -42,9 +42,11 @@ const EventVersion uint32 = 1
 // at run start (execution.RUN.1.1). Trigger is a third optional
 // provenance field recording the originating trigger when the run
 // was started by the schedule daemon (execution.RUN.1.3 / SCHED.3).
-// All three are omitted for ad-hoc runs. Old readers skip unknown
-// fields per overview.SYS.3; old writers omit them, keeping the
-// event shape additive per overview.SYS.4.
+// WorkType is the work-type tag from workspace.WORK.2 — present on
+// every run, defaulting to "non_spec" when the caller doesn't
+// specify; recorded once at run start so RBAC + indexing have
+// something to filter on. All optional fields are additive per
+// overview.SYS.4; readers skip unknown fields per overview.SYS.3.
 type RunStartedEvent struct {
 	RunID     string    `json:"run_id"`
 	StartedAt time.Time `json:"started_at"`
@@ -61,6 +63,31 @@ type RunStartedEvent struct {
 	// ad-hoc runs. Unknown trigger kinds are tolerated by readers
 	// (overview.SYS.3) so post-v1 trigger types load cleanly.
 	Trigger *RunTrigger `json:"trigger,omitempty"`
+	// WorkType is one of the five workspace.WORK.2 tags:
+	// "question", "non_spec", "spec", "management", "scheduled".
+	// Empty in events written before this field landed; readers
+	// should treat empty as "non_spec" for back-compat.
+	WorkType string `json:"work_type,omitempty"`
+}
+
+// Work-type tags per workspace.WORK.2.
+const (
+	WorkTypeQuestion   = "question"
+	WorkTypeNonSpec    = "non_spec"
+	WorkTypeSpec       = "spec"
+	WorkTypeManagement = "management"
+	WorkTypeScheduled  = "scheduled"
+)
+
+// IsValidWorkType reports whether s is one of the five recognised
+// work-type tags. Used by the CLI to validate --work-type.
+func IsValidWorkType(s string) bool {
+	switch s {
+	case WorkTypeQuestion, WorkTypeNonSpec, WorkTypeSpec,
+		WorkTypeManagement, WorkTypeScheduled:
+		return true
+	}
+	return false
 }
 
 // RunTrigger records the schedule that initiated a run. Field set

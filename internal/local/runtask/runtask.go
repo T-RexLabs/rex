@@ -147,6 +147,10 @@ type ShellRunRequest struct {
 	// Trigger records the originating schedule trigger when launched
 	// by the schedule daemon (execution.RUN.1.3). Nil for ad-hoc runs.
 	Trigger *runner.RunTrigger
+	// WorkType is the workspace.WORK.2 tag the run runs under
+	// ("question" / "non_spec" / "spec" / "management" / "scheduled").
+	// Empty defaults to "non_spec" at the executor.
+	WorkType string
 	// OnEvent is invoked with every event the run emits, AFTER it
 	// has been written to the event log. Used by `rex run start`
 	// in attached mode (the default) to render events live as
@@ -208,6 +212,7 @@ func StartShellRun(ctx context.Context, ws *Workspace, req ShellRunRequest) (*Sh
 		SpecRefs: req.SpecRefs,
 		FromTask: req.FromTask,
 		Trigger:  req.Trigger,
+		WorkType: req.WorkType,
 	})
 	if err != nil {
 		return nil, err
@@ -260,6 +265,10 @@ type HarnessRunRequest struct {
 	// Trigger records the originating schedule trigger when launched
 	// by the schedule daemon (execution.RUN.1.3). Nil for ad-hoc runs.
 	Trigger *runner.RunTrigger
+	// WorkType is the workspace.WORK.2 tag the run runs under
+	// ("question" / "non_spec" / "spec" / "management" / "scheduled").
+	// Empty defaults to "non_spec" at the executor.
+	WorkType string
 	// Adapters is the registry consulted for Harness; nil =
 	// adapter.Default().
 	Adapters *adapter.Registry
@@ -376,6 +385,7 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 		SpecRefs: req.SpecRefs,
 		FromTask: req.FromTask,
 		Trigger:  req.Trigger,
+		WorkType: req.WorkType,
 	})
 	if err != nil {
 		return nil, err

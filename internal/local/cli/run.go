@@ -90,6 +90,7 @@ func newRunStartCmd() *cobra.Command {
 		detachFlag   bool
 		fromTaskFlag string
 		specRefFlags []string
+		workTypeFlag string
 	)
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -131,6 +132,11 @@ during execution and the command exits when the run terminates.
 
 			onEvent := liveEventPrinter(cmd, quietFlag)
 
+			workType, err := resolveWorkType(workTypeFlag, fromTaskFlag)
+			if err != nil {
+				return err
+			}
+
 			// --from-task: resolve the recipe and dispatch to the
 			// matching shape (execution.RUN.1.1, spec-format.RECIPE.*).
 			if fromTaskFlag != "" {
@@ -156,6 +162,7 @@ during execution and the command exits when the run terminates.
 						RunID:    runIDFlag,
 						SpecRefs: resolved.SpecRefs,
 						FromTask: resolved.FromTask,
+						WorkType: workType,
 						OnEvent:  onEvent,
 						OnStderr: harnessStderrPrinter(cmd, quietFlag),
 					})
@@ -172,6 +179,7 @@ during execution and the command exits when the run terminates.
 						RunID:    runIDFlag,
 						SpecRefs: resolved.SpecRefs,
 						FromTask: resolved.FromTask,
+						WorkType: workType,
 						OnEvent:  onEvent,
 					})
 					if err != nil {
@@ -201,6 +209,7 @@ during execution and the command exits when the run terminates.
 					NodeID:   node,
 					RunID:    runIDFlag,
 					SpecRefs: specRefs,
+					WorkType: workType,
 					OnEvent:  onEvent,
 					OnStderr: harnessStderrPrinter(cmd, quietFlag),
 				})
@@ -219,6 +228,7 @@ during execution and the command exits when the run terminates.
 				NodeID:   nodeID,
 				RunID:    runIDFlag,
 				SpecRefs: specRefs,
+				WorkType: workType,
 				OnEvent:  onEvent,
 			})
 			if err != nil {
@@ -245,6 +255,7 @@ during execution and the command exits when the run terminates.
 	cmd.Flags().Bool("debug", false, "render full event payloads instead of one-line summaries")
 	cmd.Flags().StringVar(&fromTaskFlag, "from-task", "", "load a recipe from <spec-id>.<task-id> and prefill --harness/--prompt/--shell from it (execution.RUN.1.1)")
 	cmd.Flags().StringSliceVar(&specRefFlags, "spec-ref", nil, "fully-qualified ACID this run satisfies; may be repeated (execution.RUN.1.1)")
+	cmd.Flags().StringVar(&workTypeFlag, "work-type", "", "work-type tag (one of question/non_spec/spec/management/scheduled); inferred from --from-task when omitted (workspace.WORK.2)")
 	cmd.MarkFlagsOneRequired("shell", "harness", "from-task")
 	cmd.MarkFlagsMutuallyExclusive("shell", "harness", "from-task")
 	cmd.MarkFlagsRequiredTogether("harness", "prompt")
@@ -341,6 +352,25 @@ func reportHarnessRun(cmd *cobra.Command, res *runtask.ShellRunResult, nodeID st
 		return fmt.Errorf("run %s ended in status %s", res.RunID, res.State.Status)
 	}
 	return nil
+}
+
+// resolveWorkType picks the work-type tag for a run (workspace.WORK.2).
+// Explicit --work-type wins; otherwise --from-task implies "spec"
+// (the recipe is bound to a spec task) and everything else falls
+// back to "non_spec". The schedule daemon overrides to "scheduled"
+// at dispatch time per WORK.2.5; that path doesn't go through this
+// helper.
+func resolveWorkType(explicit, fromTask string) (string, error) {
+	if explicit != "" {
+		if !runner.IsValidWorkType(explicit) {
+			return "", fmt.Errorf("invalid --work-type %q (one of question/non_spec/spec/management/scheduled)", explicit)
+		}
+		return explicit, nil
+	}
+	if fromTask != "" {
+		return runner.WorkTypeSpec, nil
+	}
+	return runner.WorkTypeNonSpec, nil
 }
 
 // splitShellCommand parses a --shell argument into argv. For v1 we

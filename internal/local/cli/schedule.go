@@ -454,19 +454,21 @@ func buildScheduleDispatcher(cmd *cobra.Command, root string) schedule.Dispatche
 		switch recipe.Kind {
 		case specfmt.RecipeKindShell:
 			_, err := runtask.StartShellRun(ctx, ws, runtask.ShellRunRequest{
-				Command: recipe.Command,
-				Dir:     recipeDir(root, recipe.Cwd),
-				Env:     recipe.Env,
-				NodeID:  "shell",
-				Trigger: trig,
+				Command:  recipe.Command,
+				Dir:      recipeDir(root, recipe.Cwd),
+				Env:      recipe.Env,
+				NodeID:   "shell",
+				Trigger:  trig,
+				WorkType: runner.WorkTypeScheduled,
 			})
 			return err
 		case specfmt.RecipeKindHarness:
 			_, err := runtask.StartHarnessRun(ctx, ws, runtask.HarnessRunRequest{
-				Harness: recipe.Harness,
-				Prompt:  recipe.Prompt,
-				NodeID:  "harness",
-				Trigger: trig,
+				Harness:  recipe.Harness,
+				Prompt:   recipe.Prompt,
+				NodeID:   "harness",
+				Trigger:  trig,
+				WorkType: runner.WorkTypeScheduled,
 			})
 			return err
 		case specfmt.RecipeKindSpecValidate:
