@@ -26,12 +26,9 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/asabla/rex/internal/core/audit"
-	"github.com/asabla/rex/internal/core/identity"
 	"github.com/asabla/rex/internal/core/runner"
 	"github.com/asabla/rex/internal/core/schedule"
-	"github.com/asabla/rex/internal/core/search"
 	"github.com/asabla/rex/internal/core/specfmt"
-	"github.com/asabla/rex/internal/core/storage/eventlog"
 	"github.com/asabla/rex/internal/local/runtask"
 )
 
@@ -213,7 +210,12 @@ the file in $EDITOR after scaffolding.`,
 				return fmt.Errorf("write %s: %w", path, err)
 			}
 
-			if err := emitScheduleEvent(cmd, root, audit.EventTypeScheduleAdded, audit.ScheduleAddedEvent{
+			wsID, err := workspaceID(root)
+			if err != nil {
+				return err
+			}
+			if err := emitAuditEvent(cmd, root, audit.EventTypeScheduleAdded, audit.ScheduleAddedEvent{
+				WorkspaceID: wsID,
 				Name:        s.Name,
 				Path:        path,
 				TriggerKind: string(s.Trigger.Kind),
@@ -277,9 +279,14 @@ func newScheduleRemoveCmd() *cobra.Command {
 			if err := os.Remove(path); err != nil {
 				return fmt.Errorf("remove %s: %w", path, err)
 			}
-			if err := emitScheduleEvent(cmd, root, audit.EventTypeScheduleRemoved, audit.ScheduleRemovedEvent{
-				Name: args[0],
-				Path: path,
+			wsID, err := workspaceID(root)
+			if err != nil {
+				return err
+			}
+			if err := emitAuditEvent(cmd, root, audit.EventTypeScheduleRemoved, audit.ScheduleRemovedEvent{
+				WorkspaceID: wsID,
+				Name:        args[0],
+				Path:        path,
 			}); err != nil {
 				return err
 			}
@@ -490,66 +497,4 @@ func recipeDir(root, cwd string) string {
 		return cwd
 	}
 	return filepath.Join(root, cwd)
-}
-
-// emitScheduleEvent appends an audit-class schedule.* event to the
-// workspace event log, the same way `rex repo add/link/remove` does
-// for repo.* events.
-func emitScheduleEvent(cmd *cobra.Command, root, eventType string, payload any) error {
-	settings, err := readWorkspaceSettings(root)
-	if err != nil {
-		return err
-	}
-	signer, err := loadOrCreateDefaultSigner(cmd)
-	if err != nil {
-		return err
-	}
-
-	disp := newAuditingHookDispatcher(cmd, root)
-	defer disp.Drain()
-
-	searchIdx, idxErr := search.Open(root)
-	if idxErr == nil {
-		defer searchIdx.Close()
-	} else {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: search index unavailable: %v\n", idxErr)
-	}
-	indexerCB := search.EventIndexer(searchIdx, func(err error) {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: index event: %v\n", err)
-	})
-	onAppend := func(rec eventlog.Record) {
-		disp.OnAppend(rec)
-		indexerCB(rec)
-	}
-
-	writer, err := eventlog.OpenWriter(eventlog.WriterConfig{
-		Path:        eventLogPath(root),
-		WorkspaceID: settings.ID,
-		Actor:       signer.Actor().String(),
-		Sign:        identity.SignFunc(signer),
-		OnAppend:    onAppend,
-	})
-	if err != nil {
-		return fmt.Errorf("open events.log: %w", err)
-	}
-	defer writer.Close()
-
-	payloadWithWS := withWorkspaceIDSchedule(payload, settings.ID)
-	if _, err := audit.NewAppender(writer).Append(eventType, payloadWithWS); err != nil {
-		return fmt.Errorf("emit %s: %w", eventType, err)
-	}
-	return nil
-}
-
-func withWorkspaceIDSchedule(payload any, workspaceID string) any {
-	switch p := payload.(type) {
-	case audit.ScheduleAddedEvent:
-		p.WorkspaceID = workspaceID
-		return p
-	case audit.ScheduleRemovedEvent:
-		p.WorkspaceID = workspaceID
-		return p
-	default:
-		return payload
-	}
 }

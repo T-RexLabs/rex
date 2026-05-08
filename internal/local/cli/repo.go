@@ -22,10 +22,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/asabla/rex/internal/core/audit"
-	"github.com/asabla/rex/internal/core/identity"
-	"github.com/asabla/rex/internal/core/search"
 	"github.com/asabla/rex/internal/core/specfmt"
-	"github.com/asabla/rex/internal/core/storage/eventlog"
 )
 
 // repoEntry is one element of workspace.yaml's `repos` list per
@@ -146,8 +143,12 @@ available.`,
 				return fmt.Errorf("update workspace.yaml: %w", err)
 			}
 
-			if err := emitRepoEvent(cmd, root, audit.EventTypeRepoAdded, audit.RepoAddedEvent{
-				Name: name, Path: cleanRel, URL: url,
+			wsID, err := workspaceID(root)
+			if err != nil {
+				return err
+			}
+			if err := emitAuditEvent(cmd, root, audit.EventTypeRepoAdded, audit.RepoAddedEvent{
+				WorkspaceID: wsID, Name: name, Path: cleanRel, URL: url,
 			}); err != nil {
 				return err
 			}
@@ -214,8 +215,12 @@ workspace tree; v1 stores it as a POSIX-relative path
 			if err := saveRepoEntries(root, append(existing, entry)); err != nil {
 				return fmt.Errorf("update workspace.yaml: %w", err)
 			}
-			if err := emitRepoEvent(cmd, root, audit.EventTypeRepoLinked, audit.RepoLinkedEvent{
-				Name: name, Path: cleanRel,
+			wsID, err := workspaceID(root)
+			if err != nil {
+				return err
+			}
+			if err := emitAuditEvent(cmd, root, audit.EventTypeRepoLinked, audit.RepoLinkedEvent{
+				WorkspaceID: wsID, Name: name, Path: cleanRel,
 			}); err != nil {
 				return err
 			}
@@ -334,10 +339,15 @@ copy stays on disk; --purge also deletes it (workspace.REPO.4).`,
 				purged = true
 			}
 
-			if err := emitRepoEvent(cmd, root, audit.EventTypeRepoRemoved, audit.RepoRemovedEvent{
-				Name:   gone.Name,
-				Path:   gone.Path,
-				Purged: purged,
+			wsID, err := workspaceID(root)
+			if err != nil {
+				return err
+			}
+			if err := emitAuditEvent(cmd, root, audit.EventTypeRepoRemoved, audit.RepoRemovedEvent{
+				WorkspaceID: wsID,
+				Name:        gone.Name,
+				Path:        gone.Path,
+				Purged:      purged,
 			}); err != nil {
 				return err
 			}
@@ -558,74 +568,4 @@ func removeKey(mapping *yaml.Node, key string) {
 
 func workspaceYAMLPath(root string) string {
 	return filepath.Join(root, metaDirName, "workspace.yaml")
-}
-
-// emitRepoEvent opens an event-log writer over the workspace, fires
-// hooks + indexer the same way `rex workspace init` does, and
-// appends the audit-class repo.* event.
-func emitRepoEvent(cmd *cobra.Command, root, eventType string, payload any) error {
-	settings, err := readWorkspaceSettings(root)
-	if err != nil {
-		return err
-	}
-	signer, err := loadOrCreateDefaultSigner(cmd)
-	if err != nil {
-		return err
-	}
-
-	disp := newAuditingHookDispatcher(cmd, root)
-	defer disp.Drain()
-
-	searchIdx, idxErr := search.Open(root)
-	if idxErr == nil {
-		defer searchIdx.Close()
-	} else {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: search index unavailable: %v\n", idxErr)
-	}
-	indexerCB := search.EventIndexer(searchIdx, func(err error) {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: index event: %v\n", err)
-	})
-	onAppend := func(rec eventlog.Record) {
-		disp.OnAppend(rec)
-		indexerCB(rec)
-	}
-
-	writer, err := eventlog.OpenWriter(eventlog.WriterConfig{
-		Path:        eventLogPath(root),
-		WorkspaceID: settings.ID,
-		Actor:       signer.Actor().String(),
-		Sign:        identity.SignFunc(signer),
-		OnAppend:    onAppend,
-	})
-	if err != nil {
-		return fmt.Errorf("open events.log: %w", err)
-	}
-	defer writer.Close()
-
-	// audit.Append rejects unknown event types; we set workspace_id
-	// on the payload here so callers don't have to thread settings.
-	payloadWithWS := withWorkspaceID(payload, settings.ID)
-	if _, err := audit.NewAppender(writer).Append(eventType, payloadWithWS); err != nil {
-		return fmt.Errorf("emit %s: %w", eventType, err)
-	}
-	return nil
-}
-
-// withWorkspaceID stamps the workspace_id field on each payload
-// type. The audit package keeps the field public on every event
-// struct so we set it here directly.
-func withWorkspaceID(payload any, workspaceID string) any {
-	switch p := payload.(type) {
-	case audit.RepoAddedEvent:
-		p.WorkspaceID = workspaceID
-		return p
-	case audit.RepoLinkedEvent:
-		p.WorkspaceID = workspaceID
-		return p
-	case audit.RepoRemovedEvent:
-		p.WorkspaceID = workspaceID
-		return p
-	default:
-		return payload
-	}
 }

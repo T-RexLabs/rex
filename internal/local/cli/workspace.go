@@ -18,7 +18,6 @@ import (
 	"github.com/asabla/rex/internal/core/identity"
 	"github.com/asabla/rex/internal/core/search"
 	"github.com/asabla/rex/internal/core/specfmt"
-	"github.com/asabla/rex/internal/core/storage/eventlog"
 	"github.com/asabla/rex/internal/local/registry"
 )
 
@@ -268,11 +267,12 @@ func runWorkspaceTransition(cmd *cobra.Command, t transition) error {
 		return fmt.Errorf("update workspace.yaml: %w", err)
 	}
 
-	if err := emitWorkspaceTransition(cmd, root, eventType, audit.WorkspaceStateChangedEvent{
-		Name: settings.Name,
-		From: from,
-		To:   to,
-		At:   time.Now().UTC().Format(time.RFC3339),
+	if err := emitAuditEvent(cmd, root, eventType, audit.WorkspaceStateChangedEvent{
+		WorkspaceID: settings.ID,
+		Name:        settings.Name,
+		From:        from,
+		To:          to,
+		At:          time.Now().UTC().Format(time.RFC3339),
 	}); err != nil {
 		return err
 	}
@@ -355,54 +355,6 @@ func setWorkspaceStateField(root, state string) error {
 		return fmt.Errorf("marshal %s: %w", path, err)
 	}
 	return os.WriteFile(path, out, 0o644)
-}
-
-// emitWorkspaceTransition appends an audit-class workspace.* event
-// to the workspace event log, mirroring emitRepoEvent / emitScheduleEvent.
-func emitWorkspaceTransition(cmd *cobra.Command, root, eventType string, payload audit.WorkspaceStateChangedEvent) error {
-	settings, err := readWorkspaceSettings(root)
-	if err != nil {
-		return err
-	}
-	signer, err := loadOrCreateDefaultSigner(cmd)
-	if err != nil {
-		return err
-	}
-
-	disp := newAuditingHookDispatcher(cmd, root)
-	defer disp.Drain()
-
-	searchIdx, idxErr := search.Open(root)
-	if idxErr == nil {
-		defer searchIdx.Close()
-	} else {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: search index unavailable: %v\n", idxErr)
-	}
-	indexerCB := search.EventIndexer(searchIdx, func(err error) {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: index event: %v\n", err)
-	})
-	onAppend := func(rec eventlog.Record) {
-		disp.OnAppend(rec)
-		indexerCB(rec)
-	}
-
-	writer, err := eventlog.OpenWriter(eventlog.WriterConfig{
-		Path:        eventLogPath(root),
-		WorkspaceID: settings.ID,
-		Actor:       signer.Actor().String(),
-		Sign:        identity.SignFunc(signer),
-		OnAppend:    onAppend,
-	})
-	if err != nil {
-		return fmt.Errorf("open events.log: %w", err)
-	}
-	defer writer.Close()
-
-	payload.WorkspaceID = settings.ID
-	if _, err := audit.NewAppender(writer).Append(eventType, payload); err != nil {
-		return fmt.Errorf("emit %s: %w", eventType, err)
-	}
-	return nil
 }
 
 func newWorkspaceReindexCmd() *cobra.Command {
@@ -547,59 +499,16 @@ mean it.`,
 			}
 
 			// Default identity: auto-create on first init so the
-			// workspace.created event can be signed.
+			// workspace.created event can be signed. Done before
+			// emitAuditEvent so we can stamp `created_by` on the
+			// payload — emitAuditEvent will resolve the same
+			// signer internally for the writer's Sign hook.
 			signer, err := loadOrCreateDefaultSigner(cmd)
 			if err != nil {
 				return err
 			}
 
-			// First persistent audit entry: the workspace exists.
-			// We open the events.log writer directly here rather
-			// than through newWorkspaceWriter (which reads back
-			// workspace.yaml) — the file we just wrote is the
-			// reality we want to record.
-			//
-			// A hook dispatcher is wired so hooks installed under
-			// .rex/hooks/ (per-workspace) and the global hooks
-			// dir fire after each event. Drain ensures hooks
-			// finish before init returns.
-			disp := newAuditingHookDispatcher(cmd, abs)
-			defer disp.Drain()
-
-			// Open the search index now so the very first event
-			// (workspace.created) lands in both events.log and
-			// the FTS index. A nil index falls back to a no-op
-			// callback in EventIndexer; we surface the open error
-			// to the user but do not abort init — the workspace
-			// is still usable, the user can `rex workspace
-			// reindex` later.
-			searchIdx, idxErr := search.Open(abs)
-			if idxErr == nil {
-				defer searchIdx.Close()
-			} else {
-				fmt.Fprintf(cmd.ErrOrStderr(), "warning: search index unavailable: %v\n", idxErr)
-			}
-			indexerCB := search.EventIndexer(searchIdx, func(err error) {
-				fmt.Fprintf(cmd.ErrOrStderr(), "warning: index event: %v\n", err)
-			})
-			onAppend := func(rec eventlog.Record) {
-				disp.OnAppend(rec)
-				indexerCB(rec)
-			}
-
-			writer, err := eventlog.OpenWriter(eventlog.WriterConfig{
-				Path:        eventLogPath(abs),
-				WorkspaceID: id,
-				Actor:       signer.Actor().String(),
-				Sign:        identity.SignFunc(signer),
-				OnAppend:    onAppend,
-			})
-			if err != nil {
-				return fmt.Errorf("open events.log: %w", err)
-			}
-			defer writer.Close()
-			appender := audit.NewAppender(writer)
-			if _, err := appender.Append(audit.EventTypeWorkspaceCreated, audit.WorkspaceCreatedEvent{
+			if err := emitAuditEvent(cmd, abs, audit.EventTypeWorkspaceCreated, audit.WorkspaceCreatedEvent{
 				WorkspaceID: id,
 				Name:        name,
 				Path:        abs,

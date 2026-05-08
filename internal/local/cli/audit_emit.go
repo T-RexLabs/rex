@@ -16,10 +16,14 @@ import (
 // already-populated payload (including any per-event-type fields
 // like workspace_id); the helper does no payload-shape introspection.
 //
-// The package-internal emitRepoEvent / emitScheduleEvent /
-// emitWorkspaceTransition predate this helper and keep their own
-// copies of the same dance for now — refactoring them onto this
-// helper is a separate cleanup task.
+// Every state-changing CLI command (workspace init / archive /
+// unarchive / delete, repo add / link / remove, schedule add /
+// remove, spec create / edit, remote add / remove, run cancel)
+// routes through this single function so the
+// open-writer / fire-hooks / index / append dance lives in one
+// place. The hook dispatcher returned here writes hook.completed
+// audit events for every fire (audit.TYPES.1 "every hook
+// invocation result").
 func emitAuditEvent(cmd *cobra.Command, root, eventType string, payload any) error {
 	signer, err := loadOrCreateDefaultSigner(cmd)
 	if err != nil {
