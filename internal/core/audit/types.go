@@ -32,6 +32,12 @@ const (
 	// "every workspace state change" clause).
 	EventTypeScheduleAdded   = "schedule.added"
 	EventTypeScheduleRemoved = "schedule.removed"
+
+	// Workspace state transitions (workspace.LIFE.3 / LIFE.3.1).
+	// Audit-class via TYPES.1 "every workspace state change".
+	EventTypeWorkspaceArchived   = "workspace.archived"
+	EventTypeWorkspaceUnarchived = "workspace.unarchived"
+	EventTypeWorkspaceDeleted    = "workspace.deleted"
 )
 
 // EventVersion is the schema version for audit-package event payloads.
@@ -44,12 +50,15 @@ const EventVersion uint32 = 1
 // because Go reads from a non-mutated map are safe.
 var auditEventTypes = func() map[string]struct{} {
 	out := map[string]struct{}{
-		EventTypeWorkspaceCreated: {},
-		EventTypeRepoAdded:        {},
-		EventTypeRepoLinked:       {},
-		EventTypeRepoRemoved:      {},
-		EventTypeScheduleAdded:    {},
-		EventTypeScheduleRemoved:  {},
+		EventTypeWorkspaceCreated:    {},
+		EventTypeRepoAdded:           {},
+		EventTypeRepoLinked:          {},
+		EventTypeRepoRemoved:         {},
+		EventTypeScheduleAdded:       {},
+		EventTypeScheduleRemoved:     {},
+		EventTypeWorkspaceArchived:   {},
+		EventTypeWorkspaceUnarchived: {},
+		EventTypeWorkspaceDeleted:    {},
 
 		// Runner events are audit-class per TYPES.1 ("every harness
 		// invocation start/end ... every workspace state change").
@@ -144,4 +153,16 @@ type ScheduleRemovedEvent struct {
 	WorkspaceID string `json:"workspace_id"`
 	Name        string `json:"name"`
 	Path        string `json:"path"`
+}
+
+// WorkspaceStateChangedEvent is the shared payload shape for
+// workspace.archived / workspace.unarchived / workspace.deleted.
+// `from` and `to` records the transition so a replayer can
+// reconstruct the state machine without consulting workspace.yaml.
+type WorkspaceStateChangedEvent struct {
+	WorkspaceID string `json:"workspace_id"`
+	Name        string `json:"name"`
+	From        string `json:"from"`
+	To          string `json:"to"`
+	At          string `json:"at"`
 }

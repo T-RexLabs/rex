@@ -70,7 +70,254 @@ event log. See specs/workspace.yaml for the data model.`,
 	cmd.AddCommand(newWorkspaceShowCmd())
 	cmd.AddCommand(newWorkspaceListCmd())
 	cmd.AddCommand(newWorkspaceReindexCmd())
+	cmd.AddCommand(newWorkspaceArchiveCmd())
+	cmd.AddCommand(newWorkspaceUnarchiveCmd())
+	cmd.AddCommand(newWorkspaceDeleteCmd())
 	return cmd
+}
+
+// Workspace state values per workspace.LIFE.3.
+const (
+	workspaceStateActive   = "active"
+	workspaceStateArchived = "archived"
+	workspaceStateDeleted  = "deleted"
+)
+
+func newWorkspaceArchiveCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "archive",
+		Short: "Mark the workspace as archived",
+		Long: `Transitions the workspace to state=archived (workspace.LIFE.3).
+Reversible via 'rex workspace unarchive'. The on-disk content stays
+untouched; only workspace.yaml's state field flips and an audit
+event is recorded.`,
+		Example: `  rex workspace archive
+  rex workspace --workspace /path/to/ws archive`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runWorkspaceTransition(cmd, transitionArchive)
+		},
+	}
+	addWorkspacePersistentFlag(cmd)
+	setRelated(cmd, "rex workspace unarchive", "rex workspace delete", "rex workspace show")
+	return cmd
+}
+
+func newWorkspaceUnarchiveCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "unarchive",
+		Short:   "Restore an archived workspace to active",
+		Long:    `Transitions the workspace from archived back to active (workspace.LIFE.3.1). Refuses on workspaces that are already active or have been deleted.`,
+		Example: `  rex workspace unarchive`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runWorkspaceTransition(cmd, transitionUnarchive)
+		},
+	}
+	addWorkspacePersistentFlag(cmd)
+	setRelated(cmd, "rex workspace archive", "rex workspace show")
+	return cmd
+}
+
+func newWorkspaceDeleteCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "delete",
+		Short: "Mark the workspace as deleted (reversible only via snapshot restore)",
+		Long: `Transitions the workspace to state=deleted (workspace.LIFE.3 /
+LIFE.3.1). Unlike 'archive', this is reversible only via 'rex
+snapshot restore'. The on-disk files are NOT removed by this command
+— the marker just hides the workspace from active surfaces and
+records the intent in the audit log.`,
+		Example: `  rex workspace delete`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runWorkspaceTransition(cmd, transitionDelete)
+		},
+	}
+	addWorkspacePersistentFlag(cmd)
+	setRelated(cmd, "rex snapshot list", "rex snapshot restore <id>", "rex workspace show")
+	return cmd
+}
+
+// transition enumerates the three lifecycle moves. Kept tiny and
+// declarative so runWorkspaceTransition can branch on it without
+// re-implementing the rules in each command's RunE.
+type transition int
+
+const (
+	transitionArchive transition = iota
+	transitionUnarchive
+	transitionDelete
+)
+
+// runWorkspaceTransition validates the requested move against the
+// current state, updates workspace.yaml via yaml.Node round-trip
+// (so unknown user-set fields like default_repo survive), and
+// emits the matching audit-class workspace.* event.
+func runWorkspaceTransition(cmd *cobra.Command, t transition) error {
+	root, err := strictWorkspaceRoot(cmd)
+	if err != nil {
+		return err
+	}
+	settings, err := readWorkspaceSettings(root)
+	if err != nil {
+		return err
+	}
+	from := settings.State
+	if from == "" {
+		from = workspaceStateActive
+	}
+
+	to, eventType, err := resolveTransition(t, from)
+	if err != nil {
+		return err
+	}
+	if from == to {
+		// idempotent no-op; communicate clearly.
+		fmt.Fprintf(cmd.OutOrStdout(), "workspace %q is already %s\n", settings.ID, to)
+		return nil
+	}
+
+	if err := setWorkspaceStateField(root, to); err != nil {
+		return fmt.Errorf("update workspace.yaml: %w", err)
+	}
+
+	if err := emitWorkspaceTransition(cmd, root, eventType, audit.WorkspaceStateChangedEvent{
+		Name: settings.Name,
+		From: from,
+		To:   to,
+		At:   time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		return err
+	}
+
+	if jsonOutput(cmd) {
+		return writeJSON(cmd, map[string]any{
+			"id":   settings.ID,
+			"from": from,
+			"to":   to,
+		})
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "workspace %q: %s -> %s\n", settings.ID, from, to)
+	return nil
+}
+
+// resolveTransition turns (current state, requested move) into
+// (target state, audit-event type) or an error if the move isn't
+// allowed. Rules per workspace.LIFE.3 / LIFE.3.1:
+//
+//	archive:    active -> archived
+//	unarchive:  archived -> active
+//	delete:     active|archived -> deleted (terminal under normal flow)
+func resolveTransition(t transition, from string) (string, string, error) {
+	switch t {
+	case transitionArchive:
+		switch from {
+		case workspaceStateActive:
+			return workspaceStateArchived, audit.EventTypeWorkspaceArchived, nil
+		case workspaceStateArchived:
+			return workspaceStateArchived, "", nil // idempotent
+		case workspaceStateDeleted:
+			return "", "", errors.New("workspace is deleted; restore via `rex snapshot restore` first")
+		}
+	case transitionUnarchive:
+		switch from {
+		case workspaceStateArchived:
+			return workspaceStateActive, audit.EventTypeWorkspaceUnarchived, nil
+		case workspaceStateActive:
+			return workspaceStateActive, "", nil // idempotent
+		case workspaceStateDeleted:
+			return "", "", errors.New("workspace is deleted; restore via `rex snapshot restore` first")
+		}
+	case transitionDelete:
+		switch from {
+		case workspaceStateActive, workspaceStateArchived:
+			return workspaceStateDeleted, audit.EventTypeWorkspaceDeleted, nil
+		case workspaceStateDeleted:
+			return workspaceStateDeleted, "", nil // idempotent
+		}
+	}
+	return "", "", fmt.Errorf("workspace state %q does not allow this transition", from)
+}
+
+// setWorkspaceStateField does a yaml.Node round-trip to update the
+// `state` key in .rex/workspace.yaml without disturbing other
+// top-level keys (id, name, repos, default_repo, harness_defaults,
+// etc.). Same shape as repo.go's saveRepoEntries.
+func setWorkspaceStateField(root, state string) error {
+	path := filepath.Join(root, metaDirName, "workspace.yaml")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", path, err)
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(body, &doc); err != nil {
+		return fmt.Errorf("parse %s: %w", path, err)
+	}
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+		return fmt.Errorf("%s: not a YAML document", path)
+	}
+	root0 := doc.Content[0]
+	if root0.Kind != yaml.MappingNode {
+		return fmt.Errorf("%s: top level is not a mapping", path)
+	}
+	value := &yaml.Node{Kind: yaml.ScalarNode, Value: state, Tag: "!!str"}
+	setKey(root0, "state", value)
+
+	out, err := yaml.Marshal(&doc)
+	if err != nil {
+		return fmt.Errorf("marshal %s: %w", path, err)
+	}
+	return os.WriteFile(path, out, 0o644)
+}
+
+// emitWorkspaceTransition appends an audit-class workspace.* event
+// to the workspace event log, mirroring emitRepoEvent / emitScheduleEvent.
+func emitWorkspaceTransition(cmd *cobra.Command, root, eventType string, payload audit.WorkspaceStateChangedEvent) error {
+	settings, err := readWorkspaceSettings(root)
+	if err != nil {
+		return err
+	}
+	signer, err := loadOrCreateDefaultSigner(cmd)
+	if err != nil {
+		return err
+	}
+
+	global, _ := globalHooksDir()
+	disp := hooks.New(hooks.Options{
+		WorkspaceRoot:  root,
+		GlobalHooksDir: global,
+	})
+	defer disp.Drain()
+
+	searchIdx, idxErr := search.Open(root)
+	if idxErr == nil {
+		defer searchIdx.Close()
+	} else {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: search index unavailable: %v\n", idxErr)
+	}
+	indexerCB := search.EventIndexer(searchIdx, func(err error) {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: index event: %v\n", err)
+	})
+	onAppend := func(rec eventlog.Record) {
+		disp.OnAppend(rec)
+		indexerCB(rec)
+	}
+
+	writer, err := eventlog.OpenWriter(eventlog.WriterConfig{
+		Path:        eventLogPath(root),
+		WorkspaceID: settings.ID,
+		Actor:       signer.Actor().String(),
+		Sign:        identity.SignFunc(signer),
+		OnAppend:    onAppend,
+	})
+	if err != nil {
+		return fmt.Errorf("open events.log: %w", err)
+	}
+	defer writer.Close()
+
+	payload.WorkspaceID = settings.ID
+	if _, err := audit.NewAppender(writer).Append(eventType, payload); err != nil {
+		return fmt.Errorf("emit %s: %w", eventType, err)
+	}
+	return nil
 }
 
 func newWorkspaceReindexCmd() *cobra.Command {
