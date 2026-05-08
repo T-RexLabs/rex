@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/asabla/rex/internal/core/audit"
 	"github.com/asabla/rex/internal/core/specfmt"
 )
 
@@ -107,9 +108,25 @@ Refuses to overwrite an existing spec unless --force is passed.`,
 				return fmt.Errorf("write %s: %w", path, err)
 			}
 			from := "minimal skeleton"
+			templateID := ""
 			if template != nil {
 				from = fmt.Sprintf("template %q", template.Metadata.ID)
+				templateID = template.Metadata.ID
 			}
+
+			wsID, err := workspaceID(root)
+			if err != nil {
+				return err
+			}
+			if err := emitAuditEvent(cmd, root, audit.EventTypeSpecCreated, audit.SpecCreatedEvent{
+				WorkspaceID: wsID,
+				SpecID:      id,
+				Path:        path,
+				Template:    templateID,
+			}); err != nil {
+				return err
+			}
+
 			fmt.Fprintf(cmd.OutOrStdout(), "created %s (from %s)\n", path, from)
 			return nil
 		},
@@ -390,7 +407,29 @@ to re-run 'rex spec edit' or 'rex spec validate' to iterate.`,
 			}
 			res := specfmt.Validate(doc, specfmt.ModeStrict)
 			writeIssuesTextW(cmd.OutOrStdout(), res.Issues)
-			if res.HasErrors() {
+			hasErrors := res.HasErrors()
+
+			// Emit spec.edited regardless of validation outcome —
+			// the audit log records the act of editing; the
+			// HasErrors flag preserves the validation verdict so
+			// downstream readers can correlate. Best-effort: a
+			// failure to emit is logged but doesn't shadow the
+			// validation error, which is the user's primary
+			// signal.
+			root, rootErr := strictWorkspaceRoot(cmd)
+			if rootErr == nil {
+				wsID, err := workspaceID(root)
+				if err == nil {
+					_ = emitAuditEvent(cmd, root, audit.EventTypeSpecEdited, audit.SpecEditedEvent{
+						WorkspaceID: wsID,
+						SpecID:      doc.Metadata.ID,
+						Path:        path,
+						HasErrors:   hasErrors,
+					})
+				}
+			}
+
+			if hasErrors {
 				return fmt.Errorf("%s has validation errors after edit", path)
 			}
 			return nil

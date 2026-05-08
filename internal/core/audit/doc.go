@@ -16,4 +16,90 @@
 // lands; v1 local events can be unsigned because they never leave
 // the originating disk. The Appender takes a Signer parameter so the
 // signature path drops in without an API change.
+//
+// # Catalog of audit-class event types (audit.TYPES.1 / TYPES.2)
+//
+// Every type below is registered in auditEventTypes; runtime lookups
+// go through IsAuditEvent() and EventTypes(). The catalog is the
+// "Enumerate and document every event type that becomes an audit
+// entry" deliverable. Types reserved by audit.TYPES.1 but not yet
+// emitted are listed at the bottom under "Reserved" with a pointer
+// to the task that ships them.
+//
+// Workspace lifecycle:
+//
+//	workspace.created       payload: WorkspaceCreatedEvent
+//	  fires from `rex workspace init` after .rex/ is written.
+//	workspace.archived      payload: WorkspaceStateChangedEvent
+//	workspace.unarchived    payload: WorkspaceStateChangedEvent
+//	workspace.deleted       payload: WorkspaceStateChangedEvent
+//	  fire from `rex workspace archive/unarchive/delete`
+//	  (workspace.LIFE.3 / LIFE.3.1).
+//
+// Repo attach (workspace.REPO.4.1):
+//
+//	repo.added              payload: RepoAddedEvent
+//	  fires from `rex repo add` after the clone succeeds.
+//	repo.linked             payload: RepoLinkedEvent
+//	  fires from `rex repo link`.
+//	repo.removed            payload: RepoRemovedEvent
+//	  fires from `rex repo remove`; Purged records the --purge flag.
+//
+// Schedule lifecycle (cli.SCHED.* + execution.SCHED.*):
+//
+//	schedule.added          payload: ScheduleAddedEvent
+//	  fires from `rex schedule add`.
+//	schedule.removed        payload: ScheduleRemovedEvent
+//	  fires from `rex schedule remove`.
+//
+// Spec lifecycle (audit.TYPES.1 "every spec change"):
+//
+//	spec.created            payload: SpecCreatedEvent
+//	  fires from `rex spec create`.
+//	spec.edited             payload: SpecEditedEvent
+//	  fires from `rex spec edit` after $EDITOR returns; HasErrors
+//	  records the post-edit validation outcome.
+//
+// Remote lifecycle (audit.TYPES.1 "every remote attach/detach"):
+//
+//	remote.attached         payload: RemoteAttachedEvent
+//	  fires from `rex remote add`.
+//	remote.detached         payload: RemoteDetachedEvent
+//	  fires from `rex remote remove`.
+//
+// Run lifecycle (re-exported from internal/core/runner so the
+// registry has a single source of truth — execution.DAG.2):
+//
+//	run.started             payload: runner.RunStartedEvent
+//	run.completed           payload: runner.RunCompletedEvent
+//	run.cancelled           payload: runner.RunCancelledEvent
+//	run.aborted             payload: runner.RunAbortedEvent
+//	node.started            payload: runner.NodeStartedEvent
+//	node.succeeded          payload: runner.NodeSucceededEvent
+//	node.failed             payload: runner.NodeFailedEvent
+//	node.retried            payload: runner.NodeRetriedEvent
+//	permission.requested    payload: runner.PermissionRequestedEvent
+//	permission.granted      payload: runner.PermissionGrantedEvent
+//	permission.denied       payload: runner.PermissionDeniedEvent
+//
+// Reserved (audit.TYPES.1 names them; producers ship in their own
+// task PRs):
+//
+//	tool.invoked            (tools.* — MCP, deferred)
+//	rbac.*                  (identity-and-trust.rbac-engine, todo)
+//	auth.success / failure  (identity-and-trust.handshake-protocol —
+//	                         producer not yet wired)
+//	token.issued / refreshed / revoked
+//	                        (identity-and-trust.token-lifecycle, todo)
+//	sync.push / sync.pull   (sync.sync-api-client — producer not yet
+//	                         wired)
+//	hook.completed          (hooks.dispatcher — producer not yet
+//	                         wired)
+//	dispatch.*              (still-soft surface; ships when scheduled
+//	                         dispatches grow distinct semantics from
+//	                         RunStartedEvent.Trigger)
+//
+// Schema evolution: every event type carries EventVersion=1; future
+// changes are additive (overview.SYS.4) — readers skip unknown
+// fields per overview.SYS.3.
 package audit

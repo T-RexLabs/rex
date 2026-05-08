@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/asabla/rex/internal/core/audit"
 	"github.com/asabla/rex/internal/local/remotes"
 	syncclient "github.com/asabla/rex/internal/local/sync"
 )
@@ -44,6 +45,11 @@ const remotesPathFlag = "remotes-file"
 
 func addRemoteSharedFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().String(remotesPathFlag, "", "override registry path (default: platform user-config dir)")
+	// --workspace doesn't change which registry file gets written
+	// (that stays user-level by default per storage.GLOBAL.5), but
+	// it tells the audit-emit path which workspace's events.log
+	// should record the remote.attached/detached event.
+	cmd.PersistentFlags().String(workspaceFlagName, "", "workspace whose audit log should record the change (default: walk up from cwd)")
 }
 
 func registryPath(cmd *cobra.Command) (string, error) {
@@ -90,6 +96,10 @@ record the server's fingerprint.`,
 			if err := remotes.Save(path, reg); err != nil {
 				return err
 			}
+			emitRemoteAuditIfInWorkspace(cmd, audit.EventTypeRemoteAttached, audit.RemoteAttachedEvent{
+				Name: name,
+				URL:  url,
+			})
 			fmt.Fprintf(cmd.OutOrStdout(), "added remote %q -> %s\n", name, url)
 			return nil
 		},
@@ -197,12 +207,55 @@ func newRemoteRemoveCmd() *cobra.Command {
 			if err := remotes.Save(path, reg); err != nil {
 				return err
 			}
+			emitRemoteAuditIfInWorkspace(cmd, audit.EventTypeRemoteDetached, audit.RemoteDetachedEvent{
+				Name: args[0],
+			})
 			fmt.Fprintf(cmd.OutOrStdout(), "removed remote %q\n", args[0])
 			return nil
 		},
 	}
 	addRemoteSharedFlags(cmd)
 	return cmd
+}
+
+// emitRemoteAuditIfInWorkspace tries to record a remote.* audit
+// event in the current workspace's events.log. Best-effort: when
+// the command runs outside any workspace (the registry file is
+// user-level so the action is still legitimate), no audit row
+// lands and no error is surfaced. The CLI's own success message
+// still fires either way.
+//
+// The payload is required to embed a `WorkspaceID string` field
+// that we'll stamp here from the resolved workspace settings.
+func emitRemoteAuditIfInWorkspace(cmd *cobra.Command, eventType string, payload any) {
+	root, err := currentWorkspaceRoot(cmd)
+	if err != nil || root == "" {
+		return
+	}
+	wsID, err := workspaceID(root)
+	if err != nil {
+		return
+	}
+	stamped := stampRemoteWorkspaceID(payload, wsID)
+	if err := emitAuditEvent(cmd, root, eventType, stamped); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: emit %s: %v\n", eventType, err)
+	}
+}
+
+// stampRemoteWorkspaceID sets the WorkspaceID field on the two
+// remote.* payload types. Pure type-switch; centralised here so
+// the caller doesn't have to thread settings.
+func stampRemoteWorkspaceID(payload any, workspaceID string) any {
+	switch p := payload.(type) {
+	case audit.RemoteAttachedEvent:
+		p.WorkspaceID = workspaceID
+		return p
+	case audit.RemoteDetachedEvent:
+		p.WorkspaceID = workspaceID
+		return p
+	default:
+		return payload
+	}
 }
 
 func newRemoteTestCmd() *cobra.Command {

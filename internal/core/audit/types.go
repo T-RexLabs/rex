@@ -38,6 +38,17 @@ const (
 	EventTypeWorkspaceArchived   = "workspace.archived"
 	EventTypeWorkspaceUnarchived = "workspace.unarchived"
 	EventTypeWorkspaceDeleted    = "workspace.deleted"
+
+	// Spec lifecycle (audit.TYPES.1 "every spec change"). Edits
+	// elsewhere — direct text-editor or git pull — flow through
+	// content sync rather than these events; spec.created and
+	// spec.edited fire only when the rex CLI mediates the change.
+	EventTypeSpecCreated = "spec.created"
+	EventTypeSpecEdited  = "spec.edited"
+
+	// Remote lifecycle (audit.TYPES.1 "every remote attach/detach").
+	EventTypeRemoteAttached = "remote.attached"
+	EventTypeRemoteDetached = "remote.detached"
 )
 
 // EventVersion is the schema version for audit-package event payloads.
@@ -59,6 +70,10 @@ var auditEventTypes = func() map[string]struct{} {
 		EventTypeWorkspaceArchived:   {},
 		EventTypeWorkspaceUnarchived: {},
 		EventTypeWorkspaceDeleted:    {},
+		EventTypeSpecCreated:         {},
+		EventTypeSpecEdited:          {},
+		EventTypeRemoteAttached:      {},
+		EventTypeRemoteDetached:      {},
 
 		// Runner events are audit-class per TYPES.1 ("every harness
 		// invocation start/end ... every workspace state change").
@@ -165,4 +180,41 @@ type WorkspaceStateChangedEvent struct {
 	From        string `json:"from"`
 	To          string `json:"to"`
 	At          string `json:"at"`
+}
+
+// SpecCreatedEvent is the payload for EventTypeSpecCreated — fires
+// from `rex spec create` after the new YAML has been written.
+type SpecCreatedEvent struct {
+	WorkspaceID string `json:"workspace_id"`
+	SpecID      string `json:"spec_id"`
+	Path        string `json:"path"`
+	Template    string `json:"template,omitempty"`
+}
+
+// SpecEditedEvent is the payload for EventTypeSpecEdited — fires
+// from `rex spec edit` after $EDITOR exits and the spec re-validates.
+// HasErrors is the post-edit validation outcome; when true, the
+// edit is preserved on disk but flagged for the user to fix.
+type SpecEditedEvent struct {
+	WorkspaceID string `json:"workspace_id"`
+	SpecID      string `json:"spec_id"`
+	Path        string `json:"path"`
+	HasErrors   bool   `json:"has_errors"`
+}
+
+// RemoteAttachedEvent is the payload for EventTypeRemoteAttached —
+// fires from `rex remote add` after the registry write succeeds.
+// URL is captured at attach time; later URL changes via re-add
+// emit a fresh attached event rather than a separate "updated".
+type RemoteAttachedEvent struct {
+	WorkspaceID string `json:"workspace_id"`
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+}
+
+// RemoteDetachedEvent is the payload for EventTypeRemoteDetached
+// — fires from `rex remote remove`.
+type RemoteDetachedEvent struct {
+	WorkspaceID string `json:"workspace_id"`
+	Name        string `json:"name"`
 }

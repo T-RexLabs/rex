@@ -1,0 +1,38 @@
+# Spec-bookkeeping reconciliation pass — audit.audit-event-types done.
+#
+# Status: accepted.
+# Date:   2026-05-08.
+# Folded: 2026-05-08 — audit.audit-event-types flipped to done after
+# the catalog landed in internal/core/audit/doc.go.
+#
+# What "done" means here:
+#   1. Every audit-class type currently registered in
+#      auditEventTypes is enumerated in doc.go's package comment
+#      with its payload struct and the command that produces it.
+#   2. TestCatalogDocCoversEveryRegisteredType keeps doc and code
+#      in sync — adding a new type without documenting it fails CI.
+#   3. The doc lists categories from audit.TYPES.1 that don't ship
+#      producers yet ("Reserved") with pointers to the task that
+#      will wire them: tool.* (MCP, deferred), rbac.* (rbac-engine),
+#      auth.* / token.* (identity-and-trust), sync.* (sync-api-
+#      client), hook.* (hooks dispatcher), dispatch.* (still soft).
+#
+# Concrete additions in this PR beyond the catalog text:
+#   - spec.created  payload SpecCreatedEvent      (rex spec create)
+#   - spec.edited   payload SpecEditedEvent       (rex spec edit)
+#   - remote.attached  payload RemoteAttachedEvent  (rex remote add)
+#   - remote.detached  payload RemoteDetachedEvent  (rex remote remove)
+#
+#   Plus a shared emitAuditEvent() helper in internal/local/cli/
+#   so future audit-emitting commands don't keep cargo-culting the
+#   open-writer / fire-hooks / index / append dance.
+
+target: audit
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: audit-event-types
+    from: todo
+    to: done
+    proof: "internal/core/audit/doc.go enumerates every registered type with payload and producer; catalog_test.go keeps the doc in sync with the registry; spec.* and remote.* event types added in same PR (spec.created/edited from rex spec create/edit; remote.attached/detached from rex remote add/remove)"

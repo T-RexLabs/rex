@@ -25,7 +25,8 @@ description: |
 tasks:
   - id: audit-event-types
     description: "Enumerate and document every event type that becomes an audit entry"
-    state: todo
+    state: done
+    note: "internal/core/audit/doc.go is the catalog (kept in sync with the registry by catalog_test.go); reserved-future types listed there with their owning task. spec.created/edited + remote.attached/detached added 2026-05-08 alongside the catalog."
     references: [TYPES.1, TYPES.2]
 
   - id: audit-storage
