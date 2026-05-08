@@ -20,7 +20,29 @@ import (
 	"github.com/asabla/rex/internal/core/search"
 	"github.com/asabla/rex/internal/core/specfmt"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
+	"github.com/asabla/rex/internal/local/registry"
 )
+
+// registryFlagName lets tests redirect the registry path to a
+// tempdir without mutating $XDG_CONFIG_HOME / $HOME globally. Empty
+// means use registry.DefaultPath().
+const registryFlagName = "registry-file"
+
+// addRegistryFlag installs --registry-file on a workspace
+// subcommand so tests (and power users) can target an alternate
+// registry.toml location.
+func addRegistryFlag(cmd *cobra.Command) {
+	cmd.Flags().String(registryFlagName, "", "override registry path (default: platform user-config dir)")
+}
+
+// resolveRegistryPath returns the effective registry path: explicit
+// --registry-file wins, otherwise the platform default applies.
+func resolveRegistryPath(cmd *cobra.Command) (string, error) {
+	if v, _ := cmd.Flags().GetString(registryFlagName); v != "" {
+		return v, nil
+	}
+	return registry.DefaultPath()
+}
 
 // envIdentityDir is the environment variable callers can set to
 // override the platform-default identity store path. Tests use this
@@ -528,6 +550,15 @@ mean it.`,
 				return fmt.Errorf("emit workspace.created: %w", err)
 			}
 
+			// Register the new workspace in the global registry
+			// (workspace.LIFE.4). Best-effort: a failure to write
+			// the registry doesn't fail init — the workspace
+			// itself is fully usable from cwd; the registry just
+			// powers `rex workspace list` discovery.
+			if err := registerWorkspace(cmd, id, abs, ""); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: register %s: %v\n", id, err)
+			}
+
 			fmt.Fprintf(cmd.OutOrStdout(), "Initialized rex workspace %q at %s (signed as %s)\n",
 				id, abs, signer.Actor())
 			return nil
@@ -542,7 +573,24 @@ mean it.`,
 	cmd.Flags().StringVar(&nameFlag, "name", "", "human-readable workspace name (default: basename of path)")
 	cmd.Flags().Bool("force", false, "overwrite an existing .rex/ directory at the target")
 	cmd.Flags().String("identity-dir", "", "override identity store path (default: platform user-config dir/rex/identity/)")
+	addRegistryFlag(cmd)
 	return cmd
+}
+
+// registerWorkspace upserts a registry entry for the workspace at
+// abs. Empty `remote` means a local-only workspace; clone will pass
+// the originating remote alias when that command lands.
+func registerWorkspace(cmd *cobra.Command, id, abs, remote string) error {
+	path, err := resolveRegistryPath(cmd)
+	if err != nil {
+		return err
+	}
+	reg, err := registry.Load(path)
+	if err != nil {
+		return err
+	}
+	reg.Upsert(registry.Entry{ID: id, Path: abs, Remote: remote})
+	return registry.Save(path, reg)
 }
 
 func newWorkspaceShowCmd() *cobra.Command {
@@ -606,38 +654,134 @@ directory when omitted) and prints its settings and content counts.`,
 }
 
 func newWorkspaceListCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List locally-known workspaces",
-		Long: `Reads ~/.config/rex/registry.toml when present (workspace.LIFE.4).
-Until storage.global-config-layout lands, list falls back to
-showing the current workspace if cwd is inside one, and a
-"no registry yet" hint otherwise.`,
-		Example: `  rex workspace list`,
+		Long: `Reads ~/.config/rex/registry.toml (workspace.LIFE.4 / storage.GLOBAL.4)
+and prints one row per registered workspace. Entries whose on-disk
+path no longer exists are flagged as "(missing)" but still listed —
+removing them is a deliberate user action, not list's job.
+
+When the registry is empty AND cwd is inside a workspace, falls back
+to showing that workspace as a single row with the source column
+"(cwd)" so a fresh user gets feedback before their first init/clone.`,
+		Example: `  rex workspace list
+  rex workspace list --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cwd, err := os.Getwd()
+			path, err := resolveRegistryPath(cmd)
 			if err != nil {
 				return err
 			}
-			root, ferr := findWorkspaceRoot(cwd)
-			if errors.Is(ferr, errNoWorkspace) {
-				fmt.Fprintln(cmd.OutOrStdout(),
-					"No global registry yet (deferred to storage.global-config-layout) and cwd is not inside a workspace.")
-				return nil
-			}
-			if ferr != nil {
-				return ferr
-			}
-			settings, err := readWorkspaceSettings(root)
+			reg, err := registry.Load(path)
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(),
-				"Global registry not yet implemented; showing the workspace at cwd:")
-			fmt.Fprintf(cmd.OutOrStdout(), "  %s\t%s\t%s\n", settings.ID, settings.State, root)
-			return nil
+			entries := reg.List()
+
+			if len(entries) == 0 {
+				return printWorkspaceListFallback(cmd)
+			}
+
+			rows := make([]workspaceListRow, 0, len(entries))
+			for _, e := range entries {
+				row := workspaceListRow{
+					ID:     e.ID,
+					Path:   e.Path,
+					Remote: e.Remote,
+					State:  workspaceListProbeState(e.Path),
+					Source: "registry",
+				}
+				rows = append(rows, row)
+			}
+			return printWorkspaceList(cmd, rows)
 		},
 	}
+	addRegistryFlag(cmd)
+	return cmd
+}
+
+// workspaceListRow is the on-screen / on-JSON shape for one row of
+// `rex workspace list`. State is sourced from disk (workspace.yaml)
+// so a registry entry that survives a workspace deletion still
+// surfaces something useful — "(missing)" in that case.
+type workspaceListRow struct {
+	ID     string `json:"id"`
+	Path   string `json:"path"`
+	Remote string `json:"remote,omitempty"`
+	State  string `json:"state"`
+	Source string `json:"source"` // "registry" | "(cwd)"
+}
+
+func printWorkspaceList(cmd *cobra.Command, rows []workspaceListRow) error {
+	if jsonOutput(cmd) {
+		return writeJSON(cmd, rows)
+	}
+	if len(rows) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "no workspaces registered")
+		return nil
+	}
+	for _, r := range rows {
+		remote := r.Remote
+		if remote == "" {
+			remote = "-"
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "%-20s %-12s %-10s %-10s %s\n",
+			r.ID, r.State, remote, r.Source, r.Path)
+	}
+	return nil
+}
+
+// printWorkspaceListFallback handles the empty-registry case by
+// surfacing the cwd workspace if one is resolvable, mirroring the
+// previous behaviour but with explicit Source="(cwd)" labelling.
+func printWorkspaceListFallback(cmd *cobra.Command) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	root, ferr := findWorkspaceRoot(cwd)
+	if errors.Is(ferr, errNoWorkspace) {
+		fmt.Fprintln(cmd.OutOrStdout(),
+			"No workspaces registered; cwd is not inside a workspace either.")
+		return nil
+	}
+	if ferr != nil {
+		return ferr
+	}
+	settings, err := readWorkspaceSettings(root)
+	if err != nil {
+		return err
+	}
+	row := workspaceListRow{
+		ID:     settings.ID,
+		Path:   root,
+		State:  settings.State,
+		Source: "(cwd)",
+	}
+	return printWorkspaceList(cmd, []workspaceListRow{row})
+}
+
+// workspaceListProbeState reads .rex/workspace.yaml at the given
+// path and returns the state string. Returns "(missing)" if the
+// path or workspace.yaml is gone — a registry entry whose backing
+// dir no longer exists.
+func workspaceListProbeState(absPath string) string {
+	yamlPath := filepath.Join(absPath, metaDirName, "workspace.yaml")
+	if _, err := os.Stat(yamlPath); err != nil {
+		return "(missing)"
+	}
+	body, err := os.ReadFile(yamlPath)
+	if err != nil {
+		return "(missing)"
+	}
+	var s workspaceSettings
+	if err := yaml.Unmarshal(body, &s); err != nil {
+		return "(unreadable)"
+	}
+	if s.State == "" {
+		return "active"
+	}
+	return s.State
 }
 
 // readWorkspaceSettings loads .rex/workspace.yaml for the given
