@@ -87,6 +87,7 @@ event log. See specs/workspace.yaml for the data model.`,
 		"rex workspace reindex",
 	)
 	cmd.AddCommand(newWorkspaceInitCmd())
+	cmd.AddCommand(newWorkspaceCloneCmd())
 	cmd.AddCommand(newWorkspaceShowCmd())
 	cmd.AddCommand(newWorkspaceListCmd())
 	cmd.AddCommand(newWorkspaceReindexCmd())

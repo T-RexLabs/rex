@@ -30,7 +30,8 @@ tasks:
 
   - id: workspace-commands
     description: "Implement workspace subcommands"
-    state: todo
+    state: done
+    note: "All five WS.* surfaces ship: init, clone (2026-05-08), list, show, archive/unarchive/delete. WS.6 (push --remote) is satisfied by `rex push --remote <name>`; WS.7 (reindex) ships via newWorkspaceReindexCmd."
     references: [WS.1, WS.2, WS.3, WS.4, WS.5]
 
   - id: spec-commands

@@ -27,7 +27,8 @@ description: |
 tasks:
   - id: workspace-init-cli
     description: "Implement `rex workspace init` and `rex workspace clone`, mirroring `git init` / `git clone`"
-    state: todo
+    state: done
+    note: "init shipped earlier; clone shipped 2026-05-08 in internal/local/cli/workspace_clone.go (event-sourced clone via sync.Pull; git-merged content follows when sync.GIT.* lands)."
     references: [LIFE.1, LIFE.2, LIFE.3]
 
   - id: workspace-yaml-schema

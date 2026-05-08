@@ -14,11 +14,14 @@ import (
 	"github.com/asabla/rex/internal/core/storage/eventlog"
 )
 
-// openAppend opens path for append in the same mode the eventlog
-// writer uses. Pull writes verbatim records (already-stamped from
-// the originating node), so we cannot use eventlog.Writer.Append —
-// that would re-stamp HLC and actor.
-func openAppend(path string) (*os.File, error) {
+// OpenAppend opens path for append in the same mode the eventlog
+// writer uses. Pull (and clone) write verbatim records (already-
+// stamped from the originating node), so we cannot use
+// eventlog.Writer.Append — that would re-stamp HLC and actor.
+//
+// Exported so `rex workspace clone` can stream events into a fresh
+// workspace's log without going through eventlog.Writer.
+func OpenAppend(path string) (*os.File, error) {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("sync: open events.log: %w", err)
@@ -26,8 +29,19 @@ func openAppend(path string) (*os.File, error) {
 	return f, nil
 }
 
-// appendRaw writes one Record to f using the same length-prefixed
-// JSON framing the eventlog package uses on disk.
+// openAppend is the package-internal alias kept so the existing
+// sync.* call sites don't have to switch capitalisation; new
+// callers should use OpenAppend.
+func openAppend(path string) (*os.File, error) { return OpenAppend(path) }
+
+// AppendRaw writes one Record to f using the same length-prefixed
+// JSON framing the eventlog package uses on disk. Same exported-
+// for-clone rationale as OpenAppend.
+func AppendRaw(f *os.File, rec eventlog.Record) error {
+	return appendRaw(f, rec)
+}
+
+// appendRaw is the original package-internal implementation.
 func appendRaw(f *os.File, rec eventlog.Record) error {
 	body, err := json.Marshal(rec)
 	if err != nil {

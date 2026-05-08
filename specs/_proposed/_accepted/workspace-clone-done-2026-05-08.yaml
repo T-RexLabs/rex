@@ -1,0 +1,52 @@
+# Spec-bookkeeping reconciliation pass — workspace clone done.
+#
+# Status: accepted.
+# Date:   2026-05-08.
+# Folded: 2026-05-08 — workspace.workspace-init-cli and
+# cli.workspace-commands flipped to done after `rex workspace
+# clone` shipped.
+#
+# Implementation
+#   internal/local/cli/workspace_clone.go  (the command body)
+#   internal/local/sync/log_io.go          (OpenAppend / AppendRaw
+#                                            now exported so clone
+#                                            can stream events into
+#                                            a fresh log without
+#                                            re-stamping HLC + actor)
+#
+# v1 scope
+#   - clones one workspace's event-sourced history (LIFE.2)
+#   - reconstructs workspace.yaml from the workspace.created event
+#   - registers the remote in remotes.toml and the workspace in
+#     the global registry (storage.GLOBAL.4)
+#   - stamps a per-remote watermark so the next `rex pull`
+#     continues past the cloned head
+#
+# Out of scope (deferred to sync.GIT.* and the post-v1 rebase
+# engine)
+#   - the git-merged content surface: specs/, schedules/, hooks/,
+#     templates/. v1 clone produces a workspace whose event log
+#     is complete but whose specs/ etc. are empty until that PR
+#     ships.
+#   - replaying state-transition events (workspace.archived /
+#     unarchived / deleted) into workspace.yaml.state. v1 clone
+#     hard-codes "active"; the next state-changing CLI run will
+#     fold the existing events into the right value.
+
+target: multi
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    target_spec: workspace
+    task_id: workspace-init-cli
+    from: todo
+    to: done
+    proof: "internal/local/cli/workspace_clone.go ships LIFE.2; LIFE.1 (init) and LIFE.3 (archive/unarchive/delete) shipped earlier; covered by 4 clone tests against a real httptest-backed central"
+
+  - kind: update-task-state
+    target_spec: cli
+    task_id: workspace-commands
+    from: todo
+    to: done
+    proof: "All five WS.1-5 surfaces ship: init, clone (this PR), list, show, archive/unarchive/delete. WS.6 (push --remote) is satisfied by the existing `rex push --remote <name>` flag; WS.7 (reindex) ships via newWorkspaceReindexCmd"
