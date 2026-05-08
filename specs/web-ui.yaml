@@ -36,7 +36,8 @@ tasks:
 
   - id: local-ui-routes
     description: "Implement the local UI route set: workspaces, specs, runs, audit, remotes, settings"
-    state: todo
+    state: done
+    note: "All six routes ship per the (amended-2026-05-08) flat shape — LOCAL.1.1 captures the v1 single-workspace binding rationale; the original /workspaces/<id>/... prefix is post-v1."
     references: [LOCAL.1, LOCAL.2, LOCAL.3, LOCAL.4, LOCAL.5, LOCAL.6]
 
   - id: central-ui-routes
@@ -73,7 +74,20 @@ components:
   LOCAL:
     name: Local UI route set
     requirements:
-      "1": "Routes: `/`, `/workspaces`, `/workspaces/<id>`, `/workspaces/<id>/specs`, `/workspaces/<id>/specs/<spec-id>`, `/workspaces/<id>/runs`, `/workspaces/<id>/runs/<run-id>` (live), `/workspaces/<id>/audit`, `/workspaces/<id>/remotes`, `/workspaces/<id>/settings`"
+      "1": "Routes (v1, single-workspace binding per LOCAL.1.1): `/`, `/specs`, `/specs/<spec-id>`, `/runs`, `/runs/<run-id>` (live), `/audit`, `/remotes`, `/settings`. The workspace-id-prefixed variants (`/workspaces/<id>/...`) are reserved for the post-v1 multi-workspace daemon shape."
+      "1.1": |
+        `rex serve` in v1 binds one process to exactly one workspace
+        — the workspace at cwd, or the --workspace flag's target.
+        Routes therefore omit a workspace-id segment: there is only
+        ever one value to put there. The /workspaces/<id>/...
+        shape is reserved for the post-v1 multi-workspace daemon
+        (the same daemon model that unblocks `rex run --detach`,
+        the in-process push bus mentioned in LIVE.1-note, and the
+        multi-workspace `rex serve` listening on a long-lived
+        socket).
+
+        Central UI keeps its full route set (CENTRAL.1) — central
+        nodes are inherently multi-org / multi-workspace.
       "2": "Authentication is local-machine: the binary listens on localhost only by default, and the user is implicitly the owner of the machine identity; remote-network exposure requires opt-in config"
       "3": "Workspace overview page shows: workspace state, draft counts, recent runs, attached remotes, quick-action buttons (start run, validate specs, sync now)"
       "4": "Spec detail view has tabs: rendered (markdown), YAML source, tasks, history; ACID badges are click-to-copy"
@@ -91,10 +105,10 @@ components:
   LIVE:
     name: Live run watching
     requirements:
-      "1": "An SSE endpoint at `/workspaces/<id>/runs/<run-id>/stream` emits run events as they happen; events include node lifecycle, transcript chunks, and permission prompts"
+      "1": "An SSE endpoint at `/runs/<run-id>/stream` emits run events as they happen; events include node lifecycle, transcript chunks, and permission prompts. (The workspace-id-prefixed shape is reserved for post-v1 per LOCAL.1.1.)"
       "1-note": "v1 mechanism: file-tail polling of .rex/events.log at ~100ms cadence. The SSE handler replays the prior events for the run on connect (filtered by run_id), then polls past EOF for new records. Push-style notification (one writer broadcasting over an in-process bus) is deferred until a daemon model exists; v1 ships rex serve and rex run start as separate processes with no shared bus. Latency on localhost stays within PERF.1."
       "2": "The run detail page subscribes via `hx-ext=\"sse\"` and renders incoming chunks; the page works correctly when first opened mid-run (all prior events are replayed before new ones)"
-      "3": "Permission prompts render as inline cards with approve/deny buttons; click triggers a POST to `/workspaces/<id>/runs/<run-id>/permission` that resolves the prompt"
+      "3": "Permission prompts render as inline cards with approve/deny buttons; click triggers a POST to `/runs/<run-id>/permission` that resolves the prompt. (Workspace-id-prefixed shape reserved for post-v1 per LOCAL.1.1.)"
 
   SEARCH:
     name: Search UI

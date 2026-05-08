@@ -1,0 +1,66 @@
+# Proposed amendment — local UI uses flat routes in v1 (no
+# /workspaces/<id> prefix).
+#
+# Status: accepted.
+# Date:   2026-05-08.
+# Folded: 2026-05-08 — web-ui.LOCAL.1 + LOCAL.1.1 + LIVE.1 +
+# LIVE.3 updated to reflect the v1 single-workspace binding.
+#
+# Surfaced by:
+#   The local UI ships flat routes (/specs, /runs, /audit, etc.)
+#   while the spec calls for /workspaces/<id>/specs, etc. This is
+#   a spec-vs-code disagreement: `rex serve` in v1 binds one
+#   process to exactly one workspace (the cwd one, or --workspace),
+#   so a workspace-id segment in the URL would be redundant
+#   (always the same value) and add a redirect dance for the user.
+#
+#   The /workspaces/<id> shape was specced with multi-workspace
+#   serving in mind. v1 has no daemon and serves only the
+#   binding workspace, so the prefix has no payload. Multi-
+#   workspace serving lands when the daemon does (post-v1
+#   alongside `rex run --detach` and the in-process bus
+#   mentioned in LIVE.1-note).
+#
+# This amendment locks the v1 shape into the spec and records
+# the deferred-multi-workspace direction so the LIVE.* / LOCAL.*
+# paths can match what the binary actually serves.
+
+target: web-ui
+amendment_kind: additive
+
+changes:
+
+  - kind: update-requirement
+    component: LOCAL
+    requirement_id: "1"
+    from: "Routes: `/`, `/workspaces`, `/workspaces/<id>`, `/workspaces/<id>/specs`, `/workspaces/<id>/specs/<spec-id>`, `/workspaces/<id>/runs`, `/workspaces/<id>/runs/<run-id>` (live), `/workspaces/<id>/audit`, `/workspaces/<id>/remotes`, `/workspaces/<id>/settings`"
+    to: "Routes (v1, single-workspace binding per LOCAL.1.1): `/`, `/specs`, `/specs/<spec-id>`, `/runs`, `/runs/<run-id>` (live), `/audit`, `/remotes`, `/settings`. The workspace-id-prefixed variants (`/workspaces/<id>/...`) are reserved for the post-v1 multi-workspace daemon shape."
+
+  - kind: add-sub-requirement
+    component: LOCAL
+    new_id: "1.1"
+    new_text: |
+      `rex serve` in v1 binds one process to exactly one workspace
+      — the workspace at cwd, or the --workspace flag's target.
+      Routes therefore omit a workspace-id segment: there is only
+      ever one value to put there. The /workspaces/<id>/...
+      shape is reserved for the post-v1 multi-workspace daemon
+      (the same daemon model that unblocks `rex run --detach`,
+      the in-process push bus mentioned in LIVE.1-note, and the
+      multi-workspace `rex serve` listening on a long-lived
+      socket).
+
+      Central UI keeps its full route set (CENTRAL.1) — central
+      nodes are inherently multi-org / multi-workspace.
+
+  - kind: update-requirement
+    component: LIVE
+    requirement_id: "1"
+    from: "An SSE endpoint at `/workspaces/<id>/runs/<run-id>/stream` emits run events as they happen; events include node lifecycle, transcript chunks, and permission prompts"
+    to: "An SSE endpoint at `/runs/<run-id>/stream` emits run events as they happen; events include node lifecycle, transcript chunks, and permission prompts. (The workspace-id-prefixed shape is reserved for post-v1 per LOCAL.1.1.)"
+
+  - kind: update-requirement
+    component: LIVE
+    requirement_id: "3"
+    from: "Permission prompts render as inline cards with approve/deny buttons; click triggers a POST to `/workspaces/<id>/runs/<run-id>/permission` that resolves the prompt"
+    to: "Permission prompts render as inline cards with approve/deny buttons; click triggers a POST to `/runs/<run-id>/permission` that resolves the prompt. (Workspace-id-prefixed shape reserved for post-v1 per LOCAL.1.1.)"
