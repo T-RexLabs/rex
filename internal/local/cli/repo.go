@@ -158,7 +158,7 @@ available.`,
 					"name": name, "path": cleanRel, "url": url,
 				})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "added repo %q at %s (cloned from %s)\n", name, cleanRel, url)
+			printConfirmation(cmd, "added repo %q at %s (cloned from %s)\n", name, cleanRel, url)
 			return nil
 		},
 	}
@@ -225,7 +225,7 @@ workspace tree; v1 stores it as a POSIX-relative path
 					"name": name, "path": cleanRel,
 				})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "linked repo %q at %s\n", name, cleanRel)
+			printConfirmation(cmd, "linked repo %q at %s\n", name, cleanRel)
 			return nil
 		},
 	}
@@ -354,7 +354,7 @@ copy stays on disk; --purge also deletes it (workspace.REPO.4).`,
 			if purged {
 				suffix = " (working copy deleted)"
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "removed repo %q%s\n", gone.Name, suffix)
+			printConfirmation(cmd, "removed repo %q%s\n", gone.Name, suffix)
 			return nil
 		},
 	}

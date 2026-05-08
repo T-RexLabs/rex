@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/spf13/cobra"
 
@@ -42,6 +43,29 @@ func strictWorkspaceRoot(cmd *cobra.Command) (string, error) {
 func jsonOutput(cmd *cobra.Command) bool {
 	v, _ := cmd.Flags().GetBool("json")
 	return v
+}
+
+// quietOutput reports whether --quiet is set on cmd or any parent.
+// Wired alongside the root persistent flag (root.go) per cli.FMT.3
+// so any leaf can suppress non-essential confirmation output for
+// script callers without per-command boilerplate.
+//
+// Confirmation prints (cli.UX.4) check this and skip when true; the
+// caller still gets the same info via exit code + --json output.
+func quietOutput(cmd *cobra.Command) bool {
+	v, _ := cmd.Flags().GetBool("quiet")
+	return v
+}
+
+// printConfirmation is the small helper for "Commands that modify
+// state print a one-line confirmation" (cli.UX.4). Honors --quiet
+// (cli.FMT.3) and --json: under --json the JSON payload is the
+// only stdout output anyway, so no confirmation text fires.
+func printConfirmation(cmd *cobra.Command, format string, args ...any) {
+	if quietOutput(cmd) || jsonOutput(cmd) {
+		return
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), format, args...)
 }
 
 func writeJSON(cmd *cobra.Command, v any) error {

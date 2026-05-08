@@ -627,7 +627,7 @@ mean it.`,
 				fmt.Fprintf(cmd.ErrOrStderr(), "warning: register %s: %v\n", id, err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Initialized rex workspace %q at %s (signed as %s)\n",
+			printConfirmation(cmd, "Initialized rex workspace %q at %s (signed as %s)\n",
 				id, abs, signer.Actor())
 			return nil
 		},

@@ -68,7 +68,8 @@ tasks:
 
   - id: output-formatting
     description: "Implement consistent table/JSON output, color, --quiet, --json across all read commands"
-    state: todo
+    state: done
+    note: "FMT.1 (--json) + FMT.2 (color helpers + NO_COLOR) shipped earlier; FMT.3 (--quiet) gained a quietOutput() / printConfirmation() helper 2026-05-08 and is honoured by all state-changing confirmation prints."
     references: [FMT.1, FMT.2, FMT.3]
 
 components:

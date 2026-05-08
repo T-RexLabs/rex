@@ -1,0 +1,37 @@
+# Spec-bookkeeping reconciliation pass — cli.output-formatting done.
+#
+# Status: accepted.
+# Date:   2026-05-08.
+# Folded: 2026-05-08 — cli.output-formatting flipped to done after
+# `--quiet` gained a real wiring point alongside the existing --json
+# and color helpers.
+#
+# Coverage of FMT.1 / FMT.2 / FMT.3:
+#
+#   FMT.1 (--json) — DONE earlier. jsonOutput() helper consulted by
+#                    every read command; --json is a root persistent
+#                    flag.
+#   FMT.2 (color)  — DONE earlier. useColor() in root.go honours
+#                    --no-color, NO_COLOR=1, TERM=dumb, and the
+#                    is-terminal check.
+#   FMT.3 (--quiet) — DONE this PR. quietOutput() helper + the new
+#                    printConfirmation() route gates the
+#                    state-changing commands' "Initialized / created
+#                    / added / linked / removed" confirmation lines
+#                    behind --quiet (and behind --json, since JSON
+#                    output is the only stdout payload in that mode).
+#
+# Wired today: rex workspace init, rex spec create, rex repo
+# add/link/remove, rex schedule add/remove. Other surfaces had no
+# non-essential text to suppress in the first place — list/show/etc.
+# are already structured output where every line is essential.
+
+target: cli
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: output-formatting
+    from: todo
+    to: done
+    proof: "cmdutil.go ships quietOutput() + printConfirmation(); state-changing commands route confirmations through it; --json + color helpers predate; covered by TestQuietSuppressesConfirmations"

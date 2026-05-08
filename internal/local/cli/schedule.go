@@ -227,7 +227,7 @@ the file in $EDITOR after scaffolding.`,
 					"name": s.Name, "path": path, "trigger_kind": s.Trigger.Kind,
 				})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "added schedule %q at %s\n", s.Name, path)
+			printConfirmation(cmd, "added schedule %q at %s\n", s.Name, path)
 
 			if openEditor {
 				editor := os.Getenv("EDITOR")
@@ -287,7 +287,7 @@ func newScheduleRemoveCmd() *cobra.Command {
 			if jsonOutput(cmd) {
 				return writeJSON(cmd, map[string]any{"name": args[0], "path": path})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "removed schedule %q\n", args[0])
+			printConfirmation(cmd, "removed schedule %q\n", args[0])
 			return nil
 		},
 	}

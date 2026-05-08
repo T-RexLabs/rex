@@ -127,7 +127,7 @@ Refuses to overwrite an existing spec unless --force is passed.`,
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "created %s (from %s)\n", path, from)
+			printConfirmation(cmd, "created %s (from %s)\n", path, from)
 			return nil
 		},
 	}
