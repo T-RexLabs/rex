@@ -95,7 +95,75 @@ event log. See specs/workspace.yaml for the data model.`,
 	cmd.AddCommand(newWorkspaceArchiveCmd())
 	cmd.AddCommand(newWorkspaceUnarchiveCmd())
 	cmd.AddCommand(newWorkspaceDeleteCmd())
+	cmd.AddCommand(newWorkspaceValidateCmd())
 	return cmd
+}
+
+func newWorkspaceValidateCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "validate",
+		Short: "Validate .rex/workspace.yaml against the v1 schema",
+		Long: `Walks .rex/workspace.yaml and reports schema issues per
+workspace.SETTINGS.{2,3,3.1} and workspace.LIFE.3:
+
+  - missing required keys (id, name, state, created_at)
+  - id not kebab-case
+  - state not in {active, archived, deleted}
+  - multi_repo_mode not in {all, primary}
+  - repos[] entry shape (delegates to the same checks
+    rex repo add/link/list use)
+  - unknown top-level keys (warning)
+
+Exits non-zero on any error severity; warnings are reported on
+stdout and don't fail the command.`,
+		Example: `  rex workspace validate
+  rex workspace validate --workspace /path/to/ws --json`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := strictWorkspaceRoot(cmd)
+			if err != nil {
+				return err
+			}
+			issues, err := validateWorkspaceYAML(root)
+			if err != nil {
+				return err
+			}
+			if jsonOutput(cmd) {
+				if err := writeJSON(cmd, issues); err != nil {
+					return err
+				}
+				if hasErrorIssue(issues) {
+					return fmt.Errorf("workspace.yaml has %d error(s)", countErrors(issues))
+				}
+				return nil
+			}
+			if len(issues) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "ok")
+				return nil
+			}
+			for _, i := range issues {
+				fmt.Fprintln(cmd.OutOrStdout(), i.String())
+			}
+			if hasErrorIssue(issues) {
+				return fmt.Errorf("workspace.yaml has %d error(s)", countErrors(issues))
+			}
+			return nil
+		},
+	}
+	addWorkspacePersistentFlag(cmd)
+	setRelated(cmd, "rex workspace show", "rex spec validate")
+	return cmd
+}
+
+// countErrors tallies error-severity issues. Used by the
+// validate command's exit message.
+func countErrors(issues []WorkspaceIssue) int {
+	n := 0
+	for _, i := range issues {
+		if i.Severity == wsIssueError {
+			n++
+		}
+	}
+	return n
 }
 
 // Workspace state values per workspace.LIFE.3.

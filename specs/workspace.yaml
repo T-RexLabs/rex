@@ -32,7 +32,8 @@ tasks:
 
   - id: workspace-yaml-schema
     description: Define and validate `workspace.yaml`, the per-workspace settings file
-    state: todo
+    state: done
+    note: "internal/local/cli/workspace_validate.go ships validateWorkspaceYAML; `rex workspace validate` reports issues with required-key / closed-set / unknown-key checks (SETTINGS.2/3/3.1, LIFE.3)."
     references: [SETTINGS.1, SETTINGS.2, SETTINGS.3]
 
   - id: repo-attach-mechanics

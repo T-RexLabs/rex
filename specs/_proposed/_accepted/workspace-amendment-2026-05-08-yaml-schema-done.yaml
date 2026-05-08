@@ -1,0 +1,37 @@
+# Spec-bookkeeping reconciliation pass — workspace.workspace-yaml-schema done.
+#
+# Status: accepted.
+# Date:   2026-05-08.
+# Folded: 2026-05-08 — workspace.workspace-yaml-schema flipped to done
+# after `rex workspace validate` shipped.
+#
+# Coverage:
+#   SETTINGS.1 (file at .rex/workspace.yaml, git-merged)
+#     existing — workspace init writes it; remains git-merged.
+#   SETTINGS.2 (required keys)
+#     enforced as errors by validateWorkspaceYAML for id/name/state/
+#     created_at; missing keys produce one error per missing key.
+#   SETTINGS.3 (optional keys + closed-set values)
+#     recognizedWorkspaceYAMLKeys lists the known set; unknown keys
+#     surface as warnings. state ∈ {active,archived,deleted} and
+#     multi_repo_mode ∈ {all,primary} are pinned as errors when
+#     out-of-set. id is also kebab-case-checked.
+#   SETTINGS.3.1 (repos[] entry shape)
+#     delegates to loadRepoEntries, which already enforces
+#     name/path/url + path-escape rejection.
+#
+# Surface:
+#   `rex workspace validate` reports issues to stdout (--json
+#   supported); exits non-zero on error severity. Warnings don't
+#   fail the command — the unknown-key path is the canonical
+#   forward-compatibility lane (overview.SYS.4 / SYS.3).
+
+target: workspace
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: workspace-yaml-schema
+    from: todo
+    to: done
+    proof: "internal/local/cli/workspace_validate.go ships validateWorkspaceYAML covering SETTINGS.{2,3,3.1} and LIFE.3; rex workspace validate exposes the surface; covered by 8 tests in workspace_validate_test.go"
