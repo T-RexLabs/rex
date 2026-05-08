@@ -49,6 +49,9 @@ const (
 	// Remote lifecycle (audit.TYPES.1 "every remote attach/detach").
 	EventTypeRemoteAttached = "remote.attached"
 	EventTypeRemoteDetached = "remote.detached"
+
+	// Hook lifecycle (audit.TYPES.1 "every hook invocation result").
+	EventTypeHookCompleted = "hook.completed"
 )
 
 // EventVersion is the schema version for audit-package event payloads.
@@ -74,6 +77,7 @@ var auditEventTypes = func() map[string]struct{} {
 		EventTypeSpecEdited:          {},
 		EventTypeRemoteAttached:      {},
 		EventTypeRemoteDetached:      {},
+		EventTypeHookCompleted:       {},
 
 		// Runner events are audit-class per TYPES.1 ("every harness
 		// invocation start/end ... every workspace state change").
@@ -217,4 +221,21 @@ type RemoteAttachedEvent struct {
 type RemoteDetachedEvent struct {
 	WorkspaceID string `json:"workspace_id"`
 	Name        string `json:"name"`
+}
+
+// HookCompletedEvent is the payload for EventTypeHookCompleted —
+// fires for every hook invocation (per audit.TYPES.1's "every hook
+// invocation result"). Both successes and skips are recorded; the
+// triggering event's id stays in TriggerEventID so the audit log
+// can correlate hook results back to the cause.
+type HookCompletedEvent struct {
+	WorkspaceID    string `json:"workspace_id"`
+	HookName       string `json:"hook_name"`
+	HookScope      string `json:"hook_scope"` // "workspace" or "global"
+	HookPath       string `json:"hook_path"`
+	TriggerEventID string `json:"trigger_event_id"`
+	ExitCode       int    `json:"exit_code"`
+	Skipped        bool   `json:"skipped,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+	DurationMs     int64  `json:"duration_ms"`
 }

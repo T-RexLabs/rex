@@ -67,6 +67,15 @@
 //	remote.detached         payload: RemoteDetachedEvent
 //	  fires from `rex remote remove`.
 //
+// Hook lifecycle (audit.TYPES.1 "every hook invocation result"):
+//
+//	hook.completed          payload: HookCompletedEvent
+//	  fires for every hook execution dispatched in response to
+//	  another event. Both successes (exit_code recorded) and skips
+//	  (Skipped + Reason populated) land. TriggerEventID points at
+//	  the originating event so audit-log readers can correlate
+//	  cause-and-effect.
+//
 // Run lifecycle (re-exported from internal/core/runner so the
 // registry has a single source of truth — execution.DAG.2):
 //
@@ -93,8 +102,8 @@
 //	                        (identity-and-trust.token-lifecycle, todo)
 //	sync.push / sync.pull   (sync.sync-api-client — producer not yet
 //	                         wired)
-//	hook.completed          (hooks.dispatcher — producer not yet
-//	                         wired)
+//	(hook.completed graduated to "Hook lifecycle" above; producer
+//	wired 2026-05-08.)
 //	dispatch.*              (still-soft surface; ships when scheduled
 //	                         dispatches grow distinct semantics from
 //	                         RunStartedEvent.Trigger)

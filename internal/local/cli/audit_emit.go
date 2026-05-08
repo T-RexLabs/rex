@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/asabla/rex/internal/core/audit"
-	"github.com/asabla/rex/internal/core/hooks"
 	"github.com/asabla/rex/internal/core/identity"
 	"github.com/asabla/rex/internal/core/search"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
@@ -32,11 +31,7 @@ func emitAuditEvent(cmd *cobra.Command, root, eventType string, payload any) err
 		return err
 	}
 
-	global, _ := globalHooksDir()
-	disp := hooks.New(hooks.Options{
-		WorkspaceRoot:  root,
-		GlobalHooksDir: global,
-	})
+	disp := newAuditingHookDispatcher(cmd, root)
 	defer disp.Drain()
 
 	searchIdx, idxErr := search.Open(root)

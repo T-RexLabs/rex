@@ -15,7 +15,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/asabla/rex/internal/core/audit"
-	"github.com/asabla/rex/internal/core/hooks"
 	"github.com/asabla/rex/internal/core/identity"
 	"github.com/asabla/rex/internal/core/search"
 	"github.com/asabla/rex/internal/core/specfmt"
@@ -370,11 +369,7 @@ func emitWorkspaceTransition(cmd *cobra.Command, root, eventType string, payload
 		return err
 	}
 
-	global, _ := globalHooksDir()
-	disp := hooks.New(hooks.Options{
-		WorkspaceRoot:  root,
-		GlobalHooksDir: global,
-	})
+	disp := newAuditingHookDispatcher(cmd, root)
 	defer disp.Drain()
 
 	searchIdx, idxErr := search.Open(root)
@@ -568,11 +563,7 @@ mean it.`,
 			// .rex/hooks/ (per-workspace) and the global hooks
 			// dir fire after each event. Drain ensures hooks
 			// finish before init returns.
-			global, _ := globalHooksDir()
-			disp := hooks.New(hooks.Options{
-				WorkspaceRoot:  abs,
-				GlobalHooksDir: global,
-			})
+			disp := newAuditingHookDispatcher(cmd, abs)
 			defer disp.Drain()
 
 			// Open the search index now so the very first event
