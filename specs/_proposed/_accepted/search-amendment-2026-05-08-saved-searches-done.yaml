@@ -1,0 +1,34 @@
+# Spec-bookkeeping reconciliation pass — search.saved-searches done.
+#
+# Status: accepted.
+# Date:   2026-05-08.
+# Folded: 2026-05-08 — search.saved-searches and cli.SEARCH.2 surface
+# both implemented. Task flipped to done in specs/search.yaml.
+#
+# Implementation:
+#   - internal/local/savedsearch/    (Registry + Add/Set/Remove/Get/
+#     List/MergedView; TOML round-trip mirroring internal/local/remotes
+#     pattern)
+#   - internal/local/cli/search.go   (rex search saved add/list/run/
+#     remove subtree; --global flag chooses per-user vs per-workspace
+#     storage)
+#   - 8 package tests + 6 CLI tests
+#
+# Both on-disk locations from search.SAVED.1 are honored:
+#   - workspace: <root>/.rex/saved-searches.toml (default; git-merged)
+#   - user:      ~/.config/rex/saved-searches.toml (--global flag)
+#
+# Workspace entries shadow user entries on name collision per the
+# MergedView precedence rule. cli.SEARCH.2 lists list/run/remove;
+# `add` was implied by completeness (a save path the spec didn't
+# spell out) and is included.
+
+target: search
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: saved-searches
+    from: todo
+    to: done
+    proof: "internal/local/savedsearch/ implements the file-backed registry; internal/local/cli/search.go wires the four `rex search saved <add|list|run|remove>` subcommands with --global flag for per-user vs per-workspace; covered by 14 tests across the two packages"

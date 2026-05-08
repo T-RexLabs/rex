@@ -56,7 +56,8 @@ tasks:
 
   - id: saved-searches
     description: "Implement saved searches (one of v1's two extensibility surfaces)"
-    state: todo
+    state: done
+    note: "internal/local/savedsearch/ ships the TOML-backed registry; `rex search saved add/list/run/remove` ships in cli/search.go (workspace + user files via --global)."
     references: [SAVED.1, SAVED.2]
 
 components:
