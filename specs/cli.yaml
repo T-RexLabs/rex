@@ -35,7 +35,8 @@ tasks:
 
   - id: spec-commands
     description: "Implement spec subcommands"
-    state: todo
+    state: done
+    note: "All six SPEC.* surfaces implemented: create, validate, list, show, edit (added 2026-05-08), acid."
     references: [SPEC.1, SPEC.2, SPEC.3, SPEC.4, SPEC.5]
 
   - id: run-commands

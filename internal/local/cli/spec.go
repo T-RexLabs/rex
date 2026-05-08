@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"text/tabwriter"
@@ -38,6 +39,7 @@ specs/spec-format.yaml.`,
 	cmd.AddCommand(newSpecValidateCmd())
 	cmd.AddCommand(newSpecListCmd())
 	cmd.AddCommand(newSpecShowCmd())
+	cmd.AddCommand(newSpecEditCmd())
 	cmd.AddCommand(newSpecACIDCmd())
 	return cmd
 }
@@ -334,6 +336,70 @@ metadata, tasks, components, and constraints.`,
 	setRelated(cmd,
 		"rex spec validate",
 		"rex spec acid <ACID>",
+		"rex spec list",
+	)
+	return cmd
+}
+
+func newSpecEditCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "edit <id-or-path>",
+		Short: "Open a spec in $EDITOR and re-validate on save",
+		Long: `Resolves the spec by id or path and opens it in $EDITOR (default: vi).
+After the editor exits, the file is re-validated; a non-zero exit on
+validation surfaces the same issues 'rex spec validate' would. The
+file is left edited even when validation fails — the user is expected
+to re-run 'rex spec edit' or 'rex spec validate' to iterate.`,
+		Example: `  rex spec edit execution
+  rex spec edit ./specs/execution.yaml
+  EDITOR="code --wait" rex spec edit execution`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			paths, err := pathsFromArgs(args, workspaceFlagValue(cmd))
+			if err != nil {
+				return err
+			}
+			if len(paths) != 1 {
+				return fmt.Errorf("expected exactly one spec, got %d", len(paths))
+			}
+			path := paths[0]
+			if _, err := os.Stat(path); err != nil {
+				return fmt.Errorf("stat %s: %w", path, err)
+			}
+
+			editor := os.Getenv("EDITOR")
+			if editor == "" {
+				editor = "vi"
+			}
+			ed := exec.CommandContext(commandContext(cmd), editor, path)
+			ed.Stdin = os.Stdin
+			ed.Stdout = cmd.OutOrStdout()
+			ed.Stderr = cmd.ErrOrStderr()
+			if err := ed.Run(); err != nil {
+				return fmt.Errorf("editor: %w", err)
+			}
+
+			// Re-validate after the edit. Mirrors `rex spec validate
+			// <path>` strict mode (the bar set by CLAUDE.md is "0
+			// errors, 0 warnings on every spec"). Issues surface as
+			// the command's exit error so scripts wrapping this can
+			// tell pass from fail.
+			doc, err := specfmt.ParseFile(path)
+			if err != nil {
+				return fmt.Errorf("re-parse %s after edit: %w", path, err)
+			}
+			res := specfmt.Validate(doc, specfmt.ModeStrict)
+			writeIssuesTextW(cmd.OutOrStdout(), res.Issues)
+			if res.HasErrors() {
+				return fmt.Errorf("%s has validation errors after edit", path)
+			}
+			return nil
+		},
+	}
+	addWorkspacePersistentFlag(cmd)
+	setRelated(cmd,
+		"rex spec validate",
+		"rex spec show <id>",
 		"rex spec list",
 	)
 	return cmd
