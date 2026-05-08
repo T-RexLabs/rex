@@ -9,6 +9,7 @@ import (
 
 	"github.com/asabla/rex/internal/local/remotes"
 	syncclient "github.com/asabla/rex/internal/local/sync"
+	"github.com/asabla/rex/internal/local/userconfig"
 )
 
 // newSyncCmd, newPushCmd, newPullCmd are top-level shortcuts per
@@ -83,11 +84,50 @@ on success.`,
 
 // addSyncFlags wires the shared flag set onto a sync-shaped command.
 // Centralizing here keeps the three commands' surface identical.
+//
+// The --remote default is the literal "primary" — this is the
+// fallback when neither the user explicitly passes --remote nor
+// has set default_remote in ~/.config/rex/config.toml. Default
+// resolution at run time consults the user config first
+// (storage.GLOBAL.2) so a one-shot `rex push` follows the user's
+// config rather than ignoring it.
 func addSyncFlags(cmd *cobra.Command) {
 	cmd.Flags().String("workspace", "", "workspace root (default: walk up from cwd)")
-	cmd.Flags().String("remote", "primary", "registered remote name (also names the watermark file)")
+	cmd.Flags().String("remote", "primary", "registered remote name (also names the watermark file); falls back to ~/.config/rex/config.toml's default_remote when not the literal 'primary'")
 	cmd.Flags().String("url", "", "central node URL (overrides registry lookup)")
 	cmd.Flags().String(remotesPathFlag, "", "override registry path (default: platform user-config dir)")
+	cmd.Flags().String("user-config", "", "override user-config-dir/rex/config.toml path (test-only)")
+}
+
+// resolveDefaultRemote consults --remote first; when --remote is
+// the literal default ("primary") AND the user-config file sets
+// default_remote, that wins. Explicit user override is preserved
+// — passing --remote=primary still hits the literal default
+// because we can't tell that apart from the unset case.
+//
+// This is the rare "default in flag is also the sentinel" pattern;
+// fine here because v1's bare convention IS "primary" so users
+// without a config see no surprise change.
+func resolveDefaultRemote(cmd *cobra.Command) string {
+	v, _ := cmd.Flags().GetString("remote")
+	if v != "" && v != "primary" {
+		return v
+	}
+	cfg, err := loadUserConfig(cmd)
+	if err != nil || cfg.DefaultRemote == "" {
+		return v
+	}
+	return cfg.DefaultRemote
+}
+
+// loadUserConfig resolves the per-user config path (--user-config
+// override or platform default) and loads it. Errors here are
+// treated as "no config" by callers — the file is always optional.
+func loadUserConfig(cmd *cobra.Command) (*userconfig.Config, error) {
+	if v, _ := cmd.Flags().GetString("user-config"); v != "" {
+		return userconfig.Load(v)
+	}
+	return userconfig.LoadDefault()
 }
 
 // resolveSyncContext consolidates the workspace/url/remote resolution
@@ -96,7 +136,7 @@ func addSyncFlags(cmd *cobra.Command) {
 // returned if neither path produces a URL.
 func resolveSyncContext(cmd *cobra.Command) (root, logPath, url, remote string, err error) {
 	url, _ = cmd.Flags().GetString("url")
-	remote, _ = cmd.Flags().GetString("remote")
+	remote = resolveDefaultRemote(cmd)
 	if remote == "" {
 		return "", "", "", "", errors.New("--remote name is required")
 	}

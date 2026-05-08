@@ -25,7 +25,8 @@ description: |
 tasks:
   - id: global-config-layout
     description: "Implement creation and read/write of `~/.config/rex/` files"
-    state: todo
+    state: done
+    note: "Identity/ predates; remotes.toml + hooks/ already shipped; registry.toml + config.toml landed 2026-05-08 (internal/local/registry + internal/local/userconfig). default_remote consulted by sync.go's resolveDefaultRemote."
     references: [GLOBAL.1, GLOBAL.2, GLOBAL.3]
 
   - id: workspace-dir-layout

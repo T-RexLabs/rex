@@ -1,0 +1,46 @@
+# Spec-bookkeeping reconciliation pass — storage.global-config-layout done.
+#
+# Status: accepted.
+# Date:   2026-05-08.
+# Folded: 2026-05-08 — storage.global-config-layout flipped to done after
+# config.toml read/write landed alongside the existing identity/, remotes,
+# registry, and hooks subsystems.
+#
+# Coverage of the task's three references (GLOBAL.1, GLOBAL.2, GLOBAL.3):
+#
+#   GLOBAL.1 — Platform user-config-dir paths used: os.UserConfigDir is
+#              consulted by internal/core/identity, internal/local/remotes,
+#              internal/local/registry, internal/local/savedsearch, and
+#              internal/local/userconfig.
+#   GLOBAL.2 — config.toml: shipped this PR via internal/local/userconfig
+#              with the four optional fields (active_identity,
+#              default_remote, log_level, hook_search_paths). default_remote
+#              is consulted by `rex push/pull/sync` resolveDefaultRemote.
+#   GLOBAL.3 — identity/ ed25519 keypairs (mode 0600): internal/core/identity
+#              implements EnsureDefaultStoreSigner and the file-on-disk
+#              backend; predates this PR.
+#
+# Out-of-references items in the same GLOBAL.* component that already shipped:
+#
+#   GLOBAL.4 — registry.toml (workspace registry): shipped 2026-05-08 in
+#              the de57b19 commit (internal/local/registry).
+#   GLOBAL.5 — remotes.toml: shipped earlier (internal/local/remotes).
+#   GLOBAL.6 — hooks/<event-name> global hooks dir: shipped earlier
+#              (internal/local/cli/hooks.go's globalHooksDir).
+#
+# Wiring:
+#   - sync.go's resolveDefaultRemote consults the user config when
+#     --remote is the literal default ("primary"); explicit
+#     --remote=<other> still wins outright.
+#   - --user-config flag on rex push/pull/sync lets tests redirect
+#     the config path without env-var manipulation.
+
+target: storage
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: global-config-layout
+    from: todo
+    to: done
+    proof: "internal/local/userconfig/ ships config.toml load/save with the four GLOBAL.2 fields; sync.go consults default_remote via resolveDefaultRemote; identity/ predates and covers GLOBAL.3; covered by 4 package tests + 2 sync CLI tests"
