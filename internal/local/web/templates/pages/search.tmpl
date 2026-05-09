@@ -8,52 +8,104 @@
   </div>
 </header>
 
-<section class="section">
-  <form method="get" action="/search" class="form search-form">
-    <div class="search-row">
-      <input class="field-input mono"
-             type="search"
-             name="q"
-             placeholder='kebab-id, run.completed, "literal phrase", AND/OR/NOT'
-             value="{{.Query}}"
-             autofocus>
-      <button type="submit" class="btn btn-primary">search</button>
-    </div>
-    <span class="field-hint">
-      tokens with hyphens, colons, or punctuation are auto-quoted (so
-      <code>kebab-id-name</code> works literally). <code>AND</code> /
-      <code>OR</code> / <code>NOT</code> pass through unquoted.
-    </span>
-  </form>
-
-  {{if .Error}}
-    <aside class="banner banner-error" role="alert">
-      <span><strong>search failed.</strong> {{.Error}}</span>
-    </aside>
-  {{end}}
-
-  {{if .Query}}
-    {{if .Results}}
-      <p class="muted small">{{len .Results}} result{{if ne (len .Results) 1}}s{{end}}</p>
-      <div class="search-results">
-        {{range .Results}}
-        <article class="search-hit">
-          <header class="search-hit-head">
-            <span class="search-hit-type pill pill-{{if eq .Type "spec"}}active{{else}}mute{{end}}">
-              <i class="dot"></i>{{.Type}}
-            </span>
-            <a class="search-hit-title" href="{{.Href}}">{{.Title}}</a>
-            <span class="search-hit-id"><code class="dim">{{.ID}}</code></span>
-          </header>
-          <p class="search-hit-snippet">{{.Snippet}}</p>
-        </article>
-        {{end}}
+<section class="section search-layout">
+  <div class="search-main">
+    <form method="get" action="/search" class="form search-form">
+      <div class="search-row">
+        <input class="field-input mono"
+               type="search"
+               name="q"
+               placeholder='kebab-id, run.completed, "literal phrase", AND/OR/NOT'
+               value="{{.Query}}"
+               autofocus>
+        {{template "scope_picker" .SearchScope}}
+        <button type="submit" class="btn btn-primary">search</button>
       </div>
-    {{else}}
-      <p class="muted">no matches.</p>
+      <span class="field-hint">
+        tokens with hyphens, colons, or punctuation are auto-quoted (so
+        <code>kebab-id-name</code> works literally). <code>AND</code> /
+        <code>OR</code> / <code>NOT</code> pass through unquoted.
+        Cross-remote scopes round-trip in the URL but are not yet
+        dispatched (search-engine cluster).
+      </span>
+    </form>
+
+    {{if .SaveSuccess}}
+      <aside class="banner banner-success" role="status">
+        <span><strong>saved.</strong> <code>{{.SaveSuccess}}</code> is now in the workspace registry.</span>
+      </aside>
     {{end}}
-  {{else}}
-    <p class="muted small">enter a query above. try a spec id, an event type, or a substring of a payload.</p>
-  {{end}}
+    {{if .SaveError}}
+      <aside class="banner banner-error" role="alert">
+        <span><strong>save failed.</strong> {{.SaveError}}</span>
+      </aside>
+    {{end}}
+    {{if .Error}}
+      <aside class="banner banner-error" role="alert">
+        <span><strong>search failed.</strong> {{.Error}}</span>
+      </aside>
+    {{end}}
+
+    {{if .Query}}
+      {{if .Results}}
+        <p class="muted small">{{len .Results}} result{{if ne (len .Results) 1}}s{{end}}</p>
+        <div class="search-results">
+          {{range .Results}}
+          <article class="search-hit">
+            <header class="search-hit-head">
+              <span class="search-hit-type pill pill-{{if eq .Type "spec"}}active{{else}}mute{{end}}">
+                <i class="dot"></i>{{.Type}}
+              </span>
+              <a class="search-hit-title" href="{{.Href}}">{{.Title}}</a>
+              <span class="search-hit-id"><code class="dim">{{.ID}}</code></span>
+            </header>
+            <p class="search-hit-snippet">{{.Snippet}}</p>
+          </article>
+          {{end}}
+        </div>
+
+        <form method="post" action="/search" class="form search-save">
+          <h3 class="search-save-title">save this search</h3>
+          <div class="search-row">
+            <input class="field-input mono"
+                   type="text"
+                   name="name"
+                   placeholder="kebab-name"
+                   pattern="[a-z][a-z0-9]*(-[a-z0-9]+)*"
+                   required>
+            <input type="hidden" name="query" value="{{.Query}}">
+            <button type="submit" class="btn">save</button>
+          </div>
+          <span class="field-hint">
+            stored in <code>.rex/saved-searches.toml</code> (git-merged
+            with the workspace).
+          </span>
+        </form>
+      {{else}}
+        <p class="muted">no matches.</p>
+      {{end}}
+    {{else}}
+      <p class="muted small">enter a query above. try a spec id, an event type, or a substring of a payload.</p>
+    {{end}}
+  </div>
+
+  <aside class="search-sidebar" aria-label="saved searches">
+    <h2 class="search-sidebar-h">saved searches</h2>
+    {{if .Saved}}
+      <ul class="search-saved-list">
+        {{range .Saved}}
+          <li class="search-saved-item">
+            <a class="search-saved-link" href="/search?q={{.Query | urlquery}}">
+              <code class="search-saved-name">{{.Name}}</code>
+              <span class="search-saved-source pill pill-{{.Source}}"><i class="dot"></i>{{.Source}}</span>
+            </a>
+            <code class="search-saved-query muted">{{.Query}}</code>
+          </li>
+        {{end}}
+      </ul>
+    {{else}}
+      <p class="muted small">none yet — run a query then click <em>save this search</em>.</p>
+    {{end}}
+  </aside>
 </section>
 {{end}}

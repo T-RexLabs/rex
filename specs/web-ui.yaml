@@ -79,8 +79,16 @@ tasks:
 
   - id: search-ui
     description: "Implement the search UI with the scope picker (current workspace / all local / specific remote) and saved searches"
-    state: todo
+    state: done
+    note: "FTS5-backed `/search` page already shipped as part of `local-ui-routes`; this task adds the scope picker (SEARCH.1), the saved-searches sidebar (SEARCH.3), and a 'save current search' POST form. The shared scope_picker partial from shared-component-lib lives in the topbar AND on the inline search form, with `?scope=` round-tripping through the URL so saved entries are shareable. The cross-remote DISPATCH (actually running a query against a remote's index) is search-engine territory — `?scope=remote:foo` and `?scope=*` are accepted on the wire and reflected in the form, but the v1 query path only hits the local FTS index. SEARCH.2 (BM25 snippet highlighting + click-to-open) was already in place via markupSnippet's <<term>> → <mark> conversion. Saved searches read the merged per-workspace + per-user registry from internal/local/savedsearch (the same registry the CLI's `rex search saved` subcommands write); workspace entries shadow user entries on name collision."
     references: [SEARCH.1, SEARCH.2, SEARCH.3]
+    proof:
+      - kind: code
+        path: internal/local/web/search.go
+      - kind: code
+        path: internal/local/web/templates/pages/search.tmpl
+      - kind: test
+        path: internal/local/web/search_ui_test.go
 
 components:
 

@@ -2,20 +2,33 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"html/template"
 	"net/http"
 	"strings"
 
 	"github.com/asabla/rex/internal/core/search"
+	"github.com/asabla/rex/internal/local/savedsearch"
 )
 
 // searchData backs search.tmpl.
 type searchData struct {
 	pageData
 	Query   string
+	Scope   string
 	Limit   int
 	Error   string
 	Results []searchResultRow
+	// Saved is the merged set of per-user + per-workspace saved
+	// searches (web-ui.SEARCH.3). Workspace entries shadow user
+	// entries on name collision; the Source field hints at scope.
+	Saved []savedsearch.SavedSearchView
+	// SaveError surfaces a per-form error from "save current
+	// search" without losing the typed-in query.
+	SaveError string
+	// SaveSuccess is the saved-name on a successful save so the
+	// page can show a one-shot confirmation.
+	SaveSuccess string
 }
 
 // searchResultRow is one rendered match. Snippet is FTS5's
@@ -31,12 +44,20 @@ type searchResultRow struct {
 	Href    string // workspace-local URL the row links to
 }
 
-// handleSearch renders /search. The query comes in via ?q= so
-// the URL is shareable / bookmarkable / browser-history-friendly
-// (web-ui.SEARCH.3 future "saved searches" can land as a
-// sidebar later; the same ?q= URL backs them).
+// handleSearch renders /search. The query comes in via ?q= so the
+// URL is shareable / bookmarkable / browser-history-friendly. The
+// saved-searches sidebar (web-ui.SEARCH.3) reads from
+// internal/local/savedsearch's per-workspace + per-user registry —
+// clicking a saved entry simply loads the same /search?q=... URL.
+//
+// Scope (web-ui.SEARCH.1): the ?scope= param echoes the topbar
+// selector. v1 only the empty / "current workspace" scope actually
+// dispatches to a search backend; "remote:<name>" / "*" are accepted
+// and round-tripped to the form so the URL is shareable, but the
+// cross-remote dispatch lands with the search-engine cluster.
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	scope := r.URL.Query().Get("scope")
 	limit := 25
 	if v := r.URL.Query().Get("n"); v != "" {
 		if parsed, ok := parsePositiveInt(v); ok {
@@ -45,49 +66,130 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	base := s.basePageData()
 	base.NavSection = "search"
+	base.SearchScope.Selected = scope
 
 	d := searchData{
 		pageData: base,
 		Query:    q,
+		Scope:    scope,
 		Limit:    limit,
-	}
-	if q == "" {
-		s.render(w, r, "search.tmpl", d)
-		return
+		Saved:    loadMergedSavedSearches(s.opts.WorkspaceRoot),
 	}
 
+	switch r.Method {
+	case http.MethodGet:
+		s.runSearch(w, r, &d)
+	case http.MethodPost:
+		s.handleSearchSave(w, r, &d)
+	default:
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// runSearch executes a query when one is present, then renders the
+// page. Empty queries fall through to the empty-state view.
+func (s *Server) runSearch(w http.ResponseWriter, r *http.Request, d *searchData) {
+	if d.Query == "" {
+		s.render(w, r, "search.tmpl", *d)
+		return
+	}
 	idx, err := search.Open(s.opts.WorkspaceRoot)
 	if err != nil {
 		d.Error = "open index: " + err.Error()
-		s.render(w, r, "search.tmpl", d)
+		s.render(w, r, "search.tmpl", *d)
 		return
 	}
 	defer idx.Close()
 
-	results, err := idx.Search(q, search.SearchOptions{Limit: limit})
+	results, err := idx.Search(d.Query, search.SearchOptions{Limit: d.Limit})
 	if err != nil {
-		// search.Search returns a hard error on empty/garbled
-		// queries; surface as a non-fatal banner.
 		if errors.Is(err, errEmptyQuery) || strings.Contains(err.Error(), "query is required") {
 			d.Error = "query is empty"
 		} else {
 			d.Error = err.Error()
 		}
-		s.render(w, r, "search.tmpl", d)
+		s.render(w, r, "search.tmpl", *d)
 		return
 	}
-	for _, r := range results {
+	for _, res := range results {
 		d.Results = append(d.Results, searchResultRow{
-			Type:    r.EntityType,
-			ID:      r.EntityID,
-			Title:   r.Title,
-			Snippet: markupSnippet(r.Snippet),
-			Score:   r.Score,
-			Href:    hrefFor(r),
+			Type:    res.EntityType,
+			ID:      res.EntityID,
+			Title:   res.Title,
+			Snippet: markupSnippet(res.Snippet),
+			Score:   res.Score,
+			Href:    hrefFor(res),
 		})
 	}
-	s.render(w, r, "search.tmpl", d)
+	s.render(w, r, "search.tmpl", *d)
 }
+
+// handleSearchSave persists a "save current search" submission
+// (web-ui.SEARCH.3). The form posts (name, query) and we Set into
+// the per-workspace registry so the saved entry travels with the
+// workspace via sync. After a successful save the user lands back
+// on the same /search?q=... page with a one-shot confirmation.
+func (s *Server) handleSearchSave(w http.ResponseWriter, r *http.Request, d *searchData) {
+	if err := r.ParseForm(); err != nil {
+		d.SaveError = "decode form: " + err.Error()
+		s.runSearch(w, r, d)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	query := strings.TrimSpace(r.FormValue("query"))
+	d.Query = query
+	if name == "" || query == "" {
+		d.SaveError = "name and query are both required"
+		s.runSearch(w, r, d)
+		return
+	}
+	if !savedsearch.IsValidName(name) {
+		d.SaveError = "name must be kebab-case (a-z, 0-9, hyphens)"
+		s.runSearch(w, r, d)
+		return
+	}
+	regPath := savedsearch.WorkspacePath(s.opts.WorkspaceRoot)
+	reg, err := savedsearch.Load(regPath)
+	if err != nil {
+		d.SaveError = "load saved-searches: " + err.Error()
+		s.runSearch(w, r, d)
+		return
+	}
+	if err := reg.Set(savedsearch.SavedSearch{Name: name, Query: query}); err != nil {
+		d.SaveError = err.Error()
+		s.runSearch(w, r, d)
+		return
+	}
+	if err := savedsearch.Save(regPath, reg); err != nil {
+		d.SaveError = "save: " + err.Error()
+		s.runSearch(w, r, d)
+		return
+	}
+	// Reload merged list so the new entry appears in the sidebar
+	// without a second round-trip.
+	d.Saved = loadMergedSavedSearches(s.opts.WorkspaceRoot)
+	d.SaveSuccess = name
+	s.runSearch(w, r, d)
+}
+
+// loadMergedSavedSearches returns the per-workspace + per-user merged
+// saved-search list, best-effort. Errors yield an empty slice so the
+// search page still renders.
+func loadMergedSavedSearches(workspaceRoot string) []savedsearch.SavedSearchView {
+	wsReg, err := savedsearch.Load(savedsearch.WorkspacePath(workspaceRoot))
+	if err != nil {
+		wsReg = nil
+	}
+	var userReg *savedsearch.Registry
+	if userPath, err := savedsearch.UserPath(); err == nil {
+		userReg, _ = savedsearch.Load(userPath)
+	}
+	return savedsearch.MergedView(wsReg, userReg)
+}
+
+// _ keeps fmt referenced in case future error formatters land here.
+var _ = fmt.Errorf
 
 // errEmptyQuery is reserved for future use if we adopt a typed
 // error from the search package.
