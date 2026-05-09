@@ -188,9 +188,17 @@ func TestE2EParallelFanOutFanInFromRealExecutor(t *testing.T) {
 	// no t.Parallel — uses t.Setenv
 	ws, root := setupE2EWorkspace(t)
 
+	// Per-child sleep is 200ms × 3 = 600ms serial baseline. Setting
+	// the assertion threshold to 500ms gives us a clear "concurrent
+	// must be faster than serial" signal even on slow CI runners
+	// where each `sh -c` spawn carries 50–100ms of overhead. The
+	// previous 80ms × 3 / 250ms threshold was too tight: serial
+	// overhead alone exceeded 250ms on hosted runners (observed
+	// 430ms) and tripped the assertion without actually proving
+	// the run was serial.
 	mkShell := func(id string) primparallel.ChildSpec {
 		cfg := mustMarshal(t, primshell.Config{
-			Command: []string{"sh", "-c", "sleep 0.08; echo " + id},
+			Command: []string{"sh", "-c", "sleep 0.2; echo " + id},
 		})
 		return primparallel.ChildSpec{ID: id, Type: primshell.PrimitiveType, Config: cfg}
 	}
@@ -210,8 +218,8 @@ func TestE2EParallelFanOutFanInFromRealExecutor(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	elapsed := time.Since(start)
-	if elapsed > 250*time.Millisecond {
-		t.Fatalf("expected concurrent execution; elapsed=%s", elapsed)
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("expected concurrent execution (≪ 600ms serial baseline); elapsed=%s", elapsed)
 	}
 	if state.Status != runner.RunStatusCompleted {
 		t.Fatalf("run status: %q", state.Status)

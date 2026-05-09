@@ -28,8 +28,20 @@ func writeShellHook(t *testing.T, dir, name, body string, mode os.FileMode) {
 	t.Helper()
 	path := filepath.Join(dir, name)
 	full := "#!/bin/sh\n" + body + "\n"
-	if err := os.WriteFile(path, []byte(full), mode); err != nil {
+	// Write to a temp path then atomically rename into place. With
+	// t.Parallel() under `go test -race`, another goroutine in the
+	// same test process can fork() between our open(path, O_WRONLY)
+	// and our close(). The child inherits the writable fd until its
+	// own exec(), and a third goroutine attempting to exec `path`
+	// during that fork→exec window gets ETXTBSY ("text file busy")
+	// from the kernel. Writing to a sibling tempfile means `path`
+	// itself is never opened for writing.
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(full), mode); err != nil {
 		t.Fatalf("write hook %s: %v", name, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		t.Fatalf("rename hook %s: %v", name, err)
 	}
 }
 
