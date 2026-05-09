@@ -1,8 +1,7 @@
 {{define "title"}}rex — {{.Spec.ID}}{{end}}
 
 {{define "spec-ad-hoc-form"}}
-  <details class="card spec-ad-hoc">
-    <summary><strong>Ask a harness about this spec</strong> <span class="muted small">— ad-hoc run with the spec preloaded</span></summary>
+  <div class="card spec-ad-hoc">
     {{if not .Harnesses}}
       <p class="muted small">No harness adapters are registered in this build. Configure one with <code>rex tools mcp add</code> or run the CLI's <code>rex spec ask</code> instead.</p>
     {{else}}
@@ -27,7 +26,7 @@
           </label>
           <label class="field full">
             <span class="field-label">prompt</span>
-            <textarea class="field-input mono" name="prompt" rows="4" required placeholder="what's missing in the SCOPE component?"></textarea>
+            <textarea class="field-input mono" name="prompt" rows="6" required autofocus placeholder="what's missing in the SCOPE component?"></textarea>
             <span class="field-hint">The harness opens with this spec's full YAML preloaded; your prompt is the instruction. Action shapes the closing instruction (review → Markdown commentary; amend → YAML body for <code>specs/_proposed/</code>; draft → full spec body).</span>
           </label>
         </div>
@@ -36,7 +35,7 @@
         </div>
       </form>
     {{end}}
-  </details>
+  </div>
 {{end}}
 
 {{define "content"}}
