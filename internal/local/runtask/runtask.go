@@ -28,6 +28,7 @@ import (
 	"github.com/asabla/rex/internal/core/identity"
 	"github.com/asabla/rex/internal/core/runner"
 	"github.com/asabla/rex/internal/core/runner/adapter"
+	"github.com/asabla/rex/internal/core/runner/primapproval"
 	"github.com/asabla/rex/internal/core/runner/primharness"
 	"github.com/asabla/rex/internal/core/runner/primshell"
 	"github.com/asabla/rex/internal/core/search"
@@ -270,8 +271,13 @@ func StartShellRun(ctx context.Context, ws *Workspace, req ShellRunRequest) (*Sh
 		runID = ws.Clock.Now().String()
 	}
 
+	sink := &writerSink{w: ws.Writer, onEvent: req.OnEvent}
 	reg := runner.NewPrimitiveRegistry()
 	reg.Register(primshell.PrimitiveType, primshell.New(primshell.Options{WorkspaceDir: ws.Root}))
+	reg.Register(primapproval.PrimitiveType, primapproval.New(primapproval.Options{
+		WorkspaceRoot: ws.Root,
+		Sink:          sink,
+	}))
 
 	// Wire the cancel watcher (cli.RUN.5 / execution.RUN.5): a
 	// `rex run cancel` from a separate process writes a
@@ -284,7 +290,7 @@ func StartShellRun(ctx context.Context, ws *Workspace, req ShellRunRequest) (*Sh
 	exec, err := runner.NewExecutor(runner.ExecConfig{
 		RunID:    runID,
 		DAG:      dag,
-		Sink:     &writerSink{w: ws.Writer, onEvent: req.OnEvent},
+		Sink:     sink,
 		Registry: reg,
 		SpecRefs: req.SpecRefs,
 		FromTask: req.FromTask,

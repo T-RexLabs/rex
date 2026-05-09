@@ -49,6 +49,8 @@ need a daemon model that v1 does not have.`,
 	cmd.AddCommand(newRunListCmd())
 	cmd.AddCommand(newRunShowCmd())
 	cmd.AddCommand(newRunCancelCmd())
+	cmd.AddCommand(newRunApproveCmd())
+	cmd.AddCommand(newRunDenyCmd())
 	return cmd
 }
 
