@@ -130,6 +130,27 @@ tasks:
       - kind: spec
         acid: spec-format.VAL.7
 
+  - id: implement-task-depends-on
+    description: |
+      Add tasks[].depends_on to the Go schema, the validator
+      rules in VAL.10/11, and the test coverage. No backfill —
+      depends_on is opt-in and existing specs use prose for
+      ordering today.
+    state: done
+    note: "Task struct gained DependsOn []string; checkTaskDependencies covers VAL.10 (missing-dep + cycle via three-colour DFS) and VAL.11 (in_progress can't depend on todo, done can't depend on non-done; blocked exempt). 7 new tests in validate_test.go."
+    references:
+      - TASK.9
+      - VAL.10
+      - VAL.11
+    proof:
+      - kind: code
+        path: internal/core/specfmt/types.go
+      - kind: code
+        path: internal/core/specfmt/validate.go
+      - kind: test
+        path: internal/core/specfmt/validate_test.go
+        name: TestValidateRejectsCyclicDependsOn
+
   - id: implement-spec-verify-command
     description: |
       Implement `rex spec verify [<id>...]` — walks every task's
@@ -241,6 +262,12 @@ components:
         rejected on `done` tasks in strict mode (downgraded to a
         warning in lenient mode). Tasks in `todo`, `in_progress`,
         or `blocked` may use either form or none.
+      "9": |
+        A task may carry an optional `depends_on` field listing
+        kebab-case task ids within the same spec that must complete
+        before this task is actionable. Cross-spec task references
+        are out of scope for v1; use the existing `references` ACID
+        list to point at component requirements in other specs.
 
   COMP:
     name: Components block
@@ -454,6 +481,23 @@ components:
         re-pointed at the requirement's `replaced_by` ACID — but
         a hard error would force backfill of every active spec
         in lockstep with any deprecation.
+      "10": |
+        Every entry in `tasks[].depends_on` must resolve to a
+        task id declared in the same spec (strict error /
+        lenient warning). The task dependency graph must be
+        acyclic (strict error in both modes — cycles are unsafe
+        to render and signal authoring confusion). The validator
+        reports the offending cycle path.
+      "11": |
+        State-ordering gates derived from `depends_on`:
+        a task in `state: in_progress` whose `depends_on` list
+        includes a task currently in `state: todo` is a strict
+        error / lenient warning;
+        a task in `state: done` whose `depends_on` list includes
+        any task not in `state: done` is a strict error /
+        lenient warning. `state: blocked` is exempt — being
+        blocked on a dependency is the normal use of that
+        state.
 
 constraints:
 

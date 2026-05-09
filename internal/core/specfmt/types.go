@@ -67,6 +67,11 @@ type Task struct {
 	State       string   `yaml:"state"`
 	References  []string `yaml:"references,omitempty"`
 	AssignedTo  string   `yaml:"assigned_to,omitempty"`
+	// DependsOn lists kebab-case task ids within the same spec
+	// that must complete before this task is actionable
+	// (spec-format.TASK.9). Cross-spec task references are out
+	// of scope for v1; use References for those.
+	DependsOn []string `yaml:"depends_on,omitempty"`
 	// Note records context the title and description don't
 	// capture (spec-format.TASK.7): rationale, deferred
 	// sub-decisions, references to commits or amendments. Free

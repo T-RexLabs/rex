@@ -198,6 +198,181 @@ tasks:
 	}
 }
 
+// TestValidateRejectsUnknownDependsOn covers VAL.10's
+// missing-dependency rule: depends_on entries must resolve to
+// task ids declared in the same spec.
+func TestValidateRejectsUnknownDependsOn(t *testing.T) {
+	t.Parallel()
+
+	doc, _ := Parse(strings.NewReader(`
+spec_version: 1
+metadata: {id: x, name: X, state: draft}
+tasks:
+  - id: a
+    description: a
+    state: todo
+    depends_on: [does-not-exist]
+`))
+	res := Validate(doc, ModeStrict)
+	if !hasIssue(res.Errors(), "tasks[0].depends_on[0]", "missing-dependency") {
+		t.Fatalf("expected missing-dependency error: %v", res.Issues)
+	}
+}
+
+// TestValidateRejectsCyclicDependsOn covers VAL.10's cycle
+// detection: the dependency graph must be acyclic.
+func TestValidateRejectsCyclicDependsOn(t *testing.T) {
+	t.Parallel()
+
+	doc, _ := Parse(strings.NewReader(`
+spec_version: 1
+metadata: {id: x, name: X, state: draft}
+tasks:
+  - id: a
+    description: a
+    state: todo
+    depends_on: [b]
+  - id: b
+    description: b
+    state: todo
+    depends_on: [c]
+  - id: c
+    description: c
+    state: todo
+    depends_on: [a]
+`))
+	res := Validate(doc, ModeStrict)
+	if !hasIssue(res.Errors(), "tasks", "cycle") {
+		t.Fatalf("expected cycle error: %v", res.Issues)
+	}
+}
+
+// TestValidateRejectsInProgressOnTodoDep covers VAL.11's
+// in_progress + todo gate.
+func TestValidateRejectsInProgressOnTodoDep(t *testing.T) {
+	t.Parallel()
+
+	doc, _ := Parse(strings.NewReader(`
+spec_version: 1
+metadata: {id: x, name: X, state: draft}
+tasks:
+  - id: a
+    description: a
+    state: todo
+  - id: b
+    description: b
+    state: in_progress
+    depends_on: [a]
+`))
+	res := Validate(doc, ModeStrict)
+	if !hasIssue(res.Errors(), "tasks[1].depends_on[0]", "dependency-state") {
+		t.Fatalf("expected dependency-state error: %v", res.Issues)
+	}
+}
+
+// TestValidateRejectsDoneOnNonDoneDep covers VAL.11's done +
+// non-done gate.
+func TestValidateRejectsDoneOnNonDoneDep(t *testing.T) {
+	t.Parallel()
+
+	doc, _ := Parse(strings.NewReader(`
+spec_version: 1
+metadata: {id: x, name: X, state: draft}
+tasks:
+  - id: a
+    description: a
+    state: in_progress
+  - id: b
+    description: b
+    state: done
+    depends_on: [a]
+    proof:
+      - kind: spec
+        acid: x.NOPE.1
+`))
+	// We seed a structured proof to clear VAL.7 and isolate
+	// the dependency-state issue we're testing.
+	res := Validate(doc, ModeStrict)
+	if !hasIssue(res.Errors(), "tasks[1].depends_on[0]", "dependency-state") {
+		t.Fatalf("expected dependency-state error: %v", res.Issues)
+	}
+}
+
+// TestValidateAllowsBlockedDependingOnTodo: blocked is exempt
+// from VAL.11. Being blocked on a dep is the use of the state.
+func TestValidateAllowsBlockedDependingOnTodo(t *testing.T) {
+	t.Parallel()
+
+	doc, _ := Parse(strings.NewReader(`
+spec_version: 1
+metadata: {id: x, name: X, state: draft}
+tasks:
+  - id: a
+    description: a
+    state: todo
+  - id: b
+    description: b
+    state: blocked
+    note: waiting on a
+    depends_on: [a]
+`))
+	res := Validate(doc, ModeStrict)
+	for _, iss := range res.Errors() {
+		if iss.Category == "dependency-state" {
+			t.Fatalf("blocked should be exempt: %v", iss)
+		}
+	}
+}
+
+// TestValidateLenientDowngradesDependencyState confirms VAL.11
+// gates are warnings (not errors) under lenient mode.
+func TestValidateLenientDowngradesDependencyState(t *testing.T) {
+	t.Parallel()
+
+	doc, _ := Parse(strings.NewReader(`
+spec_version: 1
+metadata: {id: x, name: X, state: draft}
+tasks:
+  - id: a
+    description: a
+    state: todo
+  - id: b
+    description: b
+    state: in_progress
+    depends_on: [a]
+`))
+	res := Validate(doc, ModeLenient)
+	if res.HasErrors() {
+		t.Fatalf("lenient should warn, not error: %v", res.Issues)
+	}
+	if !hasIssue(res.Warnings(), "tasks[1].depends_on[0]", "dependency-state") {
+		t.Fatalf("expected dependency-state warning: %v", res.Issues)
+	}
+}
+
+// TestValidateAcceptsCleanDependsOn confirms a happy graph
+// (todo → todo and done → done) passes without complaints.
+func TestValidateAcceptsCleanDependsOn(t *testing.T) {
+	t.Parallel()
+
+	doc, _ := Parse(strings.NewReader(`
+spec_version: 1
+metadata: {id: x, name: X, state: draft}
+tasks:
+  - id: a
+    description: a
+    state: todo
+  - id: b
+    description: b
+    state: todo
+    depends_on: [a]
+`))
+	res := Validate(doc, ModeStrict)
+	if res.HasErrors() {
+		t.Fatalf("clean graph should pass: %v", res.Issues)
+	}
+}
+
 func TestValidateRejectsMalformedACIDInTaskReferences(t *testing.T) {
 	t.Parallel()
 

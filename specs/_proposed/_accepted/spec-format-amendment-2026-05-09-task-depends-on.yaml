@@ -1,0 +1,93 @@
+# Spec-format extension — task graph + state-transition gates.
+#
+# Status: accepted.
+# Folded: 2026-05-09 — spec-format.yaml gained TASK.9 + VAL.10/11 + the implement-task-depends-on task.
+#
+# Goal: surface task ordering in the schema. Today specs put
+# ordering in prose ("comes after PRIM.5", "blocked on FTS index
+# landing"); the validator can't reason about it. Adding a
+# structured `depends_on` field lets us reject impossible states
+# at validation time and gives downstream tooling (web UI,
+# `rex spec verify`) a graph to render.
+#
+# Scope kept narrow on purpose:
+#
+#   - within-spec task references only (just kebab-case task ids,
+#     not ACIDs or cross-spec task refs). v1.5 can lift the
+#     restriction once cross-spec linkage is exercised through
+#     Phase C's run lookup index.
+#
+#   - cycle detection at the spec level (strict error).
+#
+#   - transition gates: in_progress + a todo dep is a strict
+#     error; done + a non-done dep is a strict error. Lenient
+#     mode downgrades both to warnings, matching the existing
+#     strict/lenient split.
+#
+# What this amendment declares:
+#
+#   - TASK.9 — `tasks[].depends_on: []string` is an optional
+#     list of task ids within the same spec.
+#
+#   - VAL.10 — every entry in `depends_on` must resolve to a
+#     task id declared in the same spec (strict error / lenient
+#     warning); the task graph must be acyclic (strict error in
+#     both modes — a cycle is unsafe to render and signals
+#     authoring confusion regardless of mode).
+#
+#   - VAL.11 — state-ordering gates: a task in `state: in_progress`
+#     whose `depends_on` includes a task in `state: todo` is a
+#     strict error / lenient warning. A task in `state: done`
+#     whose `depends_on` includes any task not in `state: done`
+#     is a strict error / lenient warning.
+
+target: spec-format
+amendment_kind: additive
+
+changes:
+  - kind: add-requirement
+    component_id: TASK
+    requirement_id: "9"
+    text: |
+      A task may carry an optional `depends_on` field listing
+      kebab-case task ids within the same spec that must complete
+      before this task is actionable. Cross-spec task references
+      are out of scope for v1; use the existing `references` ACID
+      list to point at component requirements in other specs.
+
+  - kind: add-requirement
+    component_id: VAL
+    requirement_id: "10"
+    text: |
+      Every entry in `tasks[].depends_on` must resolve to a task
+      id declared in the same spec (strict error / lenient
+      warning). The task dependency graph must be acyclic
+      (strict error in both modes — cycles are unsafe to render
+      and signal authoring confusion). The validator reports the
+      offending cycle path.
+
+  - kind: add-requirement
+    component_id: VAL
+    requirement_id: "11"
+    text: |
+      State-ordering gates derived from `depends_on`:
+      a task in `state: in_progress` whose `depends_on` list
+      includes a task currently in `state: todo` is a strict
+      error / lenient warning;
+      a task in `state: done` whose `depends_on` list includes
+      any task not in `state: done` is a strict error / lenient
+      warning. `state: blocked` is exempt — being blocked on a
+      dependency is the normal use of that state.
+
+  - kind: add-task
+    task_id: implement-task-depends-on
+    description: |
+      Add tasks[].depends_on to the Go schema, the validator
+      rules in VAL.10/11, and the test coverage. No backfill —
+      depends_on is opt-in and existing specs use prose for
+      ordering today.
+    state: in_progress
+    references:
+      - TASK.9
+      - VAL.10
+      - VAL.11

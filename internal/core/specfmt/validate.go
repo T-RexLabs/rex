@@ -316,6 +316,151 @@ func (v *validator) checkTasks(doc *Document) {
 		v.checkProof(base, i, t)
 		v.checkTaskStateRules(base, i, t)
 	}
+
+	v.checkTaskDependencies(doc)
+}
+
+// checkTaskDependencies enforces VAL.10 (every depends_on entry
+// resolves to a task in the same spec; the graph is acyclic)
+// and VAL.11 (state-ordering gates: in_progress can't depend on
+// todo; done can't depend on non-done).
+func (v *validator) checkTaskDependencies(doc *Document) {
+	taskByID := make(map[string]Task, len(doc.Tasks))
+	taskIdx := make(map[string]int, len(doc.Tasks))
+	for i, t := range doc.Tasks {
+		if t.ID == "" {
+			continue
+		}
+		taskByID[t.ID] = t
+		taskIdx[t.ID] = i
+	}
+
+	// Resolve check + state-ordering check, per-task.
+	for i, t := range doc.Tasks {
+		base := fmt.Sprintf("tasks[%d]", i)
+		for j, dep := range t.DependsOn {
+			depPath := fmt.Sprintf("%s.depends_on[%d]", base, j)
+			depTask, ok := taskByID[dep]
+			if !ok {
+				switch v.mode {
+				case ModeStrict:
+					v.errf(depPath, "missing-dependency",
+						"tasks[%d].depends_on[%d] %q does not match any task id in this spec (spec-format.VAL.10)",
+						i, j, dep)
+				case ModeLenient:
+					v.warnf(depPath, "missing-dependency",
+						"tasks[%d].depends_on[%d] %q does not match any task id in this spec (spec-format.VAL.10)",
+						i, j, dep)
+				}
+				continue
+			}
+			// State-ordering gates — VAL.11.
+			switch t.State {
+			case "in_progress":
+				if depTask.State == "todo" {
+					switch v.mode {
+					case ModeStrict:
+						v.errf(depPath, "dependency-state",
+							"tasks[%d].state is in_progress but dependency %q is still todo (spec-format.VAL.11)",
+							i, dep)
+					case ModeLenient:
+						v.warnf(depPath, "dependency-state",
+							"tasks[%d].state is in_progress but dependency %q is still todo (spec-format.VAL.11)",
+							i, dep)
+					}
+				}
+			case "done":
+				if depTask.State != "done" {
+					switch v.mode {
+					case ModeStrict:
+						v.errf(depPath, "dependency-state",
+							"tasks[%d].state is done but dependency %q is %q (spec-format.VAL.11)",
+							i, dep, depTask.State)
+					case ModeLenient:
+						v.warnf(depPath, "dependency-state",
+							"tasks[%d].state is done but dependency %q is %q (spec-format.VAL.11)",
+							i, dep, depTask.State)
+					}
+				}
+			}
+		}
+	}
+
+	// Cycle detection — VAL.10. Always a hard error: cycles
+	// break the rendering invariants downstream tools rely on.
+	if cycle := findTaskCycle(doc.Tasks); len(cycle) > 0 {
+		v.errf("tasks", "cycle",
+			"task dependency cycle: %s (spec-format.VAL.10)",
+			strings.Join(cycle, " -> "))
+	}
+}
+
+// findTaskCycle returns the task-id sequence forming a cycle in
+// the depends_on graph, or nil if the graph is acyclic. Standard
+// three-colour DFS.
+func findTaskCycle(tasks []Task) []string {
+	const (
+		white = 0
+		gray  = 1
+		black = 2
+	)
+	colour := make(map[string]int, len(tasks))
+	adj := make(map[string][]string, len(tasks))
+	known := make(map[string]struct{}, len(tasks))
+	for _, t := range tasks {
+		if t.ID == "" {
+			continue
+		}
+		known[t.ID] = struct{}{}
+		colour[t.ID] = white
+		adj[t.ID] = append(adj[t.ID], t.DependsOn...)
+	}
+
+	var path []string
+	var cycle []string
+	var visit func(id string) bool
+	visit = func(id string) bool {
+		if colour[id] == gray {
+			for i, p := range path {
+				if p == id {
+					cycle = append([]string{}, path[i:]...)
+					cycle = append(cycle, id)
+					return true
+				}
+			}
+		}
+		if colour[id] == black {
+			return false
+		}
+		colour[id] = gray
+		path = append(path, id)
+		for _, next := range adj[id] {
+			// Skip unknown ids — those are caught by the
+			// missing-dependency check above; here we only
+			// need to find true cycles.
+			if _, ok := known[next]; !ok {
+				continue
+			}
+			if visit(next) {
+				return true
+			}
+		}
+		path = path[:len(path)-1]
+		colour[id] = black
+		return false
+	}
+
+	for _, t := range tasks {
+		if t.ID == "" {
+			continue
+		}
+		if colour[t.ID] == white {
+			if visit(t.ID) {
+				break
+			}
+		}
+	}
+	return cycle
 }
 
 // checkProof validates each structured proof entry's shape per
