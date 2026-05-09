@@ -120,8 +120,12 @@
                     name="from_task"
                     {{if ne .RunType "harness"}}disabled{{end}}>
               <option value="">— none —</option>
-              {{range .FromTaskOptions}}
-                <option value="{{.Value}}" data-state="{{.State}}" {{if eq $.FromTask .Value}}selected{{end}}>{{.Label}}</option>
+              {{range .FromTaskGroups}}
+                <optgroup label="{{.SpecID}}{{if .SpecName}} · {{.SpecName}}{{end}}">
+                  {{range .Tasks}}
+                    <option value="{{.Value}}" data-state="{{.State}}" {{if eq $.FromTask .Value}}selected{{end}}>{{.Label}}</option>
+                  {{end}}
+                </optgroup>
               {{end}}
             </select>
             <span class="field-hint">Records a <code>from_task</code> on this run's <code>run.started</code> event so it surfaces under the task on <code>/specs/&lt;id&gt;</code>. Use <code>rex run start --spec-ref</code> on the CLI when you need to attach raw ACIDs without picking a task.</span>

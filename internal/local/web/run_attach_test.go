@@ -44,7 +44,8 @@ tasks:
 
 // TestRunNewRendersFromTaskDropdown confirms the harness panel
 // has a real dropdown populated with every (spec, task) pair in
-// the workspace, rather than the previous free-text input.
+// the workspace, rendered as native <optgroup> sections so the
+// list stays scannable as the workspace grows.
 func TestRunNewRendersFromTaskDropdown(t *testing.T) {
 	t.Parallel()
 
@@ -61,10 +62,10 @@ func TestRunNewRendersFromTaskDropdown(t *testing.T) {
 		`<select`,
 		`name="from_task"`,
 		`<option value="">— none —</option>`,
+		`<optgroup label="phase-c · Phase C target">`,
 		`value="phase-c.alpha"`,
 		`value="phase-c.beta"`,
-		"phase-c · alpha",
-		"alpha task description",
+		"alpha — alpha task description",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q in body:\n%s", want, body[:minInt(len(body), 4000)])
@@ -81,6 +82,60 @@ func TestRunNewRendersFromTaskDropdown(t *testing.T) {
 	idxFromTask := strings.Index(body, `name="from_task"`)
 	if idxPanel < 0 || idxFromTask < 0 || idxFromTask < idxPanel {
 		t.Errorf("from_task picker should be inside the harness panel; idxPanel=%d idxFromTask=%d", idxPanel, idxFromTask)
+	}
+}
+
+// TestRunNewFromTaskDropdownGroupsBySpec scales-tests the
+// scannability fix: with five specs in the workspace, the
+// dropdown must render five optgroups in spec-id order, each
+// containing only that spec's tasks. Without grouping a 5-spec
+// workspace already feels cramped at the picker level; with
+// grouping the user scans the spec headers first.
+func TestRunNewFromTaskDropdownGroupsBySpec(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t, "ws-run-attach-many")
+	specsDir := filepath.Join(root, ".rex", "specs")
+	if err := os.MkdirAll(specsDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Five specs in deliberately non-alphabetical write order;
+	// the loader must sort them by id.
+	for _, sid := range []string{"echo", "alpha", "delta", "bravo", "charlie"} {
+		body := "spec_version: 1\nmetadata:\n  id: " + sid +
+			"\n  name: " + strings.ToTitle(sid) +
+			"\n  state: draft\ntasks:\n  - id: only-task\n    description: TODO\n    state: todo\n"
+		if err := os.WriteFile(filepath.Join(specsDir, sid+".yaml"), []byte(body), 0o644); err != nil {
+			t.Fatalf("seed %s: %v", sid, err)
+		}
+	}
+	hs := newTestServer(t, root)
+
+	resp, err := http.Get(hs.URL + "/runs/new")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := readBody(t, resp)
+
+	// Each spec must produce exactly one optgroup.
+	if got := strings.Count(body, "<optgroup label=\""); got != 5 {
+		t.Fatalf("expected 5 optgroups, got %d:\n%s", got, body[:minInt(len(body), 4000)])
+	}
+	// Optgroups must appear in alphabetical spec-id order.
+	wantOrder := []string{
+		`<optgroup label="alpha`,
+		`<optgroup label="bravo`,
+		`<optgroup label="charlie`,
+		`<optgroup label="delta`,
+		`<optgroup label="echo`,
+	}
+	cursor := 0
+	for _, w := range wantOrder {
+		idx := strings.Index(body[cursor:], w)
+		if idx < 0 {
+			t.Fatalf("optgroup %q missing or out of order at cursor %d", w, cursor)
+		}
+		cursor += idx + len(w)
 	}
 }
 

@@ -38,9 +38,14 @@ type runNewData struct {
 	// genuinely want it can use `rex run start --from-task` on
 	// the CLI which has tab completion.
 	FromTask string
-	// FromTaskOptions enumerates every <spec-id>.<task-id>
-	// pair in the workspace, sorted, for the dropdown.
-	FromTaskOptions []taskOption
+	// FromTaskGroups groups every <spec-id>.<task-id> pair in
+	// the workspace by their spec so the form template can
+	// render a native <optgroup> per spec. At small scale
+	// (1-10 specs) it's just visual sectioning; at larger
+	// scale (50+ specs, hundreds of tasks) the grouping is the
+	// only thing that keeps the dropdown scannable. Sorted by
+	// spec id, then by task id within each group.
+	FromTaskGroups []taskGroup
 
 	Harnesses    []harnessFormOption
 	ModelOptions []string
@@ -49,14 +54,28 @@ type runNewData struct {
 	ShowMode     bool
 }
 
-// taskOption is one entry in the from_task dropdown. Value is
-// the wire form (`<spec-id>.<task-id>`) submitted on form post;
-// Label is what the user sees in the dropdown ("spec-id ·
-// task-id  — task description").
+// taskOption is one entry inside a taskGroup's dropdown
+// section. Value is the wire form (`<spec-id>.<task-id>`)
+// submitted on form post; Label is what the user sees in the
+// dropdown row. The spec id is intentionally omitted from
+// Label because the enclosing <optgroup label="..."> already
+// carries it — repeating it on every row would clutter
+// long lists.
 type taskOption struct {
 	Value string
 	Label string
 	State string
+}
+
+// taskGroup is one spec's worth of tasks rendered as an
+// <optgroup>. SpecID is the kebab id (also the optgroup label
+// suffix); SpecName is the human-readable metadata.name. Tasks
+// is the spec's task list, already truncated/sorted at load
+// time so the template stays tag-soup-free.
+type taskGroup struct {
+	SpecID   string
+	SpecName string
+	Tasks    []taskOption
 }
 
 func anyHarnessModels(opts []harnessFormOption) bool {
@@ -119,7 +138,7 @@ func (s *Server) prepareRunNewData(d runNewData) runNewData {
 	d.ModeOptions = append([]string(nil), selected.Modes...)
 	d.ShowModel = anyHarnessModels(d.Harnesses)
 	d.ShowMode = anyHarnessModes(d.Harnesses)
-	d.FromTaskOptions = loadFromTaskOptions(s.opts.WorkspaceRoot)
+	d.FromTaskGroups = loadFromTaskGroups(s.opts.WorkspaceRoot)
 	return d
 }
 
@@ -227,20 +246,23 @@ func validateFromTaskField(raw string) error {
 	return nil
 }
 
-// loadFromTaskOptions walks the workspace's specs/ dir and
-// returns one option per (spec, task) pair, sorted by
-// spec-id then task-id. Best-effort: failures (missing
-// specs/ directory, unparseable spec) yield an empty list
-// rather than blocking the form. The field is optional so
-// "no options" gracefully renders as a dropdown with just
-// the blank "(none)" entry.
-func loadFromTaskOptions(workspaceRoot string) []taskOption {
+// loadFromTaskGroups walks the workspace's specs/ dir and
+// returns one taskGroup per spec, each carrying that spec's
+// tasks. Sorted by spec id, then by task id within each group.
+// Specs that declare no tasks are dropped — an empty
+// optgroup contributes nothing to the picker.
+//
+// Best-effort: failures (missing specs/ directory, unparseable
+// spec) yield an empty list rather than blocking the form. The
+// field is optional so "no groups" renders as the blank
+// "(none)" entry only.
+func loadFromTaskGroups(workspaceRoot string) []taskGroup {
 	dir := filepath.Join(workspaceRoot, ".rex", "specs")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
 	}
-	var out []taskOption
+	var out []taskGroup
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
 			continue
@@ -249,19 +271,31 @@ func loadFromTaskOptions(workspaceRoot string) []taskOption {
 		if err != nil {
 			continue
 		}
+		if len(doc.Tasks) == 0 {
+			continue
+		}
+		group := taskGroup{
+			SpecID:   doc.Metadata.ID,
+			SpecName: doc.Metadata.Name,
+			Tasks:    make([]taskOption, 0, len(doc.Tasks)),
+		}
 		for _, t := range doc.Tasks {
-			label := doc.Metadata.ID + " · " + t.ID
+			label := t.ID
 			if t.Description != "" {
 				label += " — " + truncate(t.Description, 80)
 			}
-			out = append(out, taskOption{
+			group.Tasks = append(group.Tasks, taskOption{
 				Value: doc.Metadata.ID + "." + t.ID,
 				Label: label,
 				State: t.State,
 			})
 		}
+		sort.Slice(group.Tasks, func(i, j int) bool {
+			return group.Tasks[i].Value < group.Tasks[j].Value
+		})
+		out = append(out, group)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Value < out[j].Value })
+	sort.Slice(out, func(i, j int) bool { return out[i].SpecID < out[j].SpecID })
 	return out
 }
 
