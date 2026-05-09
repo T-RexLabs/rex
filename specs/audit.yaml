@@ -52,8 +52,14 @@ tasks:
 
   - id: audit-query
     description: "Implement audit-log queries (`rex log tail`, `rex log search`) and the structured-filter language"
-    state: todo
+    state: done
+    note: "internal/local/cli/log.go ships `rex log tail` (--n, --since accepting RFC3339 or Go duration, --type, --actor, --workspace via persistent flag, --audit-only, --json) and `rex log search` (FTS5 over the workspace's index.sqlite, with --type / --audit-only / --json / --limit). QUERY.3's central-side RBAC on audit queries is structurally moot in v1 — there is no central /audit query endpoint yet, so there is no surface to misuse. The RBAC engine (identity-and-trust.rbac-engine) ships the audit.read permission catalog entry; the central audit endpoint that consults it lands with central-ui-routes."
     references: [QUERY.1, QUERY.2, QUERY.3]
+    proof:
+      - kind: code
+        path: internal/local/cli/log.go
+      - kind: test
+        path: internal/local/cli/log_test.go
 
   - id: compaction-job
     description: "Implement the transcript-compaction scheduled job for central nodes"
