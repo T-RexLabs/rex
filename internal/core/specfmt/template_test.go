@@ -136,6 +136,112 @@ func TestNewSpecFromTemplateMinimalSkeleton(t *testing.T) {
 	}
 }
 
+// TestMinimalSkeletonYAMLContainsAllPlaceholders confirms the
+// hand-rolled scaffold body emits every field a v1 spec can
+// carry — not just the metadata block — so a new author sees
+// the schema at the file level rather than discovering it
+// through spec-format.yaml.
+func TestMinimalSkeletonYAMLContainsAllPlaceholders(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 9, 12, 0, 0, 0, time.UTC)
+	body, err := MinimalSkeletonYAML(ScaffoldOptions{
+		ID:  "skeleton",
+		Now: func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("MinimalSkeletonYAML: %v", err)
+	}
+	got := string(body)
+
+	// Every top-level key the schema understands must appear.
+	for _, want := range []string{
+		"spec_version: 1",
+		"metadata:",
+		"  id: skeleton",
+		"  state: draft",
+		"  owners: []",
+		"  related_specs: []",
+		"description: |",
+		"tasks:",
+		"  - id: example-task",
+		"    state: todo",
+		"    note: \"\"",
+		"    proof: []",
+		"    depends_on: []",
+		"components:",
+		"  EXAMPLE:",
+		"constraints: {}",
+		"extra:",
+	} {
+		if !contains(got, want) {
+			t.Errorf("missing %q in scaffold:\n%s", want, got)
+		}
+	}
+	// Comments must survive — they're the whole point of the
+	// hand-rolled emit path.
+	for _, want := range []string{
+		"# state: one of draft",
+		"# proof:",
+		"# depends_on:",
+		"# components:",
+	} {
+		if !contains(got, want) {
+			t.Errorf("missing comment %q", want)
+		}
+	}
+}
+
+// TestMinimalSkeletonYAMLParses confirms the emitted body
+// round-trips through Parse — a malformed scaffold would be
+// worse than a barebones one.
+func TestMinimalSkeletonYAMLParses(t *testing.T) {
+	t.Parallel()
+
+	body, err := MinimalSkeletonYAML(ScaffoldOptions{ID: "round-trip"})
+	if err != nil {
+		t.Fatalf("scaffold: %v", err)
+	}
+	doc, err := parseBytes(body)
+	if err != nil {
+		t.Fatalf("parse round-trip: %v\n%s", err, body)
+	}
+	if doc.Metadata.ID != "round-trip" {
+		t.Fatalf("id round-trip: %q", doc.Metadata.ID)
+	}
+	if len(doc.Tasks) != 1 || doc.Tasks[0].ID != "example-task" {
+		t.Fatalf("expected one example task, got %v", doc.Tasks)
+	}
+	if _, ok := doc.Components["EXAMPLE"]; !ok {
+		t.Fatalf("expected EXAMPLE component, got %v", doc.Components)
+	}
+}
+
+// TestMinimalSkeletonYAMLValidates confirms strict validate
+// passes on the scaffold body. state: draft + example task
+// state: todo means VAL.7 (done-needs-proof) and VAL.8 (blocked-
+// needs-note) don't fire; the scaffold ships clean.
+func TestMinimalSkeletonYAMLValidates(t *testing.T) {
+	t.Parallel()
+
+	body, err := MinimalSkeletonYAML(ScaffoldOptions{ID: "scaffolded"})
+	if err != nil {
+		t.Fatalf("scaffold: %v", err)
+	}
+	doc, err := parseBytes(body)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	res := Validate(doc, ModeStrict)
+	if res.HasErrors() {
+		t.Fatalf("scaffold should validate clean, got errors: %v", res.Errors())
+	}
+}
+
+// contains is a tiny case-sensitive substring check; pulled in
+// here so tests don't import strings just for one call site.
+func contains(s, sub string) bool { return indexOf(s, sub) >= 0 }
+
 func TestNewSpecFromTemplateRejectsBadID(t *testing.T) {
 	t.Parallel()
 

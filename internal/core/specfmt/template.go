@@ -119,6 +119,11 @@ type ScaffoldOptions struct {
 // required_extra) are stripped from the new spec — a scaffolded
 // spec is not itself a template. The template_id link is set so the
 // validator's second pass routes back to the source.
+//
+// Use this when opts.Template is non-nil. For the no-template
+// "minimal skeleton" path use MinimalSkeletonYAML — it emits a
+// hand-rolled YAML body with comments and placeholder fields
+// that yaml.Marshal of an empty Document would strip.
 func NewSpecFromTemplate(opts ScaffoldOptions) (*Document, error) {
 	if opts.ID == "" {
 		return nil, errors.New("specfmt: NewSpecFromTemplate requires ID")
@@ -169,6 +174,159 @@ func NewSpecFromTemplate(opts ScaffoldOptions) (*Document, error) {
 		}
 	}
 	return doc, nil
+}
+
+// minimalSkeletonTemplate is the body emitted by `rex spec
+// create <id>` (and the equivalent web flow) when no workspace
+// or per-call template applies. Hand-rolled so the YAML carries
+// inline comments — yaml.Marshal of an empty Document strips
+// every block that doesn't have a value, leaving authors with
+// just metadata. The minimal skeleton instead surfaces every
+// field a v1 spec can carry, with a placeholder example task,
+// component, and pointers into the format's component IDs so a
+// new author can fill blanks rather than discover the schema
+// from spec-format.yaml.
+//
+// Token replacements (no full Go-template rendering — keep this
+// dependency-free):
+//
+//	%ID%         — opts.ID
+//	%NAME%       — opts.Name (defaults to opts.ID)
+//	%STATE%      — opts.State (defaults to "draft")
+//	%CREATED_AT% — opts.Now() in RFC3339 (UTC)
+//	%UPDATED_AT% — same
+const minimalSkeletonTemplate = `spec_version: 1
+
+metadata:
+  id: %ID%
+  name: %NAME%
+  # state: one of draft, active, accepted, archived (spec-format.META.3).
+  state: %STATE%
+  # owners: list of user handles for this spec (spec-format.META.6).
+  owners: []
+  # related_specs: spec ids this document is meaningfully connected to (META.7).
+  related_specs: []
+  created_at: %CREATED_AT%
+  updated_at: %UPDATED_AT%
+
+description: |
+  TODO — one paragraph on what this spec owns and why it exists.
+  This block is rendered as Markdown on /specs/<id>.
+
+# tasks: units of implementation work this spec embeds (spec-format.TASK).
+# Required: id (kebab-case, unique), description, state (todo / in_progress
+# / done / blocked). Optional: references (ACIDs into component requirements),
+# assigned_to, note (free-form context), proof (required-structured when
+# state is done — see VAL.7), depends_on (task ids in this spec), run
+# (recipe — see RECIPE).
+tasks:
+  - id: example-task
+    description: TODO — what someone would do to satisfy this task.
+    state: todo
+    references: []
+    # note: free-form Markdown explaining context the description doesn't
+    # capture — rationale, deferred sub-decisions, related amendments.
+    note: ""
+    # proof: short string (author scratchpad) OR a structured list of
+    # entries the validator + ` + "`rex spec verify`" + ` mechanically check.
+    # state: done MUST carry a structured list. Recognised kinds:
+    #   - kind: code
+    #     path: internal/foo/bar.go
+    #   - kind: test
+    #     path: internal/foo/bar_test.go
+    #     name: TestThing            # optional Go test func to grep
+    #   - kind: run
+    #     run_id: <hlc-run-id>
+    #   - kind: commit
+    #     ref: <git-rev>
+    #   - kind: spec
+    #     acid: other-spec.COMP.1
+    proof: []
+    # depends_on: kebab-case task ids in this same spec that must reach
+    # state: done before this task can be in_progress / done. Cycles are
+    # rejected (VAL.10); state-ordering gates fire on transitions (VAL.11).
+    depends_on: []
+
+# components: groups of acceptance criteria (spec-format.COMP).
+# IDs are uppercase ASCII + hyphens. Each component has a name and a
+# requirements mapping (numbered keys, quoted to stay strings).
+components:
+  EXAMPLE:
+    name: Example component
+    requirements:
+      "1": TODO — replace with the first acceptance criterion this spec asserts.
+
+# constraints: cross-cutting invariants (engineering, security, performance).
+# Same shape as components but uses ` + "`description`" + ` instead of ` + "`name`" + `.
+# Drop in groups like ENG, SEC, PERF as needed.
+constraints: {}
+
+# extra: project-defined fields. owners + related_specs have moved to metadata;
+# common keys here are notes, template (bool — this spec IS a template),
+# template_id, recipes_required, recipes_forbidden.
+extra:
+  notes: ""
+`
+
+// MinimalSkeletonYAML emits the hand-rolled YAML scaffold for a
+// new spec when no template is supplied. The output is parseable
+// (specfmt.Parse round-trips it) and validator-clean (state:
+// draft, the example task is in state: todo so VAL.7/8 don't
+// trip).
+func MinimalSkeletonYAML(opts ScaffoldOptions) ([]byte, error) {
+	if opts.ID == "" {
+		return nil, errors.New("specfmt: MinimalSkeletonYAML requires ID")
+	}
+	if !IsKebab(opts.ID) {
+		return nil, fmt.Errorf("specfmt: id %q is not kebab-case", opts.ID)
+	}
+	now := opts.Now
+	if now == nil {
+		now = func() time.Time { return time.Now().UTC() }
+	}
+	state := opts.State
+	if state == "" {
+		state = "draft"
+	}
+	name := opts.Name
+	if name == "" {
+		name = opts.ID
+	}
+
+	stamp := now().Format(time.RFC3339)
+	body := minimalSkeletonTemplate
+	body = replaceToken(body, "%ID%", opts.ID)
+	body = replaceToken(body, "%NAME%", name)
+	body = replaceToken(body, "%STATE%", state)
+	body = replaceToken(body, "%CREATED_AT%", stamp)
+	body = replaceToken(body, "%UPDATED_AT%", stamp)
+	return []byte(body), nil
+}
+
+// replaceToken is a tiny substitution helper. We keep this
+// dependency-free instead of pulling text/template so the
+// scaffold path doesn't grow a parsing surface for what is
+// fundamentally a five-token replace.
+func replaceToken(body, token, value string) string {
+	for {
+		idx := indexOf(body, token)
+		if idx < 0 {
+			return body
+		}
+		body = body[:idx] + value + body[idx+len(token):]
+	}
+}
+
+func indexOf(s, sub string) int {
+	if len(sub) == 0 || len(sub) > len(s) {
+		return -1
+	}
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
 }
 
 // scaffoldExtra strips template-marker keys (template, applies_to,

@@ -7,17 +7,6 @@ import (
 	"testing"
 )
 
-func appendToFile(t *testing.T, path, body string) error {
-	t.Helper()
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = f.WriteString(body)
-	return err
-}
-
 // readRunStartedWorkType pulls the `work_type` field from the most
 // recent run.started event in the workspace's events.log.
 func readRunStartedWorkType(t *testing.T, root string) string {
@@ -88,13 +77,17 @@ func TestRunStartFromTaskInfersSpec(t *testing.T) {
 
 	root := initWorkspace(t, t.TempDir())
 
-	// Create a spec with a single shell-recipe task.
-	if _, err := executeCommand(t, "spec", "create", "--workspace", root, "demo"); err != nil {
-		t.Fatalf("spec create: %v", err)
-	}
-	// Append a task with a recipe to the new spec.
+	// Author a single-task spec from scratch — we avoid `rex spec
+	// create` here because the scaffold ships its own example
+	// task and we'd have to overwrite anyway. A targeted body
+	// keeps the test on the run.started provenance bits.
 	specPath := strings.TrimSpace(root) + "/.rex/specs/demo.yaml"
-	body := `tasks:
+	body := `spec_version: 1
+metadata:
+  id: demo
+  name: Demo
+  state: draft
+tasks:
   - id: greet
     description: say hello
     state: todo
@@ -103,10 +96,8 @@ func TestRunStartFromTaskInfersSpec(t *testing.T) {
       kind: shell
       command: ["true"]
 `
-	// Use os.WriteFile via append rather than a separate test
-	// helper — we just need the file to validate.
-	if err := appendToFile(t, specPath, body); err != nil {
-		t.Fatalf("append: %v", err)
+	if err := os.WriteFile(specPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
 	}
 
 	if _, err := executeCommand(t, "run", "start",

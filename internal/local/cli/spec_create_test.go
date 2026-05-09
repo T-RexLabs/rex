@@ -31,7 +31,26 @@ func TestSpecCreateMinimalSkeleton(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read spec: %v", err)
 	}
-	for _, want := range []string{"id: alpha", "name: alpha", "state: draft"} {
+	// Identity fields stay required; the rest are the rich
+	// placeholders the minimal scaffold path now ships so authors
+	// don't have to discover the schema in spec-format.yaml.
+	for _, want := range []string{
+		"id: alpha",
+		"name: alpha",
+		"state: draft",
+		"owners: []",
+		"related_specs: []",
+		"description: |",
+		"tasks:",
+		"id: example-task",
+		"note: \"\"",
+		"proof: []",
+		"depends_on: []",
+		"components:",
+		"EXAMPLE:",
+		"# proof:",
+		"# depends_on:",
+	} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("missing %q in:\n%s", want, body)
 		}

@@ -98,15 +98,11 @@ func (s *Server) handleSpecCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	doc, err := specfmt.NewSpecFromTemplate(specfmt.ScaffoldOptions{
+	scaffoldOpts := specfmt.ScaffoldOptions{
 		ID:       id,
 		Name:     name,
 		State:    state,
 		Template: tplDoc,
-	})
-	if err != nil {
-		rerender(err.Error())
-		return
 	}
 
 	path := filepath.Join(root, ".rex", "specs", id+".yaml")
@@ -120,10 +116,30 @@ func (s *Server) handleSpecCreate(w http.ResponseWriter, r *http.Request) {
 		rerender("create specs dir: " + err.Error())
 		return
 	}
-	body, err := yaml.Marshal(doc)
-	if err != nil {
-		rerender("marshal spec: " + err.Error())
-		return
+
+	// Mirror the CLI's two emit paths: typed Document +
+	// yaml.Marshal when a template applies, hand-rolled
+	// MinimalSkeletonYAML otherwise so authors get the rich
+	// commented placeholder body rather than a bare metadata
+	// block.
+	var body []byte
+	if tplDoc != nil {
+		doc, derr := specfmt.NewSpecFromTemplate(scaffoldOpts)
+		if derr != nil {
+			rerender(derr.Error())
+			return
+		}
+		body, err = yaml.Marshal(doc)
+		if err != nil {
+			rerender("marshal spec: " + err.Error())
+			return
+		}
+	} else {
+		body, err = specfmt.MinimalSkeletonYAML(scaffoldOpts)
+		if err != nil {
+			rerender(err.Error())
+			return
+		}
 	}
 	if err := os.WriteFile(path, body, 0o644); err != nil {
 		rerender("write " + path + ": " + err.Error())

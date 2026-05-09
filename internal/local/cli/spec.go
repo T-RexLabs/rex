@@ -84,16 +84,6 @@ Refuses to overwrite an existing spec unless --force is passed.`,
 				return err
 			}
 
-			doc, err := specfmt.NewSpecFromTemplate(specfmt.ScaffoldOptions{
-				ID:       id,
-				Name:     nameFlag,
-				State:    stateFlag,
-				Template: template,
-			})
-			if err != nil {
-				return err
-			}
-
 			path := filepath.Join(specDir(root), id+".yaml")
 			if !force {
 				if _, err := os.Stat(path); err == nil {
@@ -103,9 +93,35 @@ Refuses to overwrite an existing spec unless --force is passed.`,
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 				return fmt.Errorf("create specs dir: %w", err)
 			}
-			body, err := yaml.Marshal(doc)
-			if err != nil {
-				return fmt.Errorf("marshal spec: %w", err)
+
+			// Two emit paths: with-template uses the typed
+			// Document + yaml.Marshal so inherited tasks /
+			// components round-trip cleanly. No-template uses
+			// the hand-rolled MinimalSkeletonYAML so the new
+			// spec ships with placeholder fields + comments
+			// that yaml.Marshal of an empty Document would
+			// strip.
+			scaffoldOpts := specfmt.ScaffoldOptions{
+				ID:       id,
+				Name:     nameFlag,
+				State:    stateFlag,
+				Template: template,
+			}
+			var body []byte
+			if template != nil {
+				doc, err := specfmt.NewSpecFromTemplate(scaffoldOpts)
+				if err != nil {
+					return err
+				}
+				body, err = yaml.Marshal(doc)
+				if err != nil {
+					return fmt.Errorf("marshal spec: %w", err)
+				}
+			} else {
+				body, err = specfmt.MinimalSkeletonYAML(scaffoldOpts)
+				if err != nil {
+					return err
+				}
 			}
 			if err := os.WriteFile(path, body, 0o644); err != nil {
 				return fmt.Errorf("write %s: %w", path, err)
