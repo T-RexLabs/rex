@@ -208,7 +208,7 @@ func loadSpecDetail(opts Options, id, tab string, hl *Highlighter) (specDetailDa
 		tab = "rendered"
 	}
 	switch tab {
-	case "rendered", "source", "tasks", "runs":
+	case "rendered", "ask", "source", "tasks", "runs":
 	default:
 		tab = "rendered"
 	}

@@ -29,9 +29,11 @@ metadata:
 	}
 }
 
-// TestSpecRunsTabRendersAskForm covers the form's presence on
-// the runs tab when at least one harness adapter is registered.
-func TestSpecRunsTabRendersAskForm(t *testing.T) {
+// TestSpecAskTabRendersAskForm covers the form's presence on
+// the ask tab when at least one harness adapter is registered.
+// (The ask form moved off the runs tab to its own tab — see the
+// 2026-05-09 spec-detail polish round.)
+func TestSpecAskTabRendersAskForm(t *testing.T) {
 	t.Parallel()
 
 	root := initWorkspace(t, "ws-spec-ask-form")
@@ -43,7 +45,7 @@ func TestSpecRunsTabRendersAskForm(t *testing.T) {
 	}
 	hs := newTestServerWithOptions(t, Options{WorkspaceRoot: root, Adapters: reg})
 
-	resp, err := http.Get(hs.URL + "/specs/target?tab=runs")
+	resp, err := http.Get(hs.URL + "/specs/target?tab=ask")
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
@@ -64,16 +66,16 @@ func TestSpecRunsTabRendersAskForm(t *testing.T) {
 	}
 }
 
-// TestSpecRunsTabHidesFormWithoutHarnesses covers the
+// TestSpecAskTabHidesFormWithoutHarnesses covers the
 // no-harness fallback hint.
-func TestSpecRunsTabHidesFormWithoutHarnesses(t *testing.T) {
+func TestSpecAskTabHidesFormWithoutHarnesses(t *testing.T) {
 	t.Parallel()
 
 	root := initWorkspace(t, "ws-spec-ask-noharness")
 	seedSpecForAskForm(t, root)
 	hs := newTestServerWithOptions(t, Options{WorkspaceRoot: root, Adapters: adapter.NewRegistry()})
 
-	resp, err := http.Get(hs.URL + "/specs/target?tab=runs")
+	resp, err := http.Get(hs.URL + "/specs/target?tab=ask")
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
@@ -83,6 +85,72 @@ func TestSpecRunsTabHidesFormWithoutHarnesses(t *testing.T) {
 	}
 	if !strings.Contains(body, "No harness adapters are registered") {
 		t.Fatalf("expected fallback hint:\n%s", body[:minInt(len(body), 2500)])
+	}
+}
+
+// TestSpecAskTabAppearsBetweenRenderedAndSource confirms the
+// new tab's position in the nav so it lands where the user
+// expects it (right after rendered).
+func TestSpecAskTabAppearsBetweenRenderedAndSource(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t, "ws-spec-ask-tab-order")
+	seedSpecForAskForm(t, root)
+	hs := newTestServer(t, root)
+
+	resp, err := http.Get(hs.URL + "/specs/target")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := readBody(t, resp)
+	rendered := strings.Index(body, `href="?tab=rendered"`)
+	ask := strings.Index(body, `href="?tab=ask"`)
+	source := strings.Index(body, `href="?tab=source"`)
+	if rendered < 0 || ask < 0 || source < 0 {
+		t.Fatalf("missing one of rendered/ask/source tabs (idx: %d/%d/%d)", rendered, ask, source)
+	}
+	if rendered >= ask || ask >= source {
+		t.Fatalf("tab order should be rendered → ask → source; got idx %d/%d/%d", rendered, ask, source)
+	}
+}
+
+// TestSpecTaskRowHasStartARunLink covers the "start a run →"
+// link added to every task row (including tasks without a
+// run: recipe) so authors can attach a task to a fresh run
+// without the recipe-only restriction.
+func TestSpecTaskRowHasStartARunLink(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t, "ws-spec-start-run-link")
+	dir := filepath.Join(root, ".rex", "specs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := `spec_version: 1
+metadata:
+  id: target
+  name: Target
+  state: draft
+tasks:
+  - id: only-task
+    description: TODO
+    state: todo
+`
+	if err := os.WriteFile(filepath.Join(dir, "target.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	hs := newTestServer(t, root)
+
+	resp, err := http.Get(hs.URL + "/specs/target?tab=tasks")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	gotBody := readBody(t, resp)
+	if !strings.Contains(gotBody, `href="/runs/new?from_task=target.only-task"`) {
+		t.Fatalf("expected start-a-run link with prefilled from_task:\n%s", gotBody[:minInt(len(gotBody), 4000)])
+	}
+	if !strings.Contains(gotBody, `start a run →`) {
+		t.Fatalf("expected start-a-run button label:\n%s", gotBody[:minInt(len(gotBody), 4000)])
 	}
 }
 

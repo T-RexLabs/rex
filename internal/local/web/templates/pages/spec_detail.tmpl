@@ -61,6 +61,9 @@
      {{if eq .ActiveTab "rendered"}}aria-selected="true"{{end}}
      href="?tab=rendered">rendered</a>
   <a class="tab"
+     {{if eq .ActiveTab "ask"}}aria-selected="true"{{end}}
+     href="?tab=ask">ask</a>
+  <a class="tab"
      {{if eq .ActiveTab "source"}}aria-selected="true"{{end}}
      href="?tab=source">yaml source</a>
   <a class="tab"
@@ -157,12 +160,17 @@
                   {{end}}
                 </div>
               {{end}}
-              {{if .HasRecipe}}
-                <form class="task-run" method="post" action="/specs/{{$.Spec.ID}}/tasks/{{.ID}}/run">
-                  <button type="submit" class="btn btn-primary">run this task</button>
-                  <span class="muted">via <code>{{.RecipeKind}}</code> recipe</span>
-                </form>
-              {{end}}
+              <div class="task-actions">
+                {{if .HasRecipe}}
+                  <form class="task-run" method="post" action="/specs/{{$.Spec.ID}}/tasks/{{.ID}}/run">
+                    <button type="submit" class="btn btn-primary">run this task</button>
+                    <span class="muted">via <code>{{.RecipeKind}}</code> recipe</span>
+                  </form>
+                {{end}}
+                <a class="btn btn-ghost"
+                   href="/runs/new?from_task={{$.Spec.ID}}.{{.ID}}"
+                   title="Open the run-start form with this task pre-attached">start a run →</a>
+              </div>
               {{if $runs}}
                 {{$latest := index $runs 0}}
                 <details class="task-runs">
@@ -203,9 +211,11 @@
       <p class="muted">no tasks defined.</p>
     {{end}}
 
-  {{else if eq .ActiveTab "runs"}}
+  {{else if eq .ActiveTab "ask"}}
+    <p class="muted small">Drive a harness against this spec without writing a recipe in the YAML. The harness opens with the spec's full content preloaded; your prompt is the instruction. Output lands on <a href="/runs?spec={{.Spec.ID}}">the runs list</a> and on <a href="?tab=runs">this spec's runs tab</a>.</p>
     {{template "spec-ad-hoc-form" .}}
 
+  {{else if eq .ActiveTab "runs"}}
     {{if .AllRuns}}
       <p class="muted small">{{len .AllRuns}} run{{if ne (len .AllRuns) 1}}s{{end}} cite this spec via <code>from_task</code> or <code>spec_refs</code>. Most recent first.</p>
       <div class="card">
@@ -240,7 +250,8 @@
       </div>
       <p class="muted small">Need broader context? <a href="/runs?spec={{.Spec.ID}}">View this list on the runs page</a> for sortable columns + filters.</p>
     {{else}}
-      <p class="muted">no runs cite this spec yet — use the form above to start one.</p>
+      <p class="muted">no runs cite this spec yet.</p>
+      <p class="muted small">Start one from the <a href="?tab=ask">ask tab</a> (drive a harness with the spec preloaded), the <a href="?tab=tasks">tasks tab</a> (per-task buttons), or <a href="/runs/new?from_task={{.Spec.ID}}.">the runs page</a>.</p>
     {{end}}
   {{end}}
 </section>
