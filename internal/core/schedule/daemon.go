@@ -137,7 +137,8 @@ func (d *Daemon) start(ctx context.Context, scheds []*Schedule) error {
 
 	d.cron.Start()
 	if d.watcher != nil {
-		go d.runWatcher(ctx)
+		w := d.watcher
+		go d.runWatcher(ctx, w)
 	}
 	return nil
 }
@@ -254,18 +255,19 @@ func fixedPrefix(p string) string {
 
 // runWatcher pumps fsnotify events. For each event whose path
 // matches any registered schedule's globs, schedule a debounced
-// fire.
-func (d *Daemon) runWatcher(ctx context.Context) {
+// fire. The watcher is passed in (rather than read from d.watcher)
+// so this goroutine doesn't race with stop() nilling the field.
+func (d *Daemon) runWatcher(ctx context.Context, w *fsnotify.Watcher) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case ev, ok := <-d.watcher.Events:
+		case ev, ok := <-w.Events:
 			if !ok {
 				return
 			}
 			d.handleFSEvent(ctx, ev)
-		case err, ok := <-d.watcher.Errors:
+		case err, ok := <-w.Errors:
 			if !ok {
 				return
 			}
