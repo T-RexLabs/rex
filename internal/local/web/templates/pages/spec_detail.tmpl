@@ -28,6 +28,9 @@
   <a class="tab"
      {{if eq .ActiveTab "tasks"}}aria-selected="true"{{end}}
      href="?tab=tasks">tasks <span class="count">{{len .Spec.Tasks}}</span></a>
+  <a class="tab"
+     {{if eq .ActiveTab "runs"}}aria-selected="true"{{end}}
+     href="?tab=runs">runs <span class="count">{{.RunCount}}</span></a>
 </nav>
 
 <section class="section">
@@ -160,6 +163,45 @@
       {{end}}
     {{else}}
       <p class="muted">no tasks defined.</p>
+    {{end}}
+
+  {{else if eq .ActiveTab "runs"}}
+    {{if .AllRuns}}
+      <p class="muted small">{{len .AllRuns}} run{{if ne (len .AllRuns) 1}}s{{end}} cite this spec via <code>from_task</code> or <code>spec_refs</code>. Most recent first.</p>
+      <div class="card">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>name</th>
+              <th>kind</th>
+              <th>status</th>
+              <th>from task</th>
+              <th>started</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .AllRuns}}
+              <tr>
+                <td><a href="/runs/{{.RunID}}"><code>{{.Name}}</code></a></td>
+                <td><span class="pill pill-{{.Kind}}">{{.Kind}}</span></td>
+                <td><span class="pill pill-{{.Status}}"><i class="dot"></i>{{.Status}}</span></td>
+                <td>
+                  {{if .FromTask}}
+                    <code class="muted small">{{.FromTask}}</code>
+                  {{else}}
+                    <span class="dim">—</span>
+                  {{end}}
+                </td>
+                <td><time class="muted small">{{.StartedAt}}</time></td>
+              </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+      <p class="muted small">Need broader context? <a href="/runs?spec={{.Spec.ID}}">View this list on the runs page</a> for sortable columns + filters.</p>
+    {{else}}
+      <p class="muted">no runs cite this spec yet.</p>
+      <p class="muted small">Start one from the <a href="?tab=tasks">tasks tab</a> (per-task recipes) or the <a href="/runs/new?from_task={{.Spec.ID}}.">runs page</a> (ad-hoc with attachment).</p>
     {{end}}
   {{end}}
 </section>

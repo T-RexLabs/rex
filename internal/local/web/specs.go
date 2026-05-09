@@ -132,6 +132,13 @@ type specDetailData struct {
 	// without naming a task — surfaced in the runs link in the
 	// header rather than per task.
 	UntaskedRuns []runRow
+	// AllRuns is the flat union of every run that cites this
+	// spec (per-task + untasked), sorted most-recent-first. Backs
+	// the dedicated "runs" tab; the per-task and untasked
+	// breakdowns above remain for the tasks tab.
+	AllRuns []runRow
+	// RunCount is the count rendered in the runs tab badge.
+	RunCount int
 }
 
 func loadSpecsList(opts Options) (specsListData, error) {
@@ -197,7 +204,7 @@ func loadSpecDetail(opts Options, id, tab string, hl *Highlighter) (specDetailDa
 		tab = "rendered"
 	}
 	switch tab {
-	case "rendered", "source", "tasks":
+	case "rendered", "source", "tasks", "runs":
 	default:
 		tab = "rendered"
 	}
@@ -221,6 +228,17 @@ func loadSpecDetail(opts Options, id, tab string, hl *Highlighter) (specDetailDa
 	if byTask, untasked, err := loadRunsByTaskID(opts.WorkspaceRoot, doc.Metadata.ID); err == nil {
 		d.RunsByTask = byTask
 		d.UntaskedRuns = untasked
+		// AllRuns is the merged + sorted union for the runs tab.
+		// Walk byTask in deterministic order so the tab's table
+		// stays stable across reloads.
+		merged := make([]runRow, 0)
+		for _, rs := range byTask {
+			merged = append(merged, rs...)
+		}
+		merged = append(merged, untasked...)
+		sortRunsDesc(merged)
+		d.AllRuns = merged
+		d.RunCount = len(merged)
 	}
 	return d, true, nil
 }

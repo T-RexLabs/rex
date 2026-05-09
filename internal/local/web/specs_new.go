@@ -44,6 +44,36 @@ type specTemplateOption struct {
 	IsDefault bool
 }
 
+// slugifyForSpecID converts a free-form display name into a
+// kebab-case spec id: lowercase ASCII letters + digits joined by
+// single hyphens, no leading/trailing hyphens, runs of
+// non-alphanumerics collapsed to one hyphen. Returns empty when
+// the input has no usable characters (e.g. only punctuation).
+//
+// "My Spec Name"      → "my-spec-name"
+// "audit & sync v2"   → "audit-sync-v2"
+// "  --weird---name " → "weird-name"
+// "🔥🔥🔥"            → "" (non-ASCII drops)
+func slugifyForSpecID(name string) string {
+	var b strings.Builder
+	prevHyphen := true // suppress leading hyphens
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+			prevHyphen = false
+		default:
+			if !prevHyphen {
+				b.WriteByte('-')
+				prevHyphen = true
+			}
+		}
+	}
+	out := b.String()
+	out = strings.TrimSuffix(out, "-")
+	return out
+}
+
 // handleSpecNew renders GET /specs/new — the create form.
 func (s *Server) handleSpecNew(w http.ResponseWriter, r *http.Request) {
 	d := s.loadSpecNewData("", "", "draft", "")
@@ -77,9 +107,17 @@ func (s *Server) handleSpecCreate(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, "spec_new.tmpl", d)
 	}
 
+	// When the user leaves id blank, derive it from name —
+	// "My Spec Name" → "my-spec-name". Saves a step on the
+	// happy path while preserving the option to type a custom
+	// id (e.g. when name has punctuation that doesn't sluggify
+	// cleanly).
 	if id == "" {
-		rerender("spec id is required")
-		return
+		id = slugifyForSpecID(name)
+		if id == "" {
+			rerender("spec id is required (or supply a name we can derive it from)")
+			return
+		}
 	}
 	if !specfmt.IsKebab(id) {
 		rerender(fmt.Sprintf("spec id %q is not kebab-case", id))

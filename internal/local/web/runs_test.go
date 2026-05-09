@@ -120,6 +120,36 @@ func TestRunsListPopulated(t *testing.T) {
 	}
 }
 
+// TestRunsListShowsFromTaskColumn covers the /runs table's
+// "from task" column added in Phase-C polish: a run whose
+// run.started carries from_task must surface that linkage as
+// a clickable spec link in its own column.
+func TestRunsListShowsFromTaskColumn(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t, "ws-runs-fromtask-col")
+	seedRunWithProvenance(t, root, "r-attached", "execution.dag-primitives", nil)
+	// A second run with no attachment to confirm the column
+	// renders the placeholder dash for ad-hoc rows.
+	seedRunEvents(t, root, "r-bare")
+
+	hs := newTestServer(t, root)
+	resp, err := http.Get(hs.URL + "/runs")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	body := readBody(t, resp)
+	for _, want := range []string{
+		`>from task</th>`,
+		`href="/specs/execution#dag-primitives"`,
+		`>execution.dag-primitives<`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/runs missing %q\n%s", want, body[:minInt(len(body), 2500)])
+		}
+	}
+}
+
 func TestRunDetailRendersHistory(t *testing.T) {
 	t.Parallel()
 

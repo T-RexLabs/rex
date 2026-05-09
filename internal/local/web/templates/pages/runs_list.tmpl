@@ -27,6 +27,7 @@
             <th data-sort-type="string" data-sort-default="asc">name</th>
             <th data-sort-type="string">kind</th>
             <th data-sort-type="string">status</th>
+            <th data-sort-type="string">from task</th>
             <th data-sort-type="date" data-sort-default="desc" aria-sort="descending">started</th>
             <th data-sort-type="date">finished</th>
             <th data-sort-type="number" class="col-numeric">duration</th>
@@ -38,6 +39,18 @@
             <td><a href="/runs/{{.RunID}}"><code>{{.Name}}</code></a></td>
             <td><span class="pill pill-{{.Kind}}">{{.Kind}}</span></td>
             <td><span class="pill pill-{{.Status}}"><i class="dot"></i>{{.Status}}</span></td>
+            <td>
+              {{if .FromTask}}
+                {{$parts := splitTaskRef .FromTask}}
+                {{if eq (len $parts) 2}}
+                  <a href="/specs/{{index $parts 0}}#{{index $parts 1}}" class="muted small"><code>{{.FromTask}}</code></a>
+                {{else}}
+                  <code class="muted small">{{.FromTask}}</code>
+                {{end}}
+              {{else}}
+                <span class="dim">—</span>
+              {{end}}
+            </td>
             <td><time>{{.StartedAt}}</time></td>
             <td>{{if .EndedAt}}<time>{{.EndedAt}}</time>{{else}}<span class="dim">—</span>{{end}}</td>
             <td class="col-numeric">{{if .Duration}}{{.Duration}}{{else}}<span class="dim">—</span>{{end}}</td>

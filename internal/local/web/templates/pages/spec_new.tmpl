@@ -20,26 +20,26 @@
     <form method="post" action="/specs/create" class="form">
       <div class="form-grid">
         <label class="field">
-          <span class="field-label">id <span class="req">*</span></span>
-          <input class="field-input mono"
-                 type="text"
-                 name="id"
-                 autofocus
-                 required
-                 pattern="[a-z][a-z0-9-]*"
-                 placeholder="my-feature"
-                 value="{{.ID}}">
-          <span class="field-hint">Kebab-case, lowercase. Becomes the filename.</span>
-        </label>
-
-        <label class="field">
-          <span class="field-label">human-readable name</span>
+          <span class="field-label">human-readable name <span class="req">*</span></span>
           <input class="field-input"
                  type="text"
                  name="name"
-                 placeholder="defaults to id"
+                 autofocus
+                 required
+                 placeholder="My new spec"
                  value="{{.Name}}">
-          <span class="field-hint">Optional. Defaults to the id.</span>
+          <span class="field-hint">Title shown across the UI. The filename is derived from this — "My New Spec" → <code>my-new-spec.yaml</code>. Override via the id field below if you need a specific slug.</span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">id <span class="muted small">(optional)</span></span>
+          <input class="field-input mono"
+                 type="text"
+                 name="id"
+                 pattern="[a-z][a-z0-9-]*"
+                 placeholder="auto from name"
+                 value="{{.ID}}">
+          <span class="field-hint">Kebab-case slug; becomes the filename + the prefix in every ACID under this spec. Leave blank to auto-derive from the name.</span>
         </label>
 
         <label class="field">
