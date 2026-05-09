@@ -87,6 +87,26 @@
 //	  time. Source is "default" (built-in body) or "override" (a
 //	  per-workspace .rex/HARNESS.md.tmpl was used).
 //
+// Auth + token lifecycle (identity-and-trust.AUTH.4 / TOKEN.5 / SEC.2):
+//
+//	auth.success            payload: AuthSuccessEvent
+//	  fires when /auth/verify accepts a signed challenge.
+//	auth.failure            payload: AuthFailureEvent
+//	  fires when /auth/verify rejects (bad signature, unknown
+//	  fingerprint, expired challenge, etc.). Reason field is
+//	  structured for filtering.
+//	token.issued            payload: TokenIssuedEvent
+//	  fires alongside auth.success. Carries the access-token id
+//	  hash + chain id; never the raw token value.
+//	token.refreshed         payload: TokenRefreshedEvent
+//	  fires from /auth/refresh on a successful rotation.
+//	token.revoked           payload: TokenRevokedEvent
+//	  fires from /auth/revoke. Reason: "explicit" | "replay" |
+//	  "expired_at_use".
+//	auth.replay_attempt     payload: AuthReplayAttemptEvent
+//	  fires when a refresh token is reused after rotation; the
+//	  chain is auto-revoked and TokenRevokedEvent fires too.
+//
 // Git-merged content sync (sync.GIT.1-4 — every rebase outcome
 // counts as a workspace state change for audit purposes):
 //

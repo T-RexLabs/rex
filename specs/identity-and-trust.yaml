@@ -44,8 +44,18 @@ tasks:
 
   - id: token-lifecycle
     description: Implement short-lived access tokens, refresh tokens, and the server-side revocation list
-    state: todo
+    state: done
+    note: "internal/central/server/auth.go now stores tokens by SHA-256 hash (TOKEN.2) — wire values never sit in memory after issuance returns. /auth/verify mints an (access, refresh) pair under a fresh chain id (TOKEN.1: 15min access, 30d refresh defaults). POST /auth/refresh exchanges the refresh for a new pair, invalidating the presented refresh on success (TOKEN.3 rotation). Reuse of a rotated refresh trips SEC.2's chain-revoke path: every token in the chain flips to revoked and audit emits auth.replay_attempt + token.revoked. POST /auth/revoke supports both single-token and entire-chain revocation; revocations land in an explicit list checked on every resolveAccessToken call (TOKEN.4). Audit emission (TOKEN.5) covers auth.success, auth.failure, token.issued, token.refreshed, token.revoked, auth.replay_attempt — wired via the new AuthAuditAppender option on Server. The dev-mode MemoryStore + nil appender path drops events silently; production --db Postgres deployments wire an eventlog-backed appender. Client-side auto-refresh on 401 is a follow-up; the existing handshake-on-401 path still works correctly, just slower than refresh."
     references: [TOKEN.1, TOKEN.2, TOKEN.3, TOKEN.4]
+    proof:
+      - kind: code
+        path: internal/central/server/auth.go
+      - kind: code
+        path: internal/central/server/server.go
+      - kind: code
+        path: internal/core/sync/proto/types.go
+      - kind: test
+        path: internal/central/server/auth_token_test.go
 
   - id: rbac-engine
     description: Implement the RBAC engine with role defaults and fine-grained scoping

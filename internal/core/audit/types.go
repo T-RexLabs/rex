@@ -66,6 +66,19 @@ const (
 	EventTypeSyncGitRebased    = "sync.git.rebased"
 	EventTypeSyncGitConflicted = "sync.git.conflicted"
 	EventTypeSyncGitResolved   = "sync.git.resolved"
+
+	// Auth + token lifecycle (identity-and-trust.AUTH.4 / TOKEN.5 /
+	// SEC.2). Every successful auth handshake, every failed attempt,
+	// and every rotation / revocation / replay event lands in the
+	// audit log so an operator can answer "who logged in when, who
+	// got denied, and was any token reused after rotation?" without
+	// re-running queries against the central node's request log.
+	EventTypeAuthSuccess       = "auth.success"
+	EventTypeAuthFailure       = "auth.failure"
+	EventTypeTokenIssued       = "token.issued"
+	EventTypeTokenRefreshed    = "token.refreshed"
+	EventTypeTokenRevoked      = "token.revoked"
+	EventTypeAuthReplayAttempt = "auth.replay_attempt"
 )
 
 // EventVersion is the schema version for audit-package event payloads.
@@ -96,6 +109,12 @@ var auditEventTypes = func() map[string]struct{} {
 		EventTypeSyncGitRebased:       {},
 		EventTypeSyncGitConflicted:    {},
 		EventTypeSyncGitResolved:      {},
+		EventTypeAuthSuccess:          {},
+		EventTypeAuthFailure:          {},
+		EventTypeTokenIssued:          {},
+		EventTypeTokenRefreshed:       {},
+		EventTypeTokenRevoked:         {},
+		EventTypeAuthReplayAttempt:    {},
 
 		// Runner events are audit-class per TYPES.1 ("every harness
 		// invocation start/end ... every workspace state change").
@@ -315,4 +334,78 @@ type SyncGitResolvedEvent struct {
 	Entity           string `json:"entity"`
 	Remote           string `json:"remote"`
 	ResolvedRevision string `json:"resolved_revision"`
+}
+
+// AuthSuccessEvent fires from POST /auth/verify when the client's
+// signature verifies and a token pair is issued (AUTH.4). Carries
+// the identity that authenticated and the requested scope; never
+// the token value itself.
+type AuthSuccessEvent struct {
+	Fingerprint string `json:"fingerprint"`
+	Scope       string `json:"scope"`
+	ChallengeID string `json:"challenge_id"`
+	Hostname    string `json:"hostname"`
+}
+
+// AuthFailureEvent fires when /auth/verify rejects a request
+// (AUTH.4). Reason is the structured reason — "bad_signature",
+// "unknown_fingerprint", "challenge_invalid", etc. The fingerprint
+// claimed by the client is included even when it doesn't match a
+// registered key, so an operator can correlate repeated failed
+// attempts back to a presented identity.
+type AuthFailureEvent struct {
+	Fingerprint string `json:"fingerprint,omitempty"`
+	Reason      string `json:"reason"`
+	ChallengeID string `json:"challenge_id,omitempty"`
+}
+
+// TokenIssuedEvent fires once per access+refresh pair issued via
+// /auth/verify (TOKEN.5). TokenID is the content-addressable hash
+// of the issued access token (16-char prefix); the raw value is
+// never logged. ChainID groups all tokens that descend from a
+// single original /auth/verify, so a replay-driven chain revoke
+// can mark them all in one query.
+type TokenIssuedEvent struct {
+	Fingerprint      string `json:"fingerprint"`
+	Scope            string `json:"scope"`
+	TokenID          string `json:"token_id"`
+	ChainID          string `json:"chain_id"`
+	ExpiresAt        string `json:"expires_at"`
+	RefreshExpiresAt string `json:"refresh_expires_at"`
+}
+
+// TokenRefreshedEvent fires from POST /auth/refresh on success
+// (TOKEN.5). NewTokenID identifies the freshly-issued access
+// token; OldTokenID identifies the refresh-token-prefix that the
+// rotation invalidated.
+type TokenRefreshedEvent struct {
+	Fingerprint string `json:"fingerprint"`
+	ChainID     string `json:"chain_id"`
+	OldTokenID  string `json:"old_token_id"`
+	NewTokenID  string `json:"new_token_id"`
+	ExpiresAt   string `json:"expires_at"`
+}
+
+// TokenRevokedEvent fires from POST /auth/revoke on success
+// (TOKEN.4 / TOKEN.5). Count records the number of tokens
+// invalidated (1 for a single-token revoke; the size of the chain
+// when All=true was passed). Reason hints at the trigger
+// ("explicit", "replay", "expired_at_use").
+type TokenRevokedEvent struct {
+	Fingerprint string `json:"fingerprint"`
+	ChainID     string `json:"chain_id,omitempty"`
+	TokenID     string `json:"token_id,omitempty"`
+	Count       int    `json:"count"`
+	Reason      string `json:"reason"`
+}
+
+// AuthReplayAttemptEvent fires when a refresh token is presented
+// after the rotation that already replaced it (SEC.2). Triggers a
+// chain-wide revoke and gets surfaced to the audit log so an
+// operator can see "this identity's chain was wiped because of a
+// replay at <time> from <hostname>".
+type AuthReplayAttemptEvent struct {
+	Fingerprint string `json:"fingerprint"`
+	ChainID     string `json:"chain_id"`
+	OldTokenID  string `json:"old_token_id"`
 }

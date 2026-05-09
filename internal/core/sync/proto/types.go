@@ -131,9 +131,54 @@ type AuthVerifyRequest struct {
 }
 
 // AuthVerifyResponse is the success body of POST /auth/verify.
+//
+// RefreshToken + RefreshExpiresAt land alongside the access token
+// per identity-and-trust.TOKEN.1. Clients hold both: the access
+// token authorises requests until ExpiresAt; the refresh token
+// exchanges for a fresh access+refresh pair via POST /auth/refresh.
+// Refresh tokens are single-use — rotation invalidates the old
+// refresh on success (TOKEN.3) and a reuse attempt revokes the
+// entire chain (SEC.2).
 type AuthVerifyResponse struct {
-	AccessToken string    `json:"access_token"`
-	ExpiresAt   time.Time `json:"expires_at"`
+	AccessToken      string    `json:"access_token"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	RefreshToken     string    `json:"refresh_token,omitempty"`
+	RefreshExpiresAt time.Time `json:"refresh_expires_at,omitempty"`
+}
+
+// AuthRefreshRequest is the body of POST /auth/refresh — the
+// rotation surface for TOKEN.3.
+type AuthRefreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// AuthRefreshResponse mirrors AuthVerifyResponse: the new access
+// token + a freshly-rotated refresh token. The presented refresh
+// token is invalidated on the server before the response writes;
+// any subsequent request with it triggers SEC.2's chain-revoke.
+type AuthRefreshResponse struct {
+	AccessToken      string    `json:"access_token"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	RefreshToken     string    `json:"refresh_token"`
+	RefreshExpiresAt time.Time `json:"refresh_expires_at"`
+}
+
+// AuthRevokeRequest is the body of POST /auth/revoke. Either field
+// may be present; both forms are equivalent except in their
+// audit-log shape:
+//   - Token identifies a single token to revoke (access or refresh).
+//   - All=true revokes every token in the caller's chain — the
+//     "log out everywhere" affordance.
+type AuthRevokeRequest struct {
+	Token string `json:"token,omitempty"`
+	All   bool   `json:"all,omitempty"`
+}
+
+// AuthRevokeResponse acknowledges a successful revoke. Counts is
+// the number of tokens invalidated (1 for a single Token; the size
+// of the chain for All=true).
+type AuthRevokeResponse struct {
+	Count int `json:"count"`
 }
 
 // ChallengeSigningInput is the canonical struct the client signs

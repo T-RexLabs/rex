@@ -275,10 +275,10 @@ func TestSyncEventsRejectsRevokedToken(t *testing.T) {
 	srv, hs, privs := newSignedTestServer(t, "alice")
 	token := issueTestToken(t, srv, privs["alice"])
 
-	// Revoke directly via the auth state (revocation API surface
-	// will land alongside refresh-token rotation).
+	// Revoke directly via the auth state. Tokens are stored by
+	// hash (TOKEN.2) so look up via hashToken on the wire value.
 	srv.auth.mu.Lock()
-	srv.auth.tokens[token].revoked = true
+	srv.auth.tokens[hashToken(token)].revoked = true
 	srv.auth.mu.Unlock()
 
 	req, _ := http.NewRequest(http.MethodPost, hs.URL+"/sync/events", bytes.NewReader([]byte(`{}`)))

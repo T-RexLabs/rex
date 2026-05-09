@@ -54,22 +54,38 @@ type Options struct {
 	// existing tests don't need a logger fixture; cmd/rex-central
 	// supplies an os.Stdout JSON handler in production.
 	Logger *slog.Logger
+	// AuthAudit is the optional appender for token-lifecycle audit
+	// events (identity-and-trust.TOKEN.5). Nil disables emission;
+	// production deployments wire one up against the central event
+	// log.
+	AuthAudit AuthAuditAppender
 }
 
 // Server bundles the central-node HTTP surface and the state it
 // serves. A Server is safe for concurrent use; the underlying Store
 // and GitStore each own their own synchronization.
 type Server struct {
-	store    Store
-	gitStore GitStore
-	keypair  identity.Keypair
-	actor    identity.Actor
-	keystore *Keystore
-	auth     *authState
-	mux      *http.ServeMux
-	stateRes proto.StateResponse
-	metrics  *Metrics
-	log      *slog.Logger
+	store         Store
+	gitStore      GitStore
+	keypair       identity.Keypair
+	actor         identity.Actor
+	keystore      *Keystore
+	auth          *authState
+	auditAppender AuthAuditAppender
+	mux           *http.ServeMux
+	stateRes      proto.StateResponse
+	metrics       *Metrics
+	log           *slog.Logger
+}
+
+// AuthAuditAppender is the optional interface a Server consumer
+// supplies so auth.go can route token-lifecycle events to the
+// central audit log. The MemoryStore dev/test path leaves it nil
+// (no audit-log file lives in memory); production --db Postgres
+// configurations supply an appender that writes to events.log via
+// the eventlog package.
+type AuthAuditAppender interface {
+	Append(ctx context.Context, eventType string, payload any) error
 }
 
 // New returns a Server ready to serve via Handler().
@@ -106,13 +122,14 @@ func New(opts Options) (*Server, error) {
 		logger = NewLogger(LogConfig{}) // discards by default
 	}
 	s := &Server{
-		store:    store,
-		gitStore: gitStore,
-		keypair:  kp,
-		actor:    central,
-		keystore: keystore,
-		auth:     newAuthState(),
-		mux:      http.NewServeMux(),
+		store:         store,
+		gitStore:      gitStore,
+		keypair:       kp,
+		actor:         central,
+		keystore:      keystore,
+		auth:          newAuthState(),
+		auditAppender: opts.AuthAudit,
+		mux:           http.NewServeMux(),
 		stateRes: proto.StateResponse{
 			Fingerprint:     kp.Fingerprint().String(),
 			Actor:           central.String(),
@@ -132,6 +149,8 @@ func New(opts Options) (*Server, error) {
 	s.mux.HandleFunc("GET /sync/git/{entity...}", s.handleGitPull)
 	s.mux.HandleFunc(authChallengePath, s.handleAuthChallenge)
 	s.mux.HandleFunc(authVerifyPath, s.handleAuthVerify)
+	s.mux.HandleFunc(authRefreshPath, s.handleAuthRefresh)
+	s.mux.HandleFunc(authRevokePath, s.handleAuthRevoke)
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/ready", s.handleReady)
 	s.mux.HandleFunc("/metrics", s.handleMetrics)

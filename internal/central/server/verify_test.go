@@ -18,6 +18,13 @@ import (
 )
 
 func newSignedTestServer(t *testing.T, keyHandles ...string) (*Server, *httptest.Server, map[string]ed25519.PrivateKey) {
+	return newSignedTestServerWithAudit(t, nil, keyHandles...)
+}
+
+// newSignedTestServerWithAudit is the audit-aware sibling. Wires
+// the supplied AuthAuditAppender so token-lifecycle tests can
+// assert which events fired.
+func newSignedTestServerWithAudit(t *testing.T, audit AuthAuditAppender, keyHandles ...string) (*Server, *httptest.Server, map[string]ed25519.PrivateKey) {
 	t.Helper()
 	ks := NewKeystore()
 	privs := make(map[string]ed25519.PrivateKey, len(keyHandles))
@@ -31,7 +38,7 @@ func newSignedTestServer(t *testing.T, keyHandles ...string) (*Server, *httptest
 		}
 		privs[h] = priv
 	}
-	srv, err := New(Options{Keystore: ks})
+	srv, err := New(Options{Keystore: ks, AuthAudit: audit})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -102,7 +109,7 @@ func issueTestToken(t *testing.T, srv *Server, priv ed25519.PrivateKey) string {
 	if err != nil {
 		t.Fatalf("issueToken: %v", err)
 	}
-	return tok.value
+	return tok.legacyValue
 }
 
 func TestPushAcceptsSignedRecord(t *testing.T) {
