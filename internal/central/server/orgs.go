@@ -112,6 +112,38 @@ func (s *PostgresStore) ListMemberships(ctx context.Context, fingerprint string)
 	return out, rows.Err()
 }
 
+// RoleFor returns the role string the fingerprint holds in orgID,
+// or "" when no membership exists. Used by the RBAC gate to
+// resolve (org, identity) → role on the request hot path; the
+// interface is purposefully scalar so the lookup is one indexed
+// row read.
+func (s *PostgresStore) RoleFor(ctx context.Context, orgID, fingerprint string) (string, error) {
+	if orgID == "" || fingerprint == "" {
+		return "", errors.New("server: RoleFor requires orgID + fingerprint")
+	}
+	var role string
+	err := s.pool.QueryRow(ctx,
+		`SELECT role FROM org_memberships WHERE org_id = $1 AND fingerprint = $2`,
+		orgID, fingerprint,
+	).Scan(&role)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", fmt.Errorf("server: role for (%s, %s): %w", orgID, fingerprint, err)
+	}
+	return role, nil
+}
+
+// RoleResolver is the optional interface a Store implements so the
+// RBAC gate can resolve a role for a (orgID, fingerprint) pair on
+// the request hot path. PostgresStore implements it; MemoryStore
+// does not, which keeps the in-memory dev/test path RBAC-bypass
+// (matches the keystore-empty bypass for signature verification).
+type RoleResolver interface {
+	RoleFor(ctx context.Context, orgID, fingerprint string) (string, error)
+}
+
 // ListOrgs returns every org the central knows about. The order
 // is by name. Used by future admin surfaces (rex-central org
 // list, the central web UI's /orgs page); nothing on the auth

@@ -49,8 +49,20 @@ tasks:
 
   - id: rbac-engine
     description: Implement the RBAC engine with role defaults and fine-grained scoping
-    state: todo
+    state: done
+    note: "internal/core/rbac is the pure-Go policy engine: a closed `<resource-type>.<action>` permission catalog (RBAC.3), three default roles admin/member/viewer with predefined permission sets (RBAC.2), Constraint-based fine-grained scoping for workspace/harness/tool/time-window narrowing (RBAC.4 + RBAC.4.1 + RBAC.4.2), and an `Allow(req, grants)` function that returns a typed Decision (RBAC.1). On the server side, PostgresStore implements RoleResolver via the existing org_memberships.role column; Server.requirePermission threads (orgID, fingerprint) through the resolver, builds a Grant, and gates the four sync endpoints — sync.push for POST /sync/events, sync.pull for GET /sync/events, git.push for POST /sync/git, git.pull for GET /sync/git/{entity}. MemoryStore (dev/test) has no resolver so the gate passes through, matching the keystore-empty signature-verification bypass. RBAC.6 (audit emission for grant/revoke changes) and a custom-grant admin surface are deferred until central-ui-routes ships — there is no API to create non-default grants in v1."
     references: [RBAC.1, RBAC.2, RBAC.3, RBAC.4]
+    proof:
+      - kind: code
+        path: internal/core/rbac/rbac.go
+      - kind: test
+        path: internal/core/rbac/rbac_test.go
+      - kind: code
+        path: internal/central/server/rbac.go
+      - kind: code
+        path: internal/central/server/orgs.go
+      - kind: test
+        path: internal/central/server/rbac_test.go
 
   - id: org-model-central
     description: "Implement orgs, org_memberships, and org_invites as central-only entities; seed a default org on first multi-tenant migration so existing single-tenant deployments keep working until BOOT.* ships real org creation"

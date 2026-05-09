@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/asabla/rex/internal/core/identity"
+	"github.com/asabla/rex/internal/core/rbac"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
 	"github.com/asabla/rex/internal/core/sync/proto"
 )
@@ -220,6 +221,28 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		if orgID != "" {
 			r = r.WithContext(WithOrgID(r.Context(), orgID))
+		}
+	}
+
+	// RBAC gate (identity-and-trust.RBAC.1). Pulls the role for
+	// (orgID, fingerprint) from the resolver and asks rbac.Allow.
+	// Bypassed when the store has no RoleResolver (MemoryStore /
+	// dev mode); in production --db Postgres + --keys both load
+	// and the gate fires.
+	if fingerprint != "" {
+		orgID := OrgIDFromContext(r.Context())
+		var action rbac.Permission
+		switch r.Method {
+		case http.MethodGet:
+			action = rbac.PermSyncPull
+		case http.MethodPost:
+			action = rbac.PermSyncPush
+		}
+		if action != "" {
+			if err := s.requirePermission(r.Context(), fingerprint, orgID, action, "", "", ""); err != nil {
+				s.writeRBACDenied(w, r, err)
+				return
+			}
 		}
 	}
 

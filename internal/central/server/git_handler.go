@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/asabla/rex/internal/core/identity"
+	"github.com/asabla/rex/internal/core/rbac"
 	"github.com/asabla/rex/internal/core/storage/synccat"
 	"github.com/asabla/rex/internal/core/sync/proto"
 )
@@ -58,6 +59,16 @@ func (s *Server) handleGitPush(w http.ResponseWriter, r *http.Request) {
 	if err := requireGitMergedPath(req.Entity); err != nil {
 		writeError(w, http.StatusBadRequest, proto.ErrCodeWrongCategory, err.Error())
 		return
+	}
+
+	// RBAC gate (identity-and-trust.RBAC.1). Skipped in dev mode
+	// (no keystore → no fingerprint to authorize against).
+	if pusher != (identity.Fingerprint{}) {
+		orgID := OrgIDFromContext(r.Context())
+		if err := s.requirePermission(r.Context(), pusher.String(), orgID, rbac.PermGitPush, "", "", ""); err != nil {
+			s.writeRBACDenied(w, r, err)
+			return
+		}
 	}
 
 	// Signature verification (sync.SEC.1). Skipped only when the
@@ -131,11 +142,14 @@ func (s *Server) handleGitPush(w http.ResponseWriter, r *http.Request) {
 // Returns proto.GitPullResponse on success or 404 when the entity has
 // never been pushed.
 func (s *Server) handleGitPull(w http.ResponseWriter, r *http.Request) {
+	var puller identity.Fingerprint
 	if !s.keystore.Empty() {
-		if _, err := s.requireToken(r); err != nil {
+		fp, err := s.requireToken(r)
+		if err != nil {
 			writeError(w, http.StatusUnauthorized, proto.ErrCodeUnauthorized, err.Error())
 			return
 		}
+		puller = fp
 	}
 
 	path := r.PathValue("entity")
@@ -147,6 +161,22 @@ func (s *Server) handleGitPull(w http.ResponseWriter, r *http.Request) {
 	if err := requireGitMergedPath(path); err != nil {
 		writeError(w, http.StatusBadRequest, proto.ErrCodeWrongCategory, err.Error())
 		return
+	}
+
+	// RBAC gate (RBAC.1). The pull surface needs git.pull; the gate
+	// short-circuits in dev mode (no keystore → no fingerprint).
+	if puller != (identity.Fingerprint{}) {
+		// /sync/git/{entity...} doesn't carry an org segment; the
+		// pull's org context comes from the puller's single-org
+		// membership (or X-Rex-Org for multi-org identities, set
+		// by the same middleware that handles /sync/events).
+		orgID, _, err := s.resolveOrgForRequest(r, puller.String())
+		if err == nil && orgID != "" {
+			if err := s.requirePermission(r.Context(), puller.String(), orgID, rbac.PermGitPull, "", "", ""); err != nil {
+				s.writeRBACDenied(w, r, err)
+				return
+			}
+		}
 	}
 
 	rec, err := s.gitStore.Get(r.Context(), path)
