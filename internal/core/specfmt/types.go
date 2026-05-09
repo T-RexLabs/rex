@@ -41,11 +41,23 @@ type Document struct {
 
 // Metadata is the per-spec identity block (spec-format.META).
 type Metadata struct {
-	ID        string `yaml:"id"`
-	Name      string `yaml:"name"`
-	State     string `yaml:"state"`
-	CreatedAt string `yaml:"created_at,omitempty"`
-	UpdatedAt string `yaml:"updated_at,omitempty"`
+	ID   string `yaml:"id"`
+	Name string `yaml:"name"`
+	// State enumerates the document lifecycle (META.3.1):
+	// draft / active / accepted / archived.
+	State string `yaml:"state"`
+	// Owners lists user handles per META.6. Promoted from
+	// extra.owners — every spec uses this in practice; lifting
+	// it lets `rex spec list --owner <handle>` and the web UI
+	// filter by ownership without conventional-key inspection.
+	Owners []string `yaml:"owners,omitempty"`
+	// RelatedSpecs lists the spec ids this document is
+	// meaningfully connected to per META.7. Promoted from
+	// extra.related_specs. Validator resolves each id against
+	// the workspace's known specs and warns on dangling ids.
+	RelatedSpecs []string `yaml:"related_specs,omitempty"`
+	CreatedAt    string   `yaml:"created_at,omitempty"`
+	UpdatedAt    string   `yaml:"updated_at,omitempty"`
 }
 
 // Task is one work item embedded in a spec (spec-format.TASK).
@@ -55,11 +67,128 @@ type Task struct {
 	State       string   `yaml:"state"`
 	References  []string `yaml:"references,omitempty"`
 	AssignedTo  string   `yaml:"assigned_to,omitempty"`
+	// Note records context the title and description don't
+	// capture (spec-format.TASK.7): rationale, deferred
+	// sub-decisions, references to commits or amendments. Free
+	// form; validator does not check content.
+	Note string `yaml:"note,omitempty"`
+	// Proof is the optional implementation-evidence block
+	// (spec-format.TASK.8). Two forms: a free-form string
+	// (author scratchpad) or a list of structured ProofEntry
+	// items the validator and `rex spec verify` mechanically
+	// check. Tasks in `state: done` MUST carry the structured
+	// form per VAL.7.
+	Proof Proof `yaml:"proof,omitempty"`
 	// Run is an optional recipe describing how to launch a run that
 	// implements this task (spec-format.TASK.6 / spec-format.RECIPE).
 	// Nil means the task has no canonical run; UI surfaces hide the
 	// "Run this task" affordance for it.
 	Run *Recipe `yaml:"run,omitempty"`
+}
+
+// ProofKind enumerates the v1 recognised proof kinds
+// (spec-format.PROOF.1). Unknown kinds are surfaced by the
+// validator per the strict/lenient split.
+type ProofKind string
+
+const (
+	ProofKindCode   ProofKind = "code"
+	ProofKindTest   ProofKind = "test"
+	ProofKindRun    ProofKind = "run"
+	ProofKindCommit ProofKind = "commit"
+	ProofKindSpec   ProofKind = "spec"
+)
+
+// ProofEntry is one structured implementation-evidence claim
+// (spec-format.PROOF). Fields outside the entry's Kind are
+// ignored at resolution time but validated for shape so typos
+// don't slip through.
+type ProofEntry struct {
+	// Kind discriminates the field set. Required.
+	Kind ProofKind `yaml:"kind"`
+
+	// kind: code | test
+	Path string `yaml:"path,omitempty"`
+
+	// kind: test (optional Go test function name)
+	Name string `yaml:"name,omitempty"`
+
+	// kind: run
+	RunID string `yaml:"run_id,omitempty"`
+
+	// kind: commit
+	Ref string `yaml:"ref,omitempty"`
+
+	// kind: spec
+	ACID string `yaml:"acid,omitempty"`
+}
+
+// Proof is the union value carried by Task.Proof. Exactly one
+// of Text or Entries is populated after a successful decode.
+// IsEmpty reports the unset state. The validator cares about
+// which form is present so authors can't sneak a free-form
+// string past `state: done` (VAL.7).
+type Proof struct {
+	// Text holds the free-form short form. Empty when Entries
+	// is set or when the field is absent.
+	Text string
+	// Entries holds the structured list form. Nil when Text is
+	// set or when the field is absent.
+	Entries []ProofEntry
+}
+
+// IsEmpty reports whether neither form was set on disk.
+func (p Proof) IsEmpty() bool {
+	return p.Text == "" && len(p.Entries) == 0
+}
+
+// IsZero hooks into yaml.v3's omitempty so absent Proof blocks
+// don't round-trip back as `proof: null`.
+func (p Proof) IsZero() bool { return p.IsEmpty() }
+
+// IsStructured reports whether the structured list form was
+// used (non-empty Entries). Used by VAL.7 to enforce the
+// done-state rule.
+func (p Proof) IsStructured() bool {
+	return len(p.Entries) > 0
+}
+
+// UnmarshalYAML accepts the short-string form and the
+// structured-list form per spec-format.TASK.8. The two are
+// mutually exclusive on a single task.
+func (p *Proof) UnmarshalYAML(node *yaml.Node) error {
+	switch node.Kind {
+	case yaml.ScalarNode:
+		p.Text = node.Value
+		return nil
+	case yaml.SequenceNode:
+		entries := make([]ProofEntry, 0, len(node.Content))
+		for i, item := range node.Content {
+			var e ProofEntry
+			if err := item.Decode(&e); err != nil {
+				return fmt.Errorf("specfmt: proof[%d]: %w", i, err)
+			}
+			entries = append(entries, e)
+		}
+		p.Entries = entries
+		return nil
+	case 0:
+		// empty/absent — leave zero value.
+		return nil
+	}
+	return fmt.Errorf("specfmt: proof must be a string or a list, got node kind %d", node.Kind)
+}
+
+// MarshalYAML emits the short string when only Text is set,
+// the list form when Entries is set, and nothing when empty.
+func (p Proof) MarshalYAML() (any, error) {
+	if p.IsEmpty() {
+		return nil, nil
+	}
+	if p.IsStructured() {
+		return p.Entries, nil
+	}
+	return p.Text, nil
 }
 
 // RecipeKind enumerates the v1 recipe kinds (spec-format.RECIPE.1).

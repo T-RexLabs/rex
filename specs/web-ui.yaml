@@ -4,8 +4,10 @@ metadata:
   id: web-ui
   name: Web UIs (local + central)
   state: draft
+  owners: []
+  related_specs: [overview, cli, execution, search, audit, central-node, sync]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-04T01:00:00Z
+  updated_at: 2026-05-09T00:00:00Z
 
 description: |
   Rex ships two web UIs from day one: a local UI served by the local
@@ -28,6 +30,9 @@ tasks:
     description: "Set up the Go HTML template engine, base layout, and the htmx + SSE wiring"
     state: done
     references: [STACK.1, STACK.2, STACK.3]
+    proof:
+      - kind: code
+        path: internal/local/web/
 
   - id: shared-component-lib
     description: "Build the small set of shared components used in both UIs (cards, tables, run-transcript, ACID badge, draft indicator)"
@@ -39,6 +44,11 @@ tasks:
     state: done
     note: "All six routes ship per the (amended-2026-05-08) flat shape — LOCAL.1.1 captures the v1 single-workspace binding rationale; the original /workspaces/<id>/... prefix is post-v1."
     references: [LOCAL.1, LOCAL.2, LOCAL.3, LOCAL.4, LOCAL.5, LOCAL.6]
+    proof:
+      - kind: code
+        path: internal/local/web/handlers.go
+      - kind: code
+        path: internal/local/web/templates/
 
   - id: central-ui-routes
     description: "Implement the central UI route set: everything in local + organization, members, RBAC, IdP/SSO (placeholder), encryption keys"
@@ -49,6 +59,11 @@ tasks:
     description: "Implement the live-run-watching SSE endpoint and the corresponding HTML view that streams transcript and permission prompts"
     state: done
     references: [LIVE.1, LIVE.2, LIVE.3]
+    proof:
+      - kind: code
+        path: internal/local/web/frame_view.go
+      - kind: code
+        path: internal/local/web/static/htmx-ext-sse.js
 
   - id: search-ui
     description: "Implement the search UI with the scope picker (current workspace / all local / specific remote) and saved searches"
@@ -150,8 +165,6 @@ constraints:
       "5": "No per-tool/per-time-window RBAC scoping UI in v1; the data model supports it but the UI ships in a later milestone"
 
 extra:
-  owners: []
-  related_specs: [overview, cli, execution, search, audit, central-node, sync]
   notes: |
     The "permission prompt while no user is watching" UX (run continues
     paused, eventual timeout) is owned by execution.yaml PERM.3 — the web

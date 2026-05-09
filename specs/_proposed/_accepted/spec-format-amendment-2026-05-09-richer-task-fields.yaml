@@ -1,0 +1,265 @@
+# Spec-format extension — richer task fields + state-machine
+# validation.
+#
+# Status: accepted.
+# Folded: 2026-05-09 — spec-format.yaml gained TASK.7+8+8.1, META.6+7, PROOF.* component, VAL.6-9, plus two new tasks.
+#
+# Goals (per the 2026-05-09 design discussion):
+#
+#   1. Make spec scaffolding more declarative so authors don't
+#      have to discover every field by reading the format spec.
+#   2. Replace "harness asserts done" with code-validated
+#      transitions: a task can't reach `state: done` without
+#      verifiable evidence the validator (not the harness)
+#      checks.
+#   3. Tighten spec/run linkage so existing forward citations
+#      (RunStartedEvent.SpecRefs / FromTask) are matched by
+#      structured back-references inside the spec itself.
+#   4. Close other small gaps observed across the 14 real specs
+#      (filename ↔ id, deprecated references, owners convention).
+#
+# Migration: no production users — existing specs are backfilled
+# in the same PR. No `spec_version` bump (additive optional
+# fields per `COMPAT.3`).
+#
+# What this amendment declares:
+#
+#   - TASK.7 — `tasks[].note` is a recognised optional string
+#     field (today the codebase uses it on 9+ tasks but the
+#     schema silently drops it).
+#
+#   - TASK.8 — `tasks[].proof` is a new optional field that
+#     carries either a free-form string (author scratchpad) or
+#     a list of structured ProofEntry items (verifiable claims).
+#     The structured form anchors `state: done` against on-disk
+#     evidence the validator can check.
+#
+#   - PROOF — a new component defining the structured entry
+#     shape (kind / path / name / run_id / ref / acid).
+#
+#   - META.6 — `metadata.owners` is a list of user handles,
+#     promoted from extra.owners (currently used by every spec
+#     by convention).
+#
+#   - META.7 — `metadata.related_specs` is a list of spec ids,
+#     promoted from extra.related_specs (currently used by
+#     every spec by convention).
+#
+#   - VAL.6 — the validator enforces filename ↔ metadata.id
+#     match (specs/foo.yaml must have metadata.id: foo).
+#
+#   - VAL.7 — the validator rejects `state: done` tasks that
+#     lack a proof entry. Strict mode requires the structured
+#     form (the free-form string is author scratchpad and
+#     unverifiable). Lenient mode accepts either form.
+#
+#   - VAL.8 — the validator rejects `state: blocked` tasks that
+#     lack a non-empty `note` (must explain the block).
+#
+#   - VAL.9 — the validator warns when a task's `references`
+#     cite a requirement marked `deprecated: true`.
+#
+#   - extra.owners + extra.related_specs are retained as
+#     conventional extra keys (backward-compatible read path)
+#     but the validator surfaces a warning recommending the
+#     metadata-level fields.
+
+target: spec-format
+amendment_kind: additive
+
+changes:
+  - kind: add-component
+    component_id: PROOF
+    name: Structured proof of task implementation
+    rationale: |
+      A task with `state: done` declares a finished unit of
+      work. Today that declaration is unverifiable: a harness
+      may flip the bit without producing evidence. The PROOF
+      component defines the schema of structured proof
+      entries so `rex spec verify` can mechanically check
+      every `done` task's claim against the workspace.
+    requirements:
+      "1": |
+        A proof entry is a YAML mapping with a required `kind`
+        field. Recognised v1 kinds are `code`, `test`, `run`,
+        `commit`, and `spec`. Unknown kinds are an error in
+        strict mode and a warning in lenient mode.
+      "2": |
+        `kind: code` and `kind: test` entries have a required
+        `path` field (workspace-relative). The validator
+        requires the path to exist on disk; missing paths are
+        a strict error in both modes.
+      "2.1": |
+        `kind: test` entries may include an optional `name`
+        field naming a Go test function (e.g. `TestRunVersion`).
+        When present, `rex spec verify` greps the test file
+        for `func <name>(`; a missing function is a strict
+        error and a lenient warning.
+      "3": |
+        `kind: run` entries have a required `run_id` field
+        (a valid HLC run id). The validator parses the
+        format. `rex spec verify` looks the run up in the
+        workspace events.log; "not found locally" is a
+        warning in both modes (a fresh clone may not have
+        synced the run yet).
+      "4": |
+        `kind: commit` entries have a required `ref` field
+        (any string git rev-parses). `rex spec verify` runs
+        `git cat-file -e <ref>`; missing refs are a strict
+        error and a lenient warning.
+      "5": |
+        `kind: spec` entries have a required `acid` field
+        pointing at any requirement in the workspace. The
+        validator resolves the ACID through the existing
+        ACID resolver; dangling references are a strict
+        error and a lenient warning. This kind covers tasks
+        whose proof is a recorded decision rather than code
+        (e.g. an architecture choice).
+      "6": |
+        Proof entries are read-only references — the validator
+        never mutates them. The on-disk evidence is the source
+        of truth; the proof block is the index into it.
+
+  - kind: add-requirement
+    component_id: TASK
+    requirement_id: "7"
+    text: |
+      A task may carry an optional `note` field (free-form
+      Markdown string) that records context the task title
+      and description don't capture: rationale, deferred
+      sub-decisions, references to commits or amendments. The
+      field is purely informational — it is not validated for
+      content. v1 explicitly admits this field because the
+      codebase has used it informally on 9+ tasks since the
+      build-order push; this requirement promotes the
+      convention to the schema.
+
+  - kind: add-requirement
+    component_id: TASK
+    requirement_id: "8"
+    text: |
+      A task may carry an optional `proof` field whose value
+      is either a free-form string OR a list of structured
+      proof entries (see the PROOF component). The two forms
+      are mutually exclusive on a single task. The string
+      form is an author scratchpad; the structured form is
+      the verifiable claim `rex spec verify` checks.
+
+  - kind: add-requirement
+    component_id: TASK
+    requirement_id: "8.1"
+    text: |
+      A task with `state: done` MUST carry a structured
+      `proof` (non-empty list) per VAL.7. The free-form
+      string form is rejected on `done` tasks in strict mode
+      (downgraded to a warning in lenient mode). Tasks in
+      `todo`, `in_progress`, or `blocked` may use either
+      form or none.
+
+  - kind: add-requirement
+    component_id: META
+    requirement_id: "6"
+    text: |
+      `metadata.owners` is an optional list of user handles
+      (strings). Promotes the existing `extra.owners` convention
+      to a first-class metadata field. Tooling (`rex spec list
+      --owner <handle>`, web UI ownership filters) reads this
+      field directly.
+
+  - kind: add-requirement
+    component_id: META
+    requirement_id: "7"
+    text: |
+      `metadata.related_specs` is an optional list of spec
+      ids the document is meaningfully connected to.
+      Promotes the existing `extra.related_specs` convention.
+      The validator resolves each id against the workspace's
+      known specs and warns on dangling ids.
+
+  - kind: add-requirement
+    component_id: VAL
+    requirement_id: "6"
+    text: |
+      The validator checks that a spec's filename matches
+      its `metadata.id`: `specs/<id>.yaml` and metadata.id
+      must agree. Mismatches are a strict error (lenient
+      warning). Files inside `specs/_proposed/` and
+      `specs/_proposed/_accepted/` are exempt because they
+      are amendment proposals, not specs.
+
+  - kind: add-requirement
+    component_id: VAL
+    requirement_id: "7"
+    text: |
+      A task in `state: done` without a structured `proof`
+      list is a strict-mode error and lenient-mode warning.
+      Pure-string proof on a done task is downgraded to a
+      lenient-only warning (per TASK.8.1) — strict mode
+      requires the structured form. Per-entry checks (path
+      existence, ACID resolution, etc.) are run as
+      additional rules per the PROOF component.
+
+  - kind: add-requirement
+    component_id: VAL
+    requirement_id: "8"
+    text: |
+      A task in `state: blocked` without a non-empty `note`
+      field is a strict-mode error and lenient-mode warning.
+      The note must explain the blocker so the task is
+      actionable when it unblocks.
+
+  - kind: add-requirement
+    component_id: VAL
+    requirement_id: "9"
+    text: |
+      The validator emits a warning (both modes) when a
+      task's `references` list cites a requirement whose
+      `deprecated` flag is true. References to deprecated
+      requirements are a real bug class — typically the
+      task should be re-pointed at the requirement's
+      `replaced_by` ACID — but a hard error would force
+      backfill of every active spec in lockstep with any
+      deprecation.
+
+  - kind: add-task
+    task_id: extend-task-fields-and-state-validation
+    description: |
+      Add the new task and metadata fields (note, proof, owners,
+      related_specs) plus the PROOF component to the Go types,
+      validator, and scaffold. Implement filename match,
+      done-state proof requirement, blocked-state note
+      requirement, deprecated-reference warnings.
+    state: in_progress
+    references:
+      - TASK.7
+      - TASK.8
+      - TASK.8.1
+      - META.6
+      - META.7
+      - PROOF.1
+      - PROOF.2
+      - PROOF.2.1
+      - PROOF.3
+      - PROOF.4
+      - PROOF.5
+      - PROOF.6
+      - VAL.6
+      - VAL.7
+      - VAL.8
+      - VAL.9
+
+  - kind: add-task
+    task_id: implement-spec-verify-command
+    description: |
+      Implement `rex spec verify [<id>...]` — walks every task's
+      structured `proof` entries and exercises each (path
+      exists, test function present, run_id in events.log,
+      commit reachable, ACID resolves). Distinct from
+      `rex spec validate` which remains pure-schema.
+    state: todo
+    references:
+      - PROOF.2
+      - PROOF.2.1
+      - PROOF.3
+      - PROOF.4
+      - PROOF.5

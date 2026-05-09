@@ -147,6 +147,17 @@ var recognizedPermissionScopes = map[PermissionScope]struct{}{
 	PermissionScopeUnrestricted: {},
 }
 
+// recognizedProofKinds enumerates spec-format.PROOF.1's v1 kinds.
+// Anything outside the set is reported per the strict/lenient split
+// used elsewhere (TASK.6.1 / VAL.2).
+var recognizedProofKinds = map[ProofKind]struct{}{
+	ProofKindCode:   {},
+	ProofKindTest:   {},
+	ProofKindRun:    {},
+	ProofKindCommit: {},
+	ProofKindSpec:   {},
+}
+
 // recognizedPromptTokens are the substitution tokens spec-format.PROMPT.1
 // blesses. The set must stay small — anything beyond simple metadata is
 // out of scope per the amendment.
@@ -301,6 +312,144 @@ func (v *validator) checkTasks(doc *Document) {
 		if t.Run != nil {
 			v.checkRecipe(base+".run", i, t.Run)
 		}
+
+		v.checkProof(base, i, t)
+		v.checkTaskStateRules(base, i, t)
+	}
+}
+
+// checkProof validates each structured proof entry's shape per
+// the PROOF component. It does NOT check disk evidence (path
+// existence, run_id presence in events.log, commit reachability,
+// ACID resolution against the workspace) — those are
+// `rex spec verify`'s job, not the schema validator's.
+func (v *validator) checkProof(base string, taskIdx int, t Task) {
+	if !t.Proof.IsStructured() {
+		return
+	}
+	for j, e := range t.Proof.Entries {
+		ePath := fmt.Sprintf("%s.proof[%d]", base, j)
+		if e.Kind == "" {
+			v.errf(ePath+".kind", "required-field",
+				"tasks[%d].proof[%d].kind is required (spec-format.PROOF.1)", taskIdx, j)
+			continue
+		}
+		if _, known := recognizedProofKinds[e.Kind]; !known {
+			switch v.mode {
+			case ModeStrict:
+				v.errf(ePath+".kind", "format",
+					"tasks[%d].proof[%d].kind %q is not one of code, test, run, commit, spec (spec-format.PROOF.1)",
+					taskIdx, j, e.Kind)
+			case ModeLenient:
+				v.warnf(ePath+".kind", "format",
+					"tasks[%d].proof[%d].kind %q is not one of code, test, run, commit, spec (spec-format.PROOF.1)",
+					taskIdx, j, e.Kind)
+			}
+			continue
+		}
+		switch e.Kind {
+		case ProofKindCode, ProofKindTest:
+			if e.Path == "" {
+				v.errf(ePath+".path", "required-field",
+					"tasks[%d].proof[%d].path is required for kind: %s (spec-format.PROOF.2)",
+					taskIdx, j, e.Kind)
+			}
+			v.rejectProofFields(ePath, taskIdx, j, e, e.Kind, []rejectedProofField{
+				{e.RunID != "", "run_id"},
+				{e.Ref != "", "ref"},
+				{e.ACID != "", "acid"},
+				// `name` is only legal on test
+				{e.Kind == ProofKindCode && e.Name != "", "name"},
+			})
+		case ProofKindRun:
+			if e.RunID == "" {
+				v.errf(ePath+".run_id", "required-field",
+					"tasks[%d].proof[%d].run_id is required for kind: run (spec-format.PROOF.3)", taskIdx, j)
+			}
+			v.rejectProofFields(ePath, taskIdx, j, e, e.Kind, []rejectedProofField{
+				{e.Path != "", "path"},
+				{e.Name != "", "name"},
+				{e.Ref != "", "ref"},
+				{e.ACID != "", "acid"},
+			})
+		case ProofKindCommit:
+			if e.Ref == "" {
+				v.errf(ePath+".ref", "required-field",
+					"tasks[%d].proof[%d].ref is required for kind: commit (spec-format.PROOF.4)", taskIdx, j)
+			}
+			v.rejectProofFields(ePath, taskIdx, j, e, e.Kind, []rejectedProofField{
+				{e.Path != "", "path"},
+				{e.Name != "", "name"},
+				{e.RunID != "", "run_id"},
+				{e.ACID != "", "acid"},
+			})
+		case ProofKindSpec:
+			if e.ACID == "" {
+				v.errf(ePath+".acid", "required-field",
+					"tasks[%d].proof[%d].acid is required for kind: spec (spec-format.PROOF.5)", taskIdx, j)
+			} else if _, err := ParseACID(e.ACID); err != nil {
+				v.errf(ePath+".acid", "acid",
+					"tasks[%d].proof[%d].acid %q: %v", taskIdx, j, e.ACID, err)
+			}
+			v.rejectProofFields(ePath, taskIdx, j, e, e.Kind, []rejectedProofField{
+				{e.Path != "", "path"},
+				{e.Name != "", "name"},
+				{e.RunID != "", "run_id"},
+				{e.Ref != "", "ref"},
+			})
+		}
+	}
+}
+
+// checkTaskStateRules enforces VAL.7 (done requires structured
+// proof) and VAL.8 (blocked requires note).
+func (v *validator) checkTaskStateRules(base string, taskIdx int, t Task) {
+	switch t.State {
+	case "done":
+		if t.Proof.IsEmpty() {
+			v.errf(base+".proof", "missing-proof",
+				"tasks[%d].proof is required when state is done (spec-format.VAL.7)", taskIdx)
+			return
+		}
+		if !t.Proof.IsStructured() {
+			// Free-form string on a done task — strict error,
+			// lenient warning per TASK.8.1.
+			switch v.mode {
+			case ModeStrict:
+				v.errf(base+".proof", "unstructured-proof",
+					"tasks[%d].proof on a done task must be a structured list, not a string (spec-format.TASK.8.1 / VAL.7)", taskIdx)
+			case ModeLenient:
+				v.warnf(base+".proof", "unstructured-proof",
+					"tasks[%d].proof on a done task should be a structured list (spec-format.TASK.8.1 / VAL.7)", taskIdx)
+			}
+		}
+	case "blocked":
+		if strings.TrimSpace(t.Note) == "" {
+			switch v.mode {
+			case ModeStrict:
+				v.errf(base+".note", "missing-note",
+					"tasks[%d].note is required when state is blocked (spec-format.VAL.8)", taskIdx)
+			case ModeLenient:
+				v.warnf(base+".note", "missing-note",
+					"tasks[%d].note should explain the block (spec-format.VAL.8)", taskIdx)
+			}
+		}
+	}
+}
+
+type rejectedProofField struct {
+	present bool
+	field   string
+}
+
+func (v *validator) rejectProofFields(base string, taskIdx, entryIdx int, _ ProofEntry, kind ProofKind, fields []rejectedProofField) {
+	for _, f := range fields {
+		if !f.present {
+			continue
+		}
+		v.errf(base+"."+f.field, "format",
+			"tasks[%d].proof[%d].%s is not allowed for kind: %s (spec-format.PROOF.*)",
+			taskIdx, entryIdx, f.field, kind)
 	}
 }
 

@@ -4,8 +4,10 @@ metadata:
   id: spec-format
   name: Rex spec YAML format
   state: draft
+  owners: []
+  related_specs: [overview, workspace]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-06T00:00:00Z
+  updated_at: 2026-05-09T00:00:00Z
 
 description: |
   The YAML format used by every spec in a Rex workspace, including this one.
@@ -24,26 +26,49 @@ tasks:
     description: Define the Go structs that mirror this schema, with `yaml` tags and validation tags
     state: done
     references: [CORE.1, CORE.2, META.1, COMP.1, REQ.1]
+    proof:
+      - kind: code
+        path: internal/core/specfmt/types.go
 
   - id: implement-validator
     description: Implement `rex spec validate`, including required-field checks, ACID format checks, and template-extension validation
     state: done
     references: [VAL.1, VAL.2, VAL.3, VAL.4]
+    proof:
+      - kind: code
+        path: internal/core/specfmt/validate.go
+      - kind: code
+        path: internal/core/specfmt/resolver.go
+      - kind: test
+        path: internal/core/specfmt/validate_test.go
 
   - id: implement-templates
     description: 'Implement workspace-level and org-level template extension; templates are themselves specs with `template: true` in extra'
     state: done
     references: [TMPL.1, TMPL.2, TMPL.3]
+    proof:
+      - kind: code
+        path: internal/core/specfmt/template.go
+      - kind: test
+        path: internal/core/specfmt/template_test.go
 
   - id: implement-acid-resolver
     description: Implement an ACID resolver that validates references across specs in a workspace and reports dangling refs
     state: done
     references: [REQ.3, ACID.1, ACID.2]
+    proof:
+      - kind: code
+        path: internal/core/specfmt/acid.go
+      - kind: test
+        path: internal/core/specfmt/resolver_test.go
 
   - id: write-three-real-specs
     description: Write three real specs against this format before locking the v1 schema; revise the schema based on what's missing
     state: done
     references: [CORE.1]
+    proof:
+      - kind: code
+        path: specs/
 
   - id: define-run-recipes
     description: |
@@ -55,6 +80,70 @@ tasks:
     state: done
     note: "Recipe + Prompt types and validator in internal/core/specfmt/ (commit 9027483); `rex run start --from-task` and POST /specs/{id}/tasks/{taskID}/run shipped in commit 503f09c."
     references: [TASK.6, TASK.6.1, RECIPE.1, RECIPE.2, RECIPE.3, RECIPE.4, RECIPE.5, PROMPT.1, TMPL.2.1]
+    proof:
+      - kind: code
+        path: internal/core/specfmt/types.go
+      - kind: test
+        path: internal/core/specfmt/recipe_test.go
+      - kind: commit
+        ref: "9027483"
+      - kind: commit
+        ref: "503f09c"
+
+  - id: extend-task-fields-and-state-validation
+    description: |
+      Add the new task and metadata fields (note, proof, owners,
+      related_specs) plus the PROOF component to the Go types,
+      validator, and scaffold. Implement filename match,
+      done-state proof requirement, blocked-state note
+      requirement, deprecated-reference warnings.
+    state: done
+    note: "Schema additions, validator rules (VAL.6-9), and the structured-proof type all ship in this PR; the 14 existing specs were backfilled from their `note:` fields and now strict-validate 0/0. Disk-evidence verification of every proof entry (path exists, test func present, run id in events.log, commit reachable) is the next task — `implement-spec-verify-command` — and is out of scope for this PR."
+    references:
+      - TASK.7
+      - TASK.8
+      - TASK.8.1
+      - META.6
+      - META.7
+      - PROOF.1
+      - PROOF.2
+      - PROOF.2.1
+      - PROOF.3
+      - PROOF.4
+      - PROOF.5
+      - PROOF.6
+      - VAL.6
+      - VAL.7
+      - VAL.8
+      - VAL.9
+    proof:
+      - kind: code
+        path: internal/core/specfmt/types.go
+      - kind: code
+        path: internal/core/specfmt/validate.go
+      - kind: code
+        path: internal/core/specfmt/resolver.go
+      - kind: code
+        path: internal/core/specfmt/template.go
+      - kind: spec
+        acid: spec-format.PROOF.1
+      - kind: spec
+        acid: spec-format.VAL.7
+
+  - id: implement-spec-verify-command
+    description: |
+      Implement `rex spec verify [<id>...]` — walks every task's
+      structured `proof` entries and exercises each (path
+      exists, test function present, run_id in events.log,
+      commit reachable, ACID resolves). Distinct from
+      `rex spec validate` which remains pure-schema.
+    state: todo
+    references:
+      - PROOF.2
+      - PROOF.2.1
+      - PROOF.3
+      - PROOF.4
+      - PROOF.5
 
 components:
 
@@ -76,6 +165,18 @@ components:
       "3.1": "draft = author is still working on it; active = open for work; accepted = closed-as-shipped; archived = closed-as-abandoned-or-superseded"
       "4": "`metadata.created_at` and `metadata.updated_at` are ISO-8601 timestamps; the validator updates `updated_at` on save"
       "5": Metadata blocks may include workspace-template-defined required fields beyond the global ones; the validator runs the workspace template after the global v1 schema
+      "6": |
+        `metadata.owners` is an optional list of user handles
+        (strings). Promotes the existing `extra.owners` convention
+        to a first-class metadata field. Tooling (`rex spec list
+        --owner <handle>`, web UI ownership filters) reads this
+        field directly.
+      "7": |
+        `metadata.related_specs` is an optional list of spec ids
+        the document is meaningfully connected to. Promotes the
+        existing `extra.related_specs` convention. The validator
+        resolves each id against the workspace's known specs and
+        warns on dangling ids.
 
   DESC:
     name: Description
@@ -107,6 +208,28 @@ components:
         keeps typos like `kind: harnes` from passing the default
         `rex spec validate` invocation, while still letting read
         paths under schema drift continue working.
+      "7": |
+        A task may carry an optional `note` field (free-form
+        Markdown string) that records context the task title and
+        description don't capture: rationale, deferred sub-decisions,
+        references to commits or amendments. The field is purely
+        informational — it is not validated for content. v1 admits
+        this field because the codebase has used it informally on
+        9+ tasks since the build-order push; this requirement
+        promotes the convention to the schema.
+      "8": |
+        A task may carry an optional `proof` field whose value is
+        either a free-form string OR a list of structured proof
+        entries (see the `PROOF` component). The two forms are
+        mutually exclusive on a single task. The string form is an
+        author scratchpad; the structured form is the verifiable
+        claim `rex spec verify` checks.
+      "8.1": |
+        A task with `state: done` MUST carry a structured `proof`
+        (non-empty list) per `VAL.7`. The free-form string form is
+        rejected on `done` tasks in strict mode (downgraded to a
+        warning in lenient mode). Tasks in `todo`, `in_progress`,
+        or `blocked` may use either form or none.
 
   COMP:
     name: Components block
@@ -240,6 +363,49 @@ components:
         in `TASK.6.1`). Templating is a recipe-resolution-time
         concern; the YAML on disk stores the raw template string.
 
+  PROOF:
+    name: Structured proof of task implementation
+    requirements:
+      "1": |
+        A proof entry is a YAML mapping with a required `kind`
+        field. Recognised v1 kinds are `code`, `test`, `run`,
+        `commit`, and `spec`. Unknown kinds are an error in
+        strict mode and a warning in lenient mode (matching the
+        strict/lenient split used elsewhere in the schema).
+      "2": |
+        `kind: code` and `kind: test` entries have a required
+        `path` field (workspace-relative). The validator
+        requires the path to exist on disk; missing paths are a
+        strict error and a lenient warning.
+      "2.1": |
+        `kind: test` entries may include an optional `name` field
+        naming a Go test function (e.g. `TestRunVersion`). When
+        present, `rex spec verify` greps the test file for
+        `func <name>(`; a missing function is a strict error and
+        a lenient warning.
+      "3": |
+        `kind: run` entries have a required `run_id` field (a
+        valid HLC run id). The validator parses the format.
+        `rex spec verify` looks the run up in the workspace
+        events.log; "not found locally" is a warning in both
+        modes (a fresh clone may not have synced the run yet).
+      "4": |
+        `kind: commit` entries have a required `ref` field (any
+        string git rev-parses). `rex spec verify` runs
+        `git cat-file -e <ref>`; missing refs are a strict error
+        and a lenient warning.
+      "5": |
+        `kind: spec` entries have a required `acid` field pointing
+        at any requirement in the workspace. The validator
+        resolves the ACID through the existing ACID resolver;
+        dangling references are a strict error and a lenient
+        warning. This kind covers tasks whose proof is a recorded
+        decision rather than code (e.g. an architecture choice).
+      "6": |
+        Proof entries are read-only references — the validator
+        never mutates them. The on-disk evidence is the source of
+        truth; the proof block is the index into it.
+
   VAL:
     name: Validation behavior (the `rex spec validate` contract)
     requirements:
@@ -248,6 +414,35 @@ components:
       "3": Validation includes ACID resolution — every cited ACID must point to an existing requirement in the workspace's known specs, or be flagged as dangling
       "4": Validation is idempotent and side-effect-free; it never modifies the spec file
       "5": Exit code is 0 on success, 1 on any error, 2 on internal validator failure
+      "6": |
+        The validator checks that a spec's filename matches its
+        `metadata.id`: `specs/<id>.yaml` and metadata.id must
+        agree. Mismatches are a strict error and lenient warning.
+        Files inside `specs/_proposed/` and
+        `specs/_proposed/_accepted/` are exempt because they are
+        amendment proposals, not specs.
+      "7": |
+        A task in `state: done` without a structured `proof` list
+        is a strict-mode error and lenient-mode warning. The
+        free-form string form on a `done` task is downgraded to
+        a lenient-only warning per `TASK.8.1` — strict mode
+        requires the structured form so each completion claim is
+        mechanically verifiable. Per-entry checks (path
+        existence, ACID resolution, etc.) are run as additional
+        rules per the `PROOF` component.
+      "8": |
+        A task in `state: blocked` without a non-empty `note`
+        field is a strict-mode error and lenient-mode warning.
+        The note must explain the blocker so the task is
+        actionable when it unblocks.
+      "9": |
+        The validator emits a warning (both modes) when a task's
+        `references` list cites a requirement whose `deprecated`
+        flag is true. References to deprecated requirements are
+        a real bug class — typically the task should be
+        re-pointed at the requirement's `replaced_by` ACID — but
+        a hard error would force backfill of every active spec
+        in lockstep with any deprecation.
 
 constraints:
 
@@ -259,8 +454,6 @@ constraints:
       "3": Adding new optional top-level keys is a minor schema change requiring a parser revision; old parsers warn but continue when given a forward-compatible document
 
 extra:
-  owners: []
-  related_specs: [overview, workspace]
   notes: |
     This spec describes itself. The format defined here is the format
     used by every other spec in this directory. Validating this file

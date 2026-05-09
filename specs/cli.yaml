@@ -4,8 +4,10 @@ metadata:
   id: cli
   name: CLI surface
   state: draft
+  owners: []
+  related_specs: [overview, workspace, sync, execution, audit, search, tools, hooks, web-ui]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-09T00:00:00Z
 
 description: |
   The CLI is Rex's primary interface for v1. The web UI exists from day
@@ -27,34 +29,56 @@ tasks:
     description: "Choose and integrate a CLI framework (cobra recommended); set up the verb-noun command tree skeleton"
     state: done
     references: [SHAPE.1, SHAPE.2]
+    proof:
+      - kind: code
+        path: internal/local/cli/root.go
 
   - id: workspace-commands
     description: "Implement workspace subcommands"
     state: done
     note: "All five WS.* surfaces ship: init, clone (2026-05-08), list, show, archive/unarchive/delete. WS.6 (push --remote) is satisfied by `rex push --remote <name>`; WS.7 (reindex) ships via newWorkspaceReindexCmd."
     references: [WS.1, WS.2, WS.3, WS.4, WS.5]
+    proof:
+      - kind: code
+        path: internal/local/cli/workspace.go
+      - kind: code
+        path: internal/local/cli/workspace_clone.go
 
   - id: spec-commands
     description: "Implement spec subcommands"
     state: done
     note: "All six SPEC.* surfaces implemented: create, validate, list, show, edit (added 2026-05-08), acid."
     references: [SPEC.1, SPEC.2, SPEC.3, SPEC.4, SPEC.5]
+    proof:
+      - kind: code
+        path: internal/local/cli/spec.go
 
   - id: run-commands
     description: "Implement run subcommands"
     state: done
     note: "All five RUN.1-5 surfaces ship: start, attach (+ watch alias), show, list, cancel. RUN.6 (signal) and RUN.7 (approve/deny) are out of this task's references and remain todo for a follow-up PR."
     references: [RUN.1, RUN.2, RUN.3, RUN.4, RUN.5]
+    proof:
+      - kind: code
+        path: internal/local/cli/run.go
+      - kind: code
+        path: internal/local/cli/run_permission.go
 
   - id: remote-commands
     description: "Implement remote subcommands"
     state: done
     references: [REMOTE.1, REMOTE.2, REMOTE.3]
+    proof:
+      - kind: code
+        path: internal/local/cli/remote.go
 
   - id: sync-commands
     description: "Implement sync, push, pull, status as top-level shortcuts"
     state: done
     references: [SYNC.1, SYNC.2, SYNC.3, STATUS.1]
+    proof:
+      - kind: code
+        path: internal/local/cli/sync.go
 
   - id: misc-commands
     description: "Implement hooks, snapshot, log, search, tools subcommands"
@@ -66,12 +90,20 @@ tasks:
     state: done
     note: "All six subcommands ship in internal/local/cli/schedule.go."
     references: [SCHED.1, SCHED.2, SCHED.3, SCHED.4, SCHED.5, SCHED.6]
+    proof:
+      - kind: code
+        path: internal/local/cli/schedule.go
 
   - id: output-formatting
     description: "Implement consistent table/JSON output, color, --quiet, --json across all read commands"
     state: done
     note: "FMT.1 (--json) + FMT.2 (color helpers + NO_COLOR) shipped earlier; FMT.3 (--quiet) gained a quietOutput() / printConfirmation() helper 2026-05-08 and is honoured by all state-changing confirmation prints."
     references: [FMT.1, FMT.2, FMT.3]
+    proof:
+      - kind: code
+        path: internal/local/cli/cmdutil.go
+      - kind: code
+        path: internal/local/cli/root.go
 
 components:
 
@@ -198,8 +230,6 @@ constraints:
       "2": "Removed flags and commands first appear as deprecated for at least one minor release with a warning before removal"
 
 extra:
-  owners: []
-  related_specs: [overview, workspace, sync, execution, audit, search, tools, hooks, web-ui]
   notes: |
     The verb-noun shape was chosen over flat or aliased shapes because
     discoverability beats brevity at this stage. Aliases will appear once

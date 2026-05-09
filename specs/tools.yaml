@@ -4,8 +4,10 @@ metadata:
   id: tools
   name: Connected tools
   state: draft
+  owners: []
+  related_specs: [overview, workspace, execution, audit, identity-and-trust]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-09T00:00:00Z
 
 description: |
   "Connected tools" in Rex covers two distinct primitives that share a name
@@ -107,8 +109,6 @@ constraints:
       "3": "No automatic credential rotation; users rotate credentials manually via `rex tools mcp rotate-credentials <name>`"
 
 extra:
-  owners: []
-  related_specs: [overview, identity-and-trust, execution, audit, sync]
   notes: |
     The post-v1 portal-proxy model becomes mandatory once tool-call audit
     becomes a hard requirement. The data model already separates MCPServer

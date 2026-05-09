@@ -142,11 +142,13 @@ func NewSpecFromTemplate(opts ScaffoldOptions) (*Document, error) {
 	doc := &Document{
 		SpecVersion: 1,
 		Metadata: Metadata{
-			ID:        opts.ID,
-			Name:      name,
-			State:     state,
-			CreatedAt: now().Format(time.RFC3339),
-			UpdatedAt: now().Format(time.RFC3339),
+			ID:           opts.ID,
+			Name:         name,
+			State:        state,
+			Owners:       []string{},
+			RelatedSpecs: []string{},
+			CreatedAt:    now().Format(time.RFC3339),
+			UpdatedAt:    now().Format(time.RFC3339),
 		},
 	}
 
@@ -156,6 +158,15 @@ func NewSpecFromTemplate(opts ScaffoldOptions) (*Document, error) {
 		doc.Components = cloneComponents(opts.Template.Components)
 		doc.Constraints = cloneConstraints(opts.Template.Constraints)
 		doc.Extra = scaffoldExtra(opts.Template.Extra, opts.Template.Metadata.ID)
+		// Inherit metadata.owners / related_specs from the
+		// template too so org-default ownership flows through
+		// to the new spec without a manual copy step.
+		if len(opts.Template.Metadata.Owners) > 0 {
+			doc.Metadata.Owners = append([]string{}, opts.Template.Metadata.Owners...)
+		}
+		if len(opts.Template.Metadata.RelatedSpecs) > 0 {
+			doc.Metadata.RelatedSpecs = append([]string{}, opts.Template.Metadata.RelatedSpecs...)
+		}
 	}
 	return doc, nil
 }

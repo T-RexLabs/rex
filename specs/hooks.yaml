@@ -4,8 +4,10 @@ metadata:
   id: hooks
   name: Event hooks
   state: draft
+  owners: []
+  related_specs: [overview, audit, storage, execution, sync, cli]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-09T00:00:00Z
 
 description: |
   Hooks are Rex's "jack into the audit stream" capability. The design is
@@ -24,16 +26,27 @@ tasks:
     description: "Implement the post-event hook dispatcher: ~150 lines of Go that iterates the workspace and global hook directories, invokes each hook async, and captures stdout/stderr"
     state: done
     references: [DISP.1, DISP.2, DISP.3, DISP.4]
+    proof:
+      - kind: code
+        path: internal/core/hooks/
 
   - id: hook-event-payload
     description: "Define and document the JSON event payload format hooks receive on stdin"
     state: done
     references: [PAYLOAD.1, PAYLOAD.2]
+    proof:
+      - kind: code
+        path: internal/core/hooks/dispatcher.go
+      - kind: code
+        path: internal/core/hooks/doc.go
 
   - id: hook-cli
     description: "Implement `rex hooks list` — minimum useful surface for v1"
     state: done
     references: [CLI.1]
+    proof:
+      - kind: code
+        path: internal/local/cli/hooks.go
 
 components:
 
@@ -96,8 +109,6 @@ constraints:
       "2": "Hook log files are rotated by size (default 10MB per file, keep last 5)"
 
 extra:
-  owners: []
-  related_specs: [overview, audit, storage, execution, sync]
   notes: |
     The minimal v1 design intentionally pushes most "I want this when X
     happens" use cases to user code rather than Rex. CLI helpers

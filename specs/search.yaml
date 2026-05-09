@@ -4,8 +4,10 @@ metadata:
   id: search
   name: Search and discovery
   state: draft
+  owners: []
+  related_specs: [overview, storage, sync, audit, execution, web-ui, cli]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-09T00:00:00Z
 
 description: |
   Search in Rex is FTS-only in v1 — no embeddings, no semantic similarity.
@@ -59,6 +61,11 @@ tasks:
     state: done
     note: "internal/local/savedsearch/ ships the TOML-backed registry; `rex search saved add/list/run/remove` ships in cli/search.go (workspace + user files via --global)."
     references: [SAVED.1, SAVED.2]
+    proof:
+      - kind: code
+        path: internal/local/savedsearch/
+      - kind: code
+        path: internal/local/cli/search.go
 
 components:
 
@@ -131,6 +138,4 @@ constraints:
       "2": "No tree-sitter parsing or symbol-aware code search in v1; full-text repo search is good enough"
       "3": "No real-time live-search-as-you-type across remotes; cross-remote searches submit on enter"
 
-extra:
-  owners: []
-  related_specs: [overview, storage, sync, workspace, web-ui, cli]
+extra: {}

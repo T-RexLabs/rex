@@ -4,8 +4,10 @@ metadata:
   id: sync
   name: Sync engine
   state: draft
+  owners: []
+  related_specs: [overview, storage, identity-and-trust, audit, execution, central-node]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-03T01:00:00Z
+  updated_at: 2026-05-09T00:00:00Z
 
 description: |
   Rex is eventually consistent, not real-time. The sync engine is the
@@ -37,6 +39,11 @@ tasks:
     description: "Implement hybrid logical clocks for cross-node event ordering"
     state: done
     references: [ORDER.1, ORDER.2, ORDER.3]
+    proof:
+      - kind: code
+        path: internal/core/storage/eventlog/hlc.go
+      - kind: test
+        path: internal/core/storage/eventlog/hlc_test.go
 
   - id: sync-api-server
     description: "Implement the central-node `/sync/...` endpoints (state, push, pull, conflict)"
@@ -47,6 +54,11 @@ tasks:
     description: "Implement the local-node sync client: `rex push`, `rex pull`, `rex sync`"
     state: done
     references: [CLIENT.1, CLIENT.2, CLIENT.3]
+    proof:
+      - kind: code
+        path: internal/local/sync/
+      - kind: code
+        path: internal/local/cli/sync.go
 
   - id: rebase-engine
     description: "Implement the auto-rebase logic for git-merged content; surface unresolvable conflicts to the user"
@@ -163,8 +175,6 @@ constraints:
       "3": "An event whose signature does not verify is rejected with no other information; the rejection is logged in the central node's own audit log"
 
 extra:
-  owners: []
-  related_specs: [overview, storage, identity-and-trust, audit, execution, central-node]
   notes: |
     The "user did a week offline and central just rebased their history"
     UX risk is real and partially mitigated by DRAFT.4 (one-week

@@ -4,8 +4,10 @@ metadata:
   id: audit
   name: Audit log
   state: draft
+  owners: []
+  related_specs: [overview, identity-and-trust, sync, storage, central-node]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-09T00:00:00Z
 
 description: |
   The audit log is the durable record of who did what and when, intended
@@ -28,11 +30,25 @@ tasks:
     state: done
     note: "internal/core/audit/doc.go is the catalog (kept in sync with the registry by catalog_test.go); reserved-future types listed there with their owning task. spec.created/edited + remote.attached/detached added 2026-05-08 alongside the catalog."
     references: [TYPES.1, TYPES.2]
+    proof:
+      - kind: code
+        path: internal/core/audit/doc.go
+      - kind: code
+        path: internal/core/audit/types.go
+      - kind: test
+        path: internal/core/audit/catalog_test.go
 
   - id: audit-storage
     description: "Implement the audit-log storage layer with structural append-only enforcement"
     state: done
     references: [STORE.1, STORE.2, STORE.3]
+    proof:
+      - kind: code
+        path: internal/core/audit/appender.go
+      - kind: code
+        path: internal/core/storage/eventlog/writer.go
+      - kind: test
+        path: internal/core/audit/audit_test.go
 
   - id: audit-query
     description: "Implement audit-log queries (`rex log tail`, `rex log search`) and the structured-filter language"
@@ -98,6 +114,4 @@ constraints:
       "1": "The audit-log retention default (forever) is intentional and overrideable; orgs requiring time-bounded retention for legal reasons must explicitly configure compaction and central-side retention windows"
       "2": "Audit-log queries that return entries from other users always include the originating actor; no anonymization in v1"
 
-extra:
-  owners: []
-  related_specs: [overview, identity-and-trust, sync, storage, central-node]
+extra: {}

@@ -4,8 +4,10 @@ metadata:
   id: identity-and-trust
   name: Identity, trust, and access control
   state: draft
+  owners: []
+  related_specs: [overview, sync, central-node, audit]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-09T00:00:00Z
 
 description: |
   Identity in Rex follows the Git/SSH spirit: each user has a portable
@@ -26,11 +28,19 @@ tasks:
     description: Implement keypair generation, storage, and the abstract Signer interface (so passkeys/WebAuthn can be added later)
     state: done
     references: [KEY.1, KEY.2, KEY.3]
+    proof:
+      - kind: code
+        path: internal/core/identity/
 
   - id: handshake-protocol
     description: Implement the challenge-response handshake between local and central
     state: done
     references: [AUTH.1, AUTH.2, AUTH.3]
+    proof:
+      - kind: code
+        path: internal/central/server/auth.go
+      - kind: test
+        path: internal/central/server/auth_test.go
 
   - id: token-lifecycle
     description: Implement short-lived access tokens, refresh tokens, and the server-side revocation list
@@ -46,6 +56,11 @@ tasks:
     description: "Implement orgs, org_memberships, and org_invites as central-only entities; seed a default org on first multi-tenant migration so existing single-tenant deployments keep working until BOOT.* ships real org creation"
     state: done
     references: [ORG.1, ORG.2, ORG.3, ORG.4]
+    proof:
+      - kind: code
+        path: internal/central/server/orgs.go
+      - kind: test
+        path: internal/central/server/orgs_test.go
 
 components:
 
@@ -120,8 +135,6 @@ constraints:
       "4": All identity-related cryptographic operations use the platform's standard libraries (Go's `crypto/ed25519`, etc.); custom crypto is forbidden
 
 extra:
-  owners: []
-  related_specs: [overview, central-node, audit, sync]
   notes: |
     The "user belongs to multiple central nodes with different orgs" model
     means the local instance must track per-remote identity preferences.

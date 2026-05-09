@@ -58,7 +58,7 @@ func TestParseSpecFormatItself(t *testing.T) {
 	}
 
 	// Component order should be the document's source order.
-	wantOrder := []string{"CORE", "META", "DESC", "TASK", "COMP", "REQ", "ACID", "CONST", "EXTRA", "TMPL", "RECIPE", "PROMPT", "VAL"}
+	wantOrder := []string{"CORE", "META", "DESC", "TASK", "COMP", "REQ", "ACID", "CONST", "EXTRA", "TMPL", "RECIPE", "PROMPT", "PROOF", "VAL"}
 	gotOrder := doc.ComponentOrder()
 	if len(gotOrder) != len(wantOrder) {
 		t.Fatalf("component count: got %d (%v) want %d", len(gotOrder), gotOrder, len(wantOrder))

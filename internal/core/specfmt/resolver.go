@@ -3,6 +3,8 @@ package specfmt
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
+	"strings"
 )
 
 // Workspace is a registry of Documents the resolver searches over.
@@ -146,9 +148,34 @@ func ValidateWorkspace(w *Workspace, mode Mode) Result {
 			issues = append(issues, issue)
 		}
 
+		// Filename ↔ metadata.id check (spec-format.VAL.6). Files
+		// inside specs/_proposed/ (and its _accepted/ subdir) are
+		// exempt — those are amendment proposals, not specs.
+		if iss := checkFilenameMatch(doc, mode); iss != nil {
+			issues = append(issues, *iss)
+		}
+
+		// metadata.related_specs dangling-id warning (spec-format.META.7).
+		for ri, related := range doc.Metadata.RelatedSpecs {
+			if _, ok := w.Get(related); ok {
+				continue
+			}
+			issues = append(issues, Issue{
+				File:     doc.Path,
+				Path:     fmt.Sprintf("metadata.related_specs[%d]", ri),
+				Category: "dangling-related-spec",
+				Message: fmt.Sprintf(
+					"related_specs[%d] %q does not match any spec in this workspace",
+					ri, related),
+				Severity: SeverityWarning,
+			})
+		}
+
 		// Cross-spec ACID resolution for every task reference. We
 		// re-parse rather than relying on Validate's earlier parse
 		// because Validate does not surface the parsed ACIDRef.
+		// VAL.9 piggybacks on the resolved Requirement so we know
+		// whether a referenced requirement is deprecated.
 		for ti, task := range doc.Tasks {
 			for ri, ref := range task.References {
 				acid, err := ParseACID(ref)
@@ -157,22 +184,37 @@ func ValidateWorkspace(w *Workspace, mode Mode) Result {
 					continue
 				}
 				resolution := w.Resolve(acid, doc.Metadata.ID)
-				if resolution.Found {
+				if !resolution.Found {
+					severity := SeverityError
+					if mode == ModeLenient {
+						severity = SeverityWarning
+					}
+					issues = append(issues, Issue{
+						File:     doc.Path,
+						Path:     fmt.Sprintf("tasks[%d].references[%d]", ti, ri),
+						Category: "dangling-acid",
+						Message: fmt.Sprintf(
+							"reference %q resolves to %s but no such requirement exists",
+							ref, resolution.FullACID),
+						Severity: severity,
+					})
 					continue
 				}
-				severity := SeverityError
-				if mode == ModeLenient {
-					severity = SeverityWarning
+				if resolution.Requirement.Deprecated {
+					replaced := ""
+					if resolution.Requirement.ReplacedBy != "" {
+						replaced = fmt.Sprintf(" (see replaced_by: %s)", resolution.Requirement.ReplacedBy)
+					}
+					issues = append(issues, Issue{
+						File:     doc.Path,
+						Path:     fmt.Sprintf("tasks[%d].references[%d]", ti, ri),
+						Category: "deprecated-reference",
+						Message: fmt.Sprintf(
+							"reference %q points at a deprecated requirement%s (spec-format.VAL.9)",
+							ref, replaced),
+						Severity: SeverityWarning,
+					})
 				}
-				issues = append(issues, Issue{
-					File:     doc.Path,
-					Path:     fmt.Sprintf("tasks[%d].references[%d]", ti, ri),
-					Category: "dangling-acid",
-					Message: fmt.Sprintf(
-						"reference %q resolves to %s but no such requirement exists",
-						ref, resolution.FullACID),
-					Severity: severity,
-				})
 			}
 		}
 
@@ -185,6 +227,45 @@ func ValidateWorkspace(w *Workspace, mode Mode) Result {
 		}
 	}
 	return Result{Issues: issues}
+}
+
+// checkFilenameMatch enforces spec-format.VAL.6: a spec's filename
+// must match its metadata.id. The check fires only when the doc
+// lives in a directory named `specs/` (the canonical home of a
+// workspace's spec set). One-off files passed to `rex spec
+// validate ./somefile.yaml` and the package's test fixtures are
+// exempt; amendment files under `specs/_proposed/` are exempt
+// too because they are amendment proposals, not specs.
+func checkFilenameMatch(doc *Document, mode Mode) *Issue {
+	if doc.Path == "" || doc.Metadata.ID == "" {
+		return nil
+	}
+	slash := filepath.ToSlash(doc.Path)
+	if strings.Contains(slash, "/_proposed/") {
+		return nil
+	}
+	parent := filepath.Base(filepath.Dir(doc.Path))
+	if parent != "specs" {
+		return nil
+	}
+	expected := doc.Metadata.ID + ".yaml"
+	got := filepath.Base(doc.Path)
+	if got == expected {
+		return nil
+	}
+	severity := SeverityError
+	if mode == ModeLenient {
+		severity = SeverityWarning
+	}
+	return &Issue{
+		File:     doc.Path,
+		Path:     "metadata.id",
+		Category: "filename-mismatch",
+		Message: fmt.Sprintf(
+			"filename %q does not match metadata.id %q (expected %s) (spec-format.VAL.6)",
+			got, doc.Metadata.ID, expected),
+		Severity: severity,
+	}
 }
 
 // activeTemplateFor selects the template that governs doc per

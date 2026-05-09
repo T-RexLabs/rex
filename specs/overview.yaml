@@ -4,8 +4,10 @@ metadata:
   id: overview
   name: Rex v1 — system overview
   state: draft
+  owners: []
+  related_specs: [workspace, execution, sync, storage, identity-and-trust, audit, central-node, cli, web-ui, hooks, search, tools, spec-format]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-09T00:00:00Z
 
 description: |
   Rex is a management portal for agentic coding harnesses (Claude Code, Codex,
@@ -27,11 +29,23 @@ tasks:
     description: Create the Go module, repo layout, top-level CLI scaffold, and CI pipeline
     state: done
     references: [SYS.1, SYS.2]
+    proof:
+      - kind: code
+        path: go.mod
+      - kind: code
+        path: cmd/rex/
+      - kind: code
+        path: cmd/rex-central/
+      - kind: code
+        path: .github/workflows/ci.yml
 
   - id: shared-core-package
     description: Establish the shared core package structure used by both local and central binaries
     state: done
     references: [SYS.1, SYS.3]
+    proof:
+      - kind: code
+        path: internal/core/
 
 components:
 
@@ -86,21 +100,6 @@ constraints:
       "4": User identity is proven by signing a server-issued challenge with the user's ed25519 private key; no password-based auth path exists
 
 extra:
-  owners: []
-  related_specs:
-    - spec-format
-    - identity-and-trust
-    - workspace
-    - storage
-    - sync
-    - execution
-    - search
-    - tools
-    - hooks
-    - audit
-    - central-node
-    - cli
-    - web-ui
   notes: |
     The name Rex was chosen for QWERTY-left-hand typeability and a clean
     three-letter CLI. There is a namespace collision with the Perl-based

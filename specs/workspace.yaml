@@ -4,8 +4,10 @@ metadata:
   id: workspace
   name: Workspace model
   state: draft
+  owners: []
+  related_specs: [overview, storage, sync, execution, tools, hooks]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-03T00:00:00Z
+  updated_at: 2026-05-09T00:00:00Z
 
 description: |
   A workspace is the unit of intent in Rex. It can hold zero, one, or many
@@ -30,24 +32,40 @@ tasks:
     state: done
     note: "init shipped earlier; clone shipped 2026-05-08 in internal/local/cli/workspace_clone.go (event-sourced clone via sync.Pull; git-merged content follows when sync.GIT.* lands)."
     references: [LIFE.1, LIFE.2, LIFE.3]
+    proof:
+      - kind: code
+        path: internal/local/cli/workspace.go
+      - kind: code
+        path: internal/local/cli/workspace_clone.go
 
   - id: workspace-yaml-schema
     description: Define and validate `workspace.yaml`, the per-workspace settings file
     state: done
     note: "internal/local/cli/workspace_validate.go ships validateWorkspaceYAML; `rex workspace validate` reports issues with required-key / closed-set / unknown-key checks (SETTINGS.2/3/3.1, LIFE.3)."
     references: [SETTINGS.1, SETTINGS.2, SETTINGS.3]
+    proof:
+      - kind: code
+        path: internal/local/cli/workspace_validate.go
 
   - id: repo-attach-mechanics
     description: Implement `rex repo add` (clone into workspace) and `rex repo link` (point at existing checkout)
     state: done
     note: "Implemented in internal/local/cli/repo.go (add/link/list/remove); audit events RepoAdded/Linked/Removed registered in internal/core/audit/types.go per REPO.4.1."
     references: [REPO.1, REPO.2, REPO.3, REPO.4]
+    proof:
+      - kind: code
+        path: internal/local/cli/repo.go
 
   - id: work-tag-model
     description: Implement the work-type tagging that distinguishes question/non-spec/spec/management/scheduled work
     state: done
     note: "WorkType wired on RunStartedEvent + ExecConfig + runtask requests; --work-type flag on `rex run start` with inference (--from-task -> spec; default -> non_spec); schedule daemon stamps `scheduled`."
     references: [WORK.1, WORK.2, WORK.3]
+    proof:
+      - kind: code
+        path: internal/core/runner/events.go
+      - kind: code
+        path: internal/local/runtask/runtask.go
 
 components:
 
@@ -162,8 +180,6 @@ constraints:
       "3": "The on-disk layout under `.rex/` is the source of truth; in-memory caches must be reconstructable from disk"
 
 extra:
-  owners: []
-  related_specs: [overview, storage, sync, execution, spec-format]
   notes: |
     The "specs are simultaneously a task list, a template, and a contract"
     trichotomy is captured in the spec-format spec; this workspace spec

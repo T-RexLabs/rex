@@ -4,8 +4,10 @@ metadata:
   id: storage
   name: On-disk storage layout
   state: draft
+  owners: []
+  related_specs: [overview, workspace, sync, identity-and-trust, audit, search, hooks]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-03T01:00:00Z
+  updated_at: 2026-05-09T00:00:00Z
 
 description: |
   Storage in Rex follows the Git pattern: a small global config + registry
@@ -28,16 +30,29 @@ tasks:
     state: done
     note: "Identity/ predates; remotes.toml + hooks/ already shipped; registry.toml + config.toml landed 2026-05-08 (internal/local/registry + internal/local/userconfig). default_remote consulted by sync.go's resolveDefaultRemote."
     references: [GLOBAL.1, GLOBAL.2, GLOBAL.3]
+    proof:
+      - kind: code
+        path: internal/local/registry/
+      - kind: code
+        path: internal/local/userconfig/
+      - kind: code
+        path: internal/local/remotes/
 
   - id: workspace-dir-layout
     description: "Create the `.rex/` skeleton on workspace init and validate it on every command"
     state: done
     references: [WS.1, WS.2, WS.3]
+    proof:
+      - kind: code
+        path: internal/local/cli/workspace.go
 
   - id: event-log-storage
     description: "Implement the append-only `events.log` writer with HLC timestamps and event versioning"
     state: done
     references: [EVENTS.1, EVENTS.2, EVENTS.3, EVENTS.4]
+    proof:
+      - kind: code
+        path: internal/core/storage/eventlog/
 
   - id: transcript-shards
     description: "Implement transcript storage as per-run sharded files under `transcripts/<run-id>/`"
@@ -48,12 +63,18 @@ tasks:
     description: "Implement `rex workspace reindex` for rebuilding the SQLite FTS5 index from the event log"
     state: done
     references: [INDEX.1, INDEX.2, INDEX.3]
+    proof:
+      - kind: code
+        path: internal/core/search/
 
   - id: snapshot-impl
     description: "Implement snapshots — periodic, manual, and restore"
     state: done
     note: "Manual `rex snapshot create/list/restore` ships; SNAP.3 periodic + every-N-events triggers (cron-style) NOT yet implemented and will land alongside execution.schedule-engine."
     references: [SNAP.1, SNAP.2, SNAP.3, SNAP.4]
+    proof:
+      - kind: code
+        path: internal/core/snapshot/
 
   - id: encryption-opt-in
     description: "Implement opt-in per-tenant transcript encryption on the central node side"
@@ -151,6 +172,4 @@ constraints:
       "2": "Renaming, moving, or removing files under `.rex/` is forbidden in any minor version; only additive changes are allowed within a major version"
       "3": "An empty `.rex/` cannot be confused with a non-Rex directory; `rex workspace status` distinguishes by the presence of `workspace.yaml`"
 
-extra:
-  owners: []
-  related_specs: [overview, workspace, sync, audit, central-node]
+extra: {}
