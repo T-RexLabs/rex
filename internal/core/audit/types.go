@@ -58,6 +58,14 @@ const (
 	// context the harness saw — answer to the "what did the model
 	// have when it ran" question.
 	EventTypeHarnessBriefAttached = "harness.brief_attached"
+
+	// Git-merged content rebase outcomes (sync.GIT.1-4). These are
+	// audit-class via TYPES.1's "every spec change" / "every workspace
+	// state change" clauses — a rebase mutates a workspace-scoped,
+	// human-authored entity.
+	EventTypeSyncGitRebased    = "sync.git.rebased"
+	EventTypeSyncGitConflicted = "sync.git.conflicted"
+	EventTypeSyncGitResolved   = "sync.git.resolved"
 )
 
 // EventVersion is the schema version for audit-package event payloads.
@@ -85,6 +93,9 @@ var auditEventTypes = func() map[string]struct{} {
 		EventTypeRemoteDetached:       {},
 		EventTypeHookCompleted:        {},
 		EventTypeHarnessBriefAttached: {},
+		EventTypeSyncGitRebased:       {},
+		EventTypeSyncGitConflicted:    {},
+		EventTypeSyncGitResolved:      {},
 
 		// Runner events are audit-class per TYPES.1 ("every harness
 		// invocation start/end ... every workspace state change").
@@ -264,4 +275,44 @@ type HarnessBriefAttachedEvent struct {
 	BriefBytes  int    `json:"brief_bytes"`
 	BriefSHA256 string `json:"brief_sha256"` // hex-encoded SHA-256 prefix (16 chars)
 	Source      string `json:"source"`       // "default" or "override"
+}
+
+// SyncGitRebasedEvent is the payload for EventTypeSyncGitRebased —
+// fires when `rex sync rebase` produced a clean merge for an entity.
+// Carries enough provenance to replay: the (base, local, remote)
+// revisions that fed the merge plus the merged-content revision.
+type SyncGitRebasedEvent struct {
+	WorkspaceID    string `json:"workspace_id"`
+	Entity         string `json:"entity"`
+	Remote         string `json:"remote"`
+	BaseRevision   string `json:"base_revision,omitempty"`
+	LocalRevision  string `json:"local_revision"`
+	RemoteRevision string `json:"remote_revision"`
+	MergedRevision string `json:"merged_revision"`
+}
+
+// SyncGitConflictedEvent is the payload for EventTypeSyncGitConflicted
+// — fires when a rebase pass surfaced unresolvable hunks and wrote a
+// `<file>.conflict` sidecar (sync.GIT.3). Hunks is the count of
+// unresolved regions; the sidecar carries the per-hunk detail.
+type SyncGitConflictedEvent struct {
+	WorkspaceID    string `json:"workspace_id"`
+	Entity         string `json:"entity"`
+	Remote         string `json:"remote"`
+	BaseRevision   string `json:"base_revision,omitempty"`
+	LocalRevision  string `json:"local_revision"`
+	RemoteRevision string `json:"remote_revision"`
+	Hunks          int    `json:"hunks"`
+}
+
+// SyncGitResolvedEvent is the payload for EventTypeSyncGitResolved —
+// fires from `rex sync resolve <file>` after the user's hand-edited
+// file passes the marker-free check and the sidecar is cleared
+// (sync.GIT.4). ResolvedRevision is the content hash of the post-
+// resolution local content.
+type SyncGitResolvedEvent struct {
+	WorkspaceID      string `json:"workspace_id"`
+	Entity           string `json:"entity"`
+	Remote           string `json:"remote"`
+	ResolvedRevision string `json:"resolved_revision"`
 }

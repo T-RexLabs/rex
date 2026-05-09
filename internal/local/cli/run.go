@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/asabla/rex/internal/core/runner/primshell"
 	"github.com/asabla/rex/internal/core/specfmt"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
+	"github.com/asabla/rex/internal/core/sync/conflict"
 	"github.com/asabla/rex/internal/local/runtask"
 )
 
@@ -296,6 +298,20 @@ during execution and the command exits when the run terminates.
 				return err
 			}
 
+			// sync.GIT.3: refuse to start a run when any spec the
+			// run cites is in conflict. Covers both --spec-ref
+			// ACIDs and the --from-task target spec.
+			if blocked, err := conflictedRefSpecs(root, fromTaskFlag, specRefFlags); err != nil {
+				return err
+			} else if len(blocked) > 0 {
+				cmd.SilenceErrors = true
+				for _, p := range blocked {
+					fmt.Fprintf(cmd.ErrOrStderr(),
+						"rex run start: %s is conflicted; resolve with `rex sync resolve` first (sync.GIT.3)\n", p)
+				}
+				return fmt.Errorf("%d spec(s) conflicted", len(blocked))
+			}
+
 			// --from-task: resolve the recipe and dispatch to the
 			// matching shape (execution.RUN.1.1, spec-format.RECIPE.*).
 			if fromTaskFlag != "" {
@@ -537,6 +553,57 @@ func resolveWorkType(explicit, fromTask string) (string, error) {
 		return runner.WorkTypeSpec, nil
 	}
 	return runner.WorkTypeNonSpec, nil
+}
+
+// conflictedRefSpecs returns the list of spec file paths cited by a
+// run that are flagged conflicted (sync.GIT.3). It walks both the
+// --from-task ACID (when set) and every --spec-ref ACID, mapping
+// each to .rex/specs/<id>.yaml and checking for a .conflict sidecar
+// or in-file merge markers via internal/core/sync/conflict.
+//
+// Returns (nil, nil) when nothing is conflicted; the caller branches
+// on len(out) == 0 rather than error type.
+func conflictedRefSpecs(workspaceRoot, fromTask string, specRefs []string) ([]string, error) {
+	seen := map[string]struct{}{}
+	add := func(specID string) {
+		if specID == "" {
+			return
+		}
+		seen[specID] = struct{}{}
+	}
+	if fromTask != "" {
+		add(specIDFromACID(fromTask))
+	}
+	for _, ref := range specRefs {
+		add(specIDFromACID(ref))
+	}
+	if len(seen) == 0 {
+		return nil, nil
+	}
+
+	var out []string
+	for id := range seen {
+		path := filepath.Join(specDir(workspaceRoot), id+".yaml")
+		flagged, err := conflict.IsConflicted(path)
+		if err != nil {
+			return nil, err
+		}
+		if flagged {
+			out = append(out, path)
+		}
+	}
+	return out, nil
+}
+
+// specIDFromACID extracts the spec id from an ACID-style string.
+// "execution.RUN.1.1" → "execution"; "specs/sync.yaml" returns
+// empty (we leave file-path resolution to the caller). Lenient: if
+// the string has no ".", returns it whole as a probable bare id.
+func specIDFromACID(ref string) string {
+	if idx := strings.IndexByte(ref, '.'); idx >= 0 {
+		return ref[:idx]
+	}
+	return ref
 }
 
 // splitShellCommand parses a --shell argument into argv. For v1 we

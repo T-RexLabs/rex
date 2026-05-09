@@ -87,6 +87,21 @@
 //	  time. Source is "default" (built-in body) or "override" (a
 //	  per-workspace .rex/HARNESS.md.tmpl was used).
 //
+// Git-merged content sync (sync.GIT.1-4 — every rebase outcome
+// counts as a workspace state change for audit purposes):
+//
+//	sync.git.rebased        payload: SyncGitRebasedEvent
+//	  fires from `rex sync rebase` when the three-way merge produced
+//	  a clean result. Carries the (base, local, remote) revisions
+//	  that fed the merge plus the merged content's revision.
+//	sync.git.conflicted     payload: SyncGitConflictedEvent
+//	  fires from `rex sync rebase` when unresolvable hunks landed.
+//	  Hunks counts the unresolved regions; per-hunk detail lives in
+//	  the `<file>.conflict` sidecar (sync.GIT.3).
+//	sync.git.resolved       payload: SyncGitResolvedEvent
+//	  fires from `rex sync resolve` after the user's hand-edited
+//	  file passes the marker-free check and the sidecar clears.
+//
 // Run lifecycle (re-exported from internal/core/runner so the
 // registry has a single source of truth — execution.DAG.2):
 //

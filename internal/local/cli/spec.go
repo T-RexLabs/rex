@@ -16,7 +16,25 @@ import (
 	"github.com/asabla/rex/internal/core/audit"
 	"github.com/asabla/rex/internal/core/specfmt"
 	"github.com/asabla/rex/internal/core/specverify"
+	"github.com/asabla/rex/internal/core/sync/conflict"
 )
+
+// conflictedSpecPaths returns the subset of paths that are flagged
+// as in-conflict — either via a `.conflict` sidecar or via in-file
+// merge markers — per sync.GIT.3.
+func conflictedSpecPaths(paths []string) ([]string, error) {
+	var out []string
+	for _, p := range paths {
+		flagged, err := conflict.IsConflicted(p)
+		if err != nil {
+			return nil, err
+		}
+		if flagged {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
 
 // newSpecCmd returns the `rex spec` parent and wires its leaves.
 func newSpecCmd() *cobra.Command {
@@ -247,6 +265,20 @@ Per spec-format.VAL.5: exit 0 on success, 1 on any validation error,
 			if len(paths) == 0 {
 				fmt.Fprintln(cmd.ErrOrStderr(), "rex spec validate: no specs found")
 				return nil
+			}
+			// sync.GIT.3: refuse to operate on conflicted specs.
+			// A `.conflict` sidecar OR in-file merge markers count
+			// as conflicted; either path means the user has not
+			// yet run `rex sync resolve`.
+			if blocked, err := conflictedSpecPaths(paths); err != nil {
+				return err
+			} else if len(blocked) > 0 {
+				cmd.SilenceErrors = true
+				for _, p := range blocked {
+					fmt.Fprintf(cmd.ErrOrStderr(),
+						"rex spec validate: %s is conflicted; resolve with `rex sync resolve` first (sync.GIT.3)\n", p)
+				}
+				return fmt.Errorf("%d spec(s) conflicted", len(blocked))
 			}
 			ws, parseFailures, _ := loadWorkspace(paths)
 			// Wire the workspace's default template id (if any)

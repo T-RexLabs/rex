@@ -86,8 +86,28 @@ tasks:
 
   - id: rebase-engine
     description: "Implement the auto-rebase logic for git-merged content; surface unresolvable conflicts to the user"
-    state: todo
-    references: [GIT.1, GIT.2, GIT.3, GIT.4]
+    state: done
+    note: "internal/core/sync/merge3 is the line-based three-way merge engine: LCS-derived per-side matches, run-grouping by per-side stability (4 statuses), conflict-marker emission. internal/core/sync/conflict owns the `<file>.conflict` sidecar TOML format plus IsConflicted/HasMarkers detection helpers. internal/local/sync/rebase.go orchestrates a single-entity rebase: fetch /sync/git, load cached merge base from .rex/drafts/<remote>.git/<entity>, run merge3, write merged content or markers+sidecar. `rex sync rebase <entity>` and `rex sync resolve <entity>` ship as subcommands; both emit audit events (sync.git.rebased / .conflicted / .resolved). `rex spec validate` and `rex run start` refuse conflicted entities. GIT.5 is the policy invariant (central is authoritative) and is enforced by the merge-base storage scheme: local-only revisions never propagate without an explicit push. Two follow-ups remain: (a) auto-rebase on `rex sync` itself with bulk discovery of all git-merged entities (currently the user calls `rex sync rebase` per-entity); (b) DRAFT.4's pre-rebase preservation as `<file>.pre-rebase-<timestamp>` for one-week garbage-collection."
+    references: [GIT.1, GIT.2, GIT.3, GIT.4, GIT.5]
+    proof:
+      - kind: code
+        path: internal/core/sync/merge3/merge3.go
+      - kind: test
+        path: internal/core/sync/merge3/merge3_test.go
+      - kind: code
+        path: internal/core/sync/conflict/sidecar.go
+      - kind: test
+        path: internal/core/sync/conflict/sidecar_test.go
+      - kind: code
+        path: internal/local/sync/rebase.go
+      - kind: test
+        path: internal/local/sync/rebase_test.go
+      - kind: code
+        path: internal/local/cli/sync_rebase.go
+      - kind: code
+        path: internal/local/cli/sync_resolve.go
+      - kind: test
+        path: internal/local/cli/sync_rebase_test.go
 
   - id: draft-state-ux
     description: "Implement the draft-vs-committed split — drafts are local-only events not pushed; the CLI and UI surface this distinctly"

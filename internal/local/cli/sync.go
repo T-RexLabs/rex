@@ -25,7 +25,11 @@ the central node, advancing the per-remote watermark on success.
 
 ` + "`--remote <name>`" + ` looks up the URL from
 ~/.config/rex/remotes.toml (registered via ` + "`rex remote add`" + `).
-` + "`--url`" + ` overrides any registry lookup.`,
+` + "`--url`" + ` overrides any registry lookup.
+
+Subcommands:
+  rebase   - three-way merge a single git_merged entity against the remote
+  resolve  - confirm a hand-edited conflicted file and clear its sidecar`,
 		Example: `  rex sync
   rex sync --workspace /path/to/ws --remote primary
   rex sync --workspace /path/to/ws --url https://central.example.invalid`,
@@ -35,8 +39,12 @@ the central node, advancing the per-remote watermark on success.
 		"rex pull",
 		"rex push",
 		"rex remote test <name>",
+		"rex sync rebase",
+		"rex sync resolve",
 	)
 	addSyncFlags(cmd)
+	cmd.AddCommand(newSyncRebaseCmd())
+	cmd.AddCommand(newSyncResolveCmd())
 	return cmd
 }
 
