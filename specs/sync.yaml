@@ -32,8 +32,22 @@ description: |
 tasks:
   - id: sync-categorization
     description: "Mark every persistent entity in the storage layer with its sync category at the type level"
-    state: todo
-    references: [CAT.1, CAT.2, CAT.3]
+    state: done
+    note: "internal/core/storage/synccat/ ships the Category enum (CategoryGitMerged/EventSourced/Derived) plus a path-based registry covering every WS.2.* entity, plus the tools/ configs from tools.MCP.2 / tools.APP.2. Each canonical storage subpackage declares its category as a typed package-level SyncCategory constant alongside its types — eventlog (event_sourced), snapshot (derived), specfmt (git_merged), search (derived). Enforcement at the sync engine boundary (CAT.5: refuse to push wrong-category and refuse to pull derived) is owned by sync-api-server and remains todo."
+    references: [CAT.1, CAT.2, CAT.3, CAT.4]
+    proof:
+      - kind: code
+        path: internal/core/storage/synccat/synccat.go
+      - kind: test
+        path: internal/core/storage/synccat/synccat_test.go
+      - kind: code
+        path: internal/core/storage/eventlog/category.go
+      - kind: code
+        path: internal/core/snapshot/category.go
+      - kind: code
+        path: internal/core/specfmt/category.go
+      - kind: code
+        path: internal/core/search/category.go
 
   - id: hlc-clock
     description: "Implement hybrid logical clocks for cross-node event ordering"
