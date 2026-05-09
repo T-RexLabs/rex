@@ -103,9 +103,12 @@ func TestWorkspaceListEmptyRegistryFallsBackToCwd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	// CWD is the rex repo root, not a workspace, so the fallback
-	// message lands.
-	if !strings.Contains(out, "no workspaces") && !strings.Contains(out, "(cwd)") {
+	// CWD may or may not be a workspace depending on where the
+	// suite runs (a dev's working tree often has .rex/ from prior
+	// init; CI's fresh checkout doesn't). Either path is fine —
+	// "(cwd)" labels the fallback row when one resolves; the
+	// "no workspaces" hint (case-insensitive) lands otherwise.
+	if !strings.Contains(strings.ToLower(out), "no workspaces") && !strings.Contains(out, "(cwd)") {
 		t.Fatalf("expected empty hint or cwd fallback, got: %q", out)
 	}
 }
