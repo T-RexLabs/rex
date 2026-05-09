@@ -51,9 +51,29 @@
     <span>·</span>
     <span class="pill pill-{{.Spec.State}}"><i class="dot"></i>{{.Spec.State}}</span>
     {{if .Spec.UpdatedAt}}<span>·</span><span>updated <time>{{.Spec.UpdatedAt}}</time></span>{{end}}
+    {{if .Amendments}}<span>·</span><a href="/amendments?for={{.Spec.ID}}">{{len .Amendments}} amendment{{if ne (len .Amendments) 1}}s{{end}}</a>{{end}}
     <span class="back"><a href="/specs"><span aria-hidden="true">←</span> all specs</a></span>
   </div>
 </header>
+
+{{if .Amendments}}
+  <aside class="amendments-panel">
+    <header class="amendments-panel-head">
+      <span class="amendments-panel-title">proposed amendments</span>
+      <a class="amendments-panel-link" href="/amendments?for={{.Spec.ID}}">filter to this spec →</a>
+    </header>
+    <ul class="amendments-panel-list">
+      {{range .Amendments}}
+        <li>
+          <span class="pill pill-{{.State}}"><i class="dot"></i>{{.State}}</span>
+          <a href="/amendments/{{.Stem}}"><code>{{.Stem}}</code></a>
+          {{if .AmendmentDate}}<span class="muted small"><time>{{.AmendmentDate}}</time></span>{{end}}
+          {{if .SummaryFirst}}<span class="muted small">— {{.SummaryFirst}}</span>{{end}}
+        </li>
+      {{end}}
+    </ul>
+  </aside>
+{{end}}
 
 <nav class="tabs" aria-label="spec view">
   <a class="tab"

@@ -1,0 +1,72 @@
+{{define "title"}}rex — amendment {{.Stem}}{{end}}
+
+{{define "content"}}
+<header class="page-header">
+  <div class="title-row">
+    <h1><code>{{.Stem}}</code></h1>
+    <div class="header-actions">
+      {{if eq .State "proposed"}}
+        <form method="post" action="/amendments/{{.Stem}}/accept" class="inline">
+          <button type="submit" class="btn btn-primary"
+                  onclick="return confirm('Accept {{.Stem}}? This moves the file to _accepted/ and writes an audit row. The target spec is NOT modified.');">
+            accept
+          </button>
+        </form>
+        <form method="post" action="/amendments/{{.Stem}}/reject" class="inline">
+          <button type="submit" class="btn btn-danger"
+                  onclick="return confirm('Reject {{.Stem}}? This deletes the file. Git history preserves it.');">
+            reject
+          </button>
+        </form>
+      {{end}}
+    </div>
+  </div>
+  <div class="meta">
+    <span class="pill pill-{{.State}}"><i class="dot"></i>{{.State}}</span>
+    {{if .AmendmentDate}}<span>·</span><span><time>{{.AmendmentDate}}</time></span>{{end}}
+    <span>·</span>
+    {{if .Multi}}
+      <span class="muted">target: (multi)</span>
+    {{else if .AmendmentFor}}
+      <span>for <a href="/specs/{{.AmendmentFor}}"><code>{{.AmendmentFor}}</code></a></span>
+    {{end}}
+    {{if .AmendmentKind}}<span>·</span><span class="muted">{{.AmendmentKind}}</span>{{end}}
+    <span class="back"><a href="/amendments"><span aria-hidden="true">←</span> all amendments</a></span>
+  </div>
+  <div class="meta">
+    <code class="muted">{{.Path}}</code>
+  </div>
+</header>
+
+{{if .Flash}}
+  <div class="flash flash-{{.Flash}}">
+    {{if eq .Flash "accepted"}}
+      <strong>Accepted.</strong> The file moved to <code>_accepted/</code> and a <code>spec.amendment.accepted</code> audit row was written. The target spec was not modified — fold the amendment's edits into the spec manually or via a harness.
+    {{else}}
+      {{.Flash}}
+    {{end}}
+  </div>
+{{end}}
+
+{{if eq .State "accepted"}}
+  <section class="section">
+    <p class="muted small">This amendment has been accepted. Acceptance does not modify the target spec — folding the changes into the spec is a separate manual or harness step (per <a href="/specs/spec-format#spec-format.AMEND.5"><code>spec-format.AMEND.5</code></a>).</p>
+  </section>
+{{end}}
+
+{{if .Summary}}
+  <section class="section">
+    <h2 class="section-h2">summary</h2>
+    <pre class="prose-pre">{{.Summary}}</pre>
+  </section>
+{{end}}
+
+<section class="section">
+  <h2 class="section-h2">yaml</h2>
+  {{if .BodyPretty}}
+    <pre class="source chroma"><code class="language-yaml">{{.BodyPretty}}</code></pre>
+  {{else}}
+    <pre class="source"><code>{{.BodyRaw}}</code></pre>
+  {{end}}
+</section>
+{{end}}

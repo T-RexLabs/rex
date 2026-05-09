@@ -1,0 +1,68 @@
+{{define "title"}}rex — amendments{{end}}
+
+{{define "content"}}
+<header class="page-header">
+  <h1>amendments</h1>
+  <div class="meta">
+    <span>{{len .Amendments}} amendment{{if ne (len .Amendments) 1}}s{{end}} in <code>.rex/specs/_proposed/</code></span>
+  </div>
+</header>
+
+<section class="section">
+  <form class="toolbar" method="get" action="/amendments">
+    <label>state
+      <select name="state">
+        <option value=""         {{if eq .StateFilter ""}}selected{{end}}>any</option>
+        <option value="proposed" {{if eq .StateFilter "proposed"}}selected{{end}}>proposed</option>
+        <option value="accepted" {{if eq .StateFilter "accepted"}}selected{{end}}>accepted</option>
+      </select>
+    </label>
+    <label>for
+      <input type="text" name="for" value="{{.ForFilter}}" placeholder="spec id (optional)">
+    </label>
+    <button type="submit" class="btn">filter</button>
+    {{if or .StateFilter .ForFilter}}
+      <a class="btn btn-link" href="/amendments">clear</a>
+    {{end}}
+  </form>
+
+  {{if .Amendments}}
+    <div class="card">
+      <table class="table sortable">
+        <thead>
+          <tr>
+            <th data-sort-type="string">state</th>
+            <th data-sort-type="string" data-sort-default="desc">date</th>
+            <th data-sort-type="string">for</th>
+            <th data-sort-type="string">stem</th>
+            <th data-sort-type="string">summary</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Amendments}}
+            <tr>
+              <td><span class="pill pill-{{.State}}"><i class="dot"></i>{{.State}}</span></td>
+              <td><time>{{.AmendmentDate}}</time></td>
+              <td>
+                {{if .Multi}}
+                  <span class="muted">(multi)</span>
+                {{else if .AmendmentFor}}
+                  <a href="/specs/{{.AmendmentFor}}"><code>{{.AmendmentFor}}</code></a>
+                {{else}}
+                  <span class="muted">—</span>
+                {{end}}
+              </td>
+              <td><a href="/amendments/{{.Stem}}"><code>{{.Stem}}</code></a></td>
+              <td class="summary-col">{{.SummaryFirst}}</td>
+            </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  {{else}}
+    <p class="muted small">
+      no amendments {{if or .StateFilter .ForFilter}}match the current filter{{else}}yet — drop a YAML file under <code>.rex/specs/_proposed/</code> or run <code>rex spec amend draft &lt;id&gt; "..."</code> to draft one{{end}}.
+    </p>
+  {{end}}
+</section>
+{{end}}

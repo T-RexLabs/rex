@@ -143,6 +143,11 @@ type specDetailData struct {
 	// ask/amend form. Empty when no adapters are registered (the
 	// runs tab shows a "no harnesses" hint instead of the form).
 	Harnesses []harnessFormOption
+	// Amendments lists amendments whose amendment_for matches this
+	// spec, surfaced in a panel on the rendered tab. Empty when
+	// the workspace has no .rex/specs/_proposed/ directory or no
+	// amendment files target this spec (web-ui.LOCAL.4.1).
+	Amendments []amendmentRow
 }
 
 func loadSpecsList(opts Options) (specsListData, error) {
@@ -226,6 +231,11 @@ func loadSpecDetail(opts Options, id, tab string, hl *Highlighter) (specDetailDa
 	if hl != nil {
 		d.YAMLPretty = hl.HighlightYAML(string(raw))
 	}
+	// Best-effort: list amendments targeting this spec. A missing
+	// _proposed/ directory yields nil rather than an error
+	// (web-ui.LOCAL.4.1).
+	d.Amendments = loadAmendmentsForSpec(opts.WorkspaceRoot, doc.Metadata.ID)
+
 	// Best-effort run lookup. Failures here (missing events.log
 	// on a fresh workspace, parse error mid-log) shouldn't
 	// 500 the spec page — we just skip the affordance.
