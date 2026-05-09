@@ -141,10 +141,35 @@ func TestRunNewRendersHarnessOptions(t *testing.T) {
 		t.Fatalf("GET /runs/new: %v", err)
 	}
 	body := readBody(t, resp)
-	for _, want := range []string{"run type", "harness", "prompt", "interaction loop", ">opencode<", ">codex<", ">claude-code<", "run-form.js", "opencode/big-pickle", "gpt-5-codex", ">build<", ">plan<"} {
+	// The interaction-loop checkbox was removed (web runs now
+	// always interactive — see handleRunStart's Interactive: true).
+	// The harness <option>s carry data-models/data-modes
+	// attributes so the JS can populate the model+mode dropdowns
+	// when the user picks a harness; the defaultHarnessName change
+	// means no harness is preselected, so the >build< / >plan<
+	// option strings only appear after the user clicks the
+	// dropdown. We still assert on the harness option attributes
+	// to confirm the data shape the JS reads is correct.
+	for _, want := range []string{
+		"run type",
+		"harness",
+		"prompt",
+		">opencode<",
+		">codex<",
+		">claude-code<",
+		"run-form.js",
+		`data-models="opencode/big-pickle"`,
+		`data-models="gpt-5-codex"`,
+		`data-modes="build,plan"`,
+	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q in /runs/new\n%s", want, body[:minInt(len(body), 3000)])
 		}
+	}
+	// The interaction-loop checkbox must NOT appear — interactive
+	// is now the unconditional default.
+	if strings.Contains(body, "interaction loop") {
+		t.Errorf("interaction-loop checkbox should be gone (web runs are always interactive)")
 	}
 	for _, want := range []string{`id="run-shell-panel"`, `data-run-panel="harness"`} {
 		if !strings.Contains(body, want) {
@@ -211,6 +236,25 @@ func TestRunStartHarnessFollowRedirectShowsDetail(t *testing.T) {
 	if !strings.HasPrefix(loc, "/runs/") {
 		t.Fatalf("Location = %q, want /runs/<id>", loc)
 	}
+	// The web flow now keeps harness runs interactive by default
+	// (so a mid-conversation "ask the user" round-trip can
+	// actually be answered). With Interactive=true the run
+	// doesn't auto-complete after end_turn — it loops on
+	// awaitInput until the user cancels or sends more text. The
+	// test's helper exits after one prompt so we drive the run
+	// to a terminal state ourselves by submitting "end_turn"
+	// (which closes the input channel and breaks the loop).
+	runID := strings.TrimPrefix(loc, "/runs/")
+	go func() {
+		// Brief wait so the agent_message_chunk lands in the
+		// log before we end the conversation.
+		time.Sleep(150 * time.Millisecond)
+		endReq, _ := http.NewRequest(http.MethodPost, hs.URL+"/runs/"+runID+"/input",
+			strings.NewReader("action=end"))
+		endReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		_, _ = noRedirectClient().Do(endReq)
+	}()
+
 	body := waitForBody(t, hs.URL+loc, "pill-completed", "hello from web harness", "show raw frames (debug)", "events")
 	_ = body
 

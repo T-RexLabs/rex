@@ -57,14 +57,15 @@ type runNewData struct {
 // taskOption is one entry inside a taskGroup's dropdown
 // section. Value is the wire form (`<spec-id>.<task-id>`)
 // submitted on form post; Label is what the user sees in the
-// dropdown row. The spec id is intentionally omitted from
-// Label because the enclosing <optgroup label="..."> already
-// carries it — repeating it on every row would clutter
-// long lists.
+// dropdown row (`task-id · state · short description`).
+// Description carries the full untruncated text so the form
+// can render it in a "selected task" info panel below the
+// dropdown, where there's room to show the whole thing.
 type taskOption struct {
-	Value string
-	Label string
-	State string
+	Value       string
+	Label       string
+	State       string
+	Description string
 }
 
 // taskGroup is one spec's worth of tasks rendered as an
@@ -100,16 +101,14 @@ func (s *Server) harnessRegistry() *adapter.Registry {
 	return normalizeHarnessRegistry(s.opts.Adapters)
 }
 
-func defaultHarnessName(opts []harnessFormOption) string {
-	for _, opt := range opts {
-		if opt.Name == "opencode" {
-			return opt.Name
-		}
-	}
-	if len(opts) == 0 {
-		return ""
-	}
-	return opts[0].Name
+// defaultHarnessName returned a preselected harness so the form
+// rendered with a working default. The behaviour was misleading
+// — users saw "opencode" already chosen and submitted it without
+// realising it wasn't their intended target. Returning empty
+// keeps the placeholder ("select a harness") visible until the
+// author actively picks one.
+func defaultHarnessName(_ []harnessFormOption) string {
+	return ""
 }
 
 func findHarnessOption(opts []harnessFormOption, name string) (harnessFormOption, bool) {
@@ -280,14 +279,22 @@ func loadFromTaskGroups(workspaceRoot string) []taskGroup {
 			Tasks:    make([]taskOption, 0, len(doc.Tasks)),
 		}
 		for _, t := range doc.Tasks {
+			// Row format: `task-id · state · description`. State
+			// in the row lets authors scan by status; the
+			// description gives at-a-glance context. Truncated to
+			// keep wide descriptions from blowing out the picker.
 			label := t.ID
+			if t.State != "" {
+				label += " · " + t.State
+			}
 			if t.Description != "" {
-				label += " — " + truncate(t.Description, 80)
+				label += " · " + truncate(t.Description, 80)
 			}
 			group.Tasks = append(group.Tasks, taskOption{
-				Value: doc.Metadata.ID + "." + t.ID,
-				Label: label,
-				State: t.State,
+				Value:       doc.Metadata.ID + "." + t.ID,
+				Label:       label,
+				State:       t.State,
+				Description: t.Description,
 			})
 		}
 		sort.Slice(group.Tasks, func(i, j int) bool {
@@ -318,8 +325,13 @@ func (s *Server) handleRunStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d := s.prepareRunNewData(runNewData{
-		RunType:     strings.TrimSpace(r.FormValue("run_type")),
-		Interactive: strings.TrimSpace(r.FormValue("interactive")) == "1",
+		RunType: strings.TrimSpace(r.FormValue("run_type")),
+		// Interactive runs are now the web default: a harness
+		// session that opens its own input prompt mid-run is
+		// otherwise stuck waiting for a reply that never comes.
+		// Authors who want the non-interactive shape use the
+		// CLI's `rex run start --harness ... --prompt ...` flow.
+		Interactive: true,
 		Shell:       strings.TrimSpace(r.FormValue("shell")),
 		Harness:     strings.TrimSpace(r.FormValue("harness")),
 		Prompt:      strings.TrimSpace(r.FormValue("prompt")),

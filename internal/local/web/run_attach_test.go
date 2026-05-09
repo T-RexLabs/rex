@@ -65,7 +65,10 @@ func TestRunNewRendersFromTaskDropdown(t *testing.T) {
 		`<optgroup label="phase-c · Phase C target">`,
 		`value="phase-c.alpha"`,
 		`value="phase-c.beta"`,
-		"alpha — alpha task description",
+		// Row format: task-id · state · description (truncated).
+		"alpha · todo · alpha task description",
+		// Per-option metadata for the inline info panel.
+		`data-description="alpha task description"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q in body:\n%s", want, body[:minInt(len(body), 4000)])
@@ -154,8 +157,18 @@ func TestRunNewPrefillFromQueryStringSelectsOption(t *testing.T) {
 		t.Fatalf("GET: %v", err)
 	}
 	body := readBody(t, resp)
-	if !strings.Contains(body, `value="phase-c.beta" data-state="todo" selected`) {
-		t.Errorf("expected phase-c.beta to be the selected option:\n%s", body[:minInt(len(body), 3000)])
+	// data-description sits between data-state and selected on
+	// the option element; assert each attribute individually so a
+	// future attribute reorder doesn't false-fail this test.
+	for _, want := range []string{
+		`value="phase-c.beta"`,
+		`data-state="todo"`,
+		`data-description="beta task description"`,
+		`selected`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("expected attribute %q on selected option:\n%s", want, body[:minInt(len(body), 3000)])
+		}
 	}
 	// Prefill should auto-pick the harness panel so the picker
 	// is enabled rather than disabled.

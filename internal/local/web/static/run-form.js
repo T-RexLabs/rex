@@ -68,14 +68,42 @@
     }
   }
 
+  // syncFromTaskInfo reflects the selected task's state + full
+  // description into the inline info block below the dropdown.
+  // The dropdown row itself only fits a truncated label;
+  // populating the panel beneath gives the author confirmation
+  // about exactly which task they just picked. Hidden when no
+  // task is selected (the "(none)" option).
+  function syncFromTaskInfo() {
+    var sel = document.getElementById('run-from-task');
+    var info = document.getElementById('run-from-task-info');
+    if (!sel || !info) return;
+    var opt = sel.options[sel.selectedIndex];
+    var state = opt && opt.value ? (opt.getAttribute('data-state') || '') : '';
+    var desc = opt && opt.value ? (opt.getAttribute('data-description') || '') : '';
+    var stateEl = info.querySelector('[data-task-state]');
+    var descEl = info.querySelector('[data-task-description]');
+    if (stateEl) {
+      stateEl.textContent = state;
+      stateEl.className = 'task-info-state pill' + (state ? ' pill-' + state : '');
+    }
+    if (descEl) descEl.textContent = desc;
+    info.hidden = !opt || !opt.value;
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     var runType = document.getElementById('run-type');
     var harness = document.getElementById('run-harness');
+    var fromTask = document.getElementById('run-from-task');
     if (!runType) return;
     runType.addEventListener('change', syncPanels);
     if (harness) {
       harness.addEventListener('change', syncHarnessFields);
     }
+    if (fromTask) {
+      fromTask.addEventListener('change', syncFromTaskInfo);
+    }
     syncPanels();
+    syncFromTaskInfo();
   });
 })();

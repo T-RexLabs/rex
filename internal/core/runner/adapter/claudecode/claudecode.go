@@ -36,20 +36,35 @@ type Adapter struct{}
 func (Adapter) Name() string { return Name }
 
 // Capabilities advertises Claude Code's surface to the runner.
-// Models are left empty (= "any") because the upstream bridge
-// proxies whatever Anthropic exposes through the user's auth; the
-// list rotates faster than the adapter can usefully encode. MCP
-// servers are supported natively (execution.ACP.5).
+// The model list is curated for the current (Claude 4.x) family
+// — both the rolling aliases (`sonnet`, `opus`, `haiku`) and the
+// concrete dated identifiers — so the picker doesn't drift months
+// behind upstream as new models ship. The bridge proxies whatever
+// the user's auth permits; unknown identifiers passed through
+// `--model` surface as a harness error rather than blocking here.
+//
+// Modes mirror the bridge's `--mode` flag (Anthropic's permission
+// modes from the agent-client-protocol contract). Surfaced so
+// authors can pick `plan` or `accept_edits` from the run form
+// instead of needing to know the flag name.
+//
+// MCP servers are supported natively (execution.ACP.5).
 func (Adapter) Capabilities() adapter.Capabilities {
 	return adapter.Capabilities{
 		Models: []string{
 			"sonnet",
 			"opus",
 			"haiku",
-			"claude-sonnet-4-5",
-			"claude-opus-4-1",
+			"claude-opus-4-7",
+			"claude-sonnet-4-6",
+			"claude-haiku-4-5-20251001",
 		},
-		Modes:       nil,
+		Modes: []string{
+			"default",
+			"plan",
+			"accept_edits",
+			"bypass_permissions",
+		},
 		SupportsMCP: true,
 	}
 }

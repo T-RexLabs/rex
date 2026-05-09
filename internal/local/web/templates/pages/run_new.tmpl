@@ -72,15 +72,6 @@
             <span class="field-hint">Submitted as the initial prompt to the harness session.</span>
           </label>
 
-          <label class="field full">
-            <span class="field-label">interaction loop</span>
-            <label>
-              <input type="checkbox" name="interactive" value="1" {{if .Interactive}}checked{{end}} {{if ne .RunType "harness"}}disabled{{end}}>
-              keep this harness run open for follow-up replies from the run page
-            </label>
-            <span class="field-hint">Enable this when you expect back-and-forth Q&A in one run session.</span>
-          </label>
-
           {{if .ShowModel}}
           <label class="field" id="run-model-field" {{if not .ModelOptions}}hidden{{end}}>
             <span class="field-label">model</span>
@@ -123,12 +114,19 @@
               {{range .FromTaskGroups}}
                 <optgroup label="{{.SpecID}}{{if .SpecName}} · {{.SpecName}}{{end}}">
                   {{range .Tasks}}
-                    <option value="{{.Value}}" data-state="{{.State}}" {{if eq $.FromTask .Value}}selected{{end}}>{{.Label}}</option>
+                    <option value="{{.Value}}"
+                            data-state="{{.State}}"
+                            data-description="{{.Description}}"
+                            {{if eq $.FromTask .Value}}selected{{end}}>{{.Label}}</option>
                   {{end}}
                 </optgroup>
               {{end}}
             </select>
             <span class="field-hint">Records a <code>from_task</code> on this run's <code>run.started</code> event so it surfaces under the task on <code>/specs/&lt;id&gt;</code>. Use <code>rex run start --spec-ref</code> on the CLI when you need to attach raw ACIDs without picking a task.</span>
+            <div class="task-info" id="run-from-task-info" hidden>
+              <span class="task-info-state pill" data-task-state></span>
+              <span class="task-info-description muted" data-task-description></span>
+            </div>
           </label>
         </div>
       </div>
