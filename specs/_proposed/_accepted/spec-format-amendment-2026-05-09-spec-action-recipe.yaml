@@ -1,0 +1,123 @@
+# Spec-format extension — `kind: spec_action` recipe.
+#
+# Status: accepted.
+# Folded: 2026-05-09 — spec-format.yaml gained RECIPE.6/.6.1/.6.2/.6.3 + the implement-spec-action-recipe task.
+#
+# Goal: give specs a structured way to invite a harness to
+# author or amend them. Today the only path is "open a generic
+# harness, paste the spec into the prompt, copy the response
+# back" — fragile, manual, and produces no audit trail tying
+# the run to the spec it touched.
+#
+# `kind: spec_action` is a richer harness recipe. The recipe
+# loader pre-loads the named target spec into the rendered
+# prompt before the harness opens, gives the harness explicit
+# context about which file it's working on, and records the
+# linkage on the run.started event the same way --from-task
+# does for any other recipe.
+#
+# Scope kept narrow on purpose:
+#
+#   - v1 only pre-loads the spec into the prompt; the recipe
+#     does NOT auto-write the harness response back to disk.
+#     Authors review the response on /runs/<id> and decide
+#     whether to fold it. Automated write-back lands when the
+#     permission story for "harness mutates spec" is fully
+#     designed (separate amendment).
+#
+#   - The action enum (amend / draft / review) is informational
+#     in v1 — it shapes the rendered prompt prelude but not the
+#     executor's write path. Reviewers know what kind of output
+#     to expect; future tooling can branch on it.
+#
+#   - target must be a spec id that resolves in the workspace.
+#     Cross-workspace references are out of scope for v1.
+#
+# What this amendment declares:
+#
+#   - RECIPE.6 — `kind: spec_action` carries (action, target,
+#     harness, prompt[, permission_scope]) and pre-loads the
+#     target spec's YAML into the rendered prompt.
+#
+#   - RECIPE.6.1 — the action enum: amend / draft / review.
+#
+#   - RECIPE.6.2 — the target field must resolve to a spec id
+#     in the workspace at validation time.
+#
+#   - RECIPE.6.3 — explicit non-goal: v1 does not auto-write
+#     the harness response. The output lands in the run
+#     transcript; authors fold it manually.
+
+target: spec-format
+amendment_kind: additive
+
+changes:
+  - kind: add-requirement
+    component_id: RECIPE
+    requirement_id: "6"
+    text: |
+      `kind: spec_action` recipes attach a harness to a specific
+      target spec for authoring/amendment work. Required fields:
+      `harness` (registered adapter id), `prompt` (instruction
+      template — see PROMPT.1), `target` (kebab-case spec id),
+      and `action` (see RECIPE.6.1). May include
+      `permission_scope` with the same values RECIPE.4 enumerates.
+
+      The recipe resolver reads the target spec's YAML at run
+      time and prepends it to the rendered prompt with a clear
+      separator, so the harness always sees the current state
+      of the file it's working on. The run's RunStartedEvent
+      records both `from_task` (the recipe-bearing task) and
+      a synthetic spec_ref naming the target so /specs/<target>
+      surfaces the run alongside any other citations.
+
+  - kind: add-requirement
+    component_id: RECIPE
+    requirement_id: "6.1"
+    text: |
+      `action` is one of `amend`, `draft`, or `review`. The
+      validator rejects anything else in strict mode (warning
+      in lenient mode). v1 uses the action only as part of the
+      rendered prompt prelude — it tells the harness what shape
+      of output to produce — and as a tag on /runs/<id> so
+      readers know what kind of work the run was for. Future
+      tooling may branch the executor's output-handling on it.
+
+  - kind: add-requirement
+    component_id: RECIPE
+    requirement_id: "6.2"
+    text: |
+      `target` must be a kebab-case spec id that resolves to a
+      spec in the workspace. The recipe loader reads
+      `<workspace>/.rex/specs/<target>.yaml` (with the same
+      filename-or-metadata-id fallback the existing recipe
+      loader uses for --from-task). Targets that don't resolve
+      are a strict error / lenient warning at validate time.
+
+  - kind: add-requirement
+    component_id: RECIPE
+    requirement_id: "6.3"
+    text: |
+      v1 does NOT auto-write the harness response back to the
+      target spec. The harness output lands verbatim in the
+      run's transcript on /runs/<id>; authors review and fold
+      it manually (typically into specs/_proposed/<target>-amendment-<date>.yaml
+      for `action: amend`, or into a new file for `action: draft`).
+      Automated write-back requires the "harness mutates spec"
+      permission flow which is a separate amendment.
+
+  - kind: add-task
+    task_id: implement-spec-action-recipe
+    description: |
+      Wire `kind: spec_action` end-to-end: schema (Recipe
+      gains Action + Target fields), validator (RECIPE.6.*
+      including target resolution), recipe loader (prepend the
+      target spec's YAML to the rendered prompt), test
+      coverage. Sets up runs that cite a spec for amend/draft/
+      review work without manual prompt construction.
+    state: in_progress
+    references:
+      - RECIPE.6
+      - RECIPE.6.1
+      - RECIPE.6.2
+      - RECIPE.6.3

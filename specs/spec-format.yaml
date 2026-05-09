@@ -130,6 +130,37 @@ tasks:
       - kind: spec
         acid: spec-format.VAL.7
 
+  - id: implement-spec-action-recipe
+    description: |
+      Wire `kind: spec_action` end-to-end: schema (Recipe gains
+      Action + Target fields), validator (RECIPE.6.* including
+      target resolution), recipe loader (prepend the target
+      spec's YAML to the rendered prompt), test coverage. Sets
+      up runs that cite a spec for amend/draft/review work
+      without manual prompt construction.
+    state: done
+    note: "Recipe.Kind=spec_action carries Action + Target; checkSpecActionRecipe enforces the per-doc shape (RECIPE.6/.6.1/.6.2); ValidateWorkspace's second pass adds the cross-spec target resolution. The recipe loader (internal/local/recipe/) reads the target spec at run time, prepends it to the rendered prompt with an action-aware preamble (RECIPE.6.3), and folds the target into SpecRefs so /specs/<target> surfaces the run. CLI + web run handlers route spec_action through the harness path with no separate code path needed."
+    references:
+      - RECIPE.6
+      - RECIPE.6.1
+      - RECIPE.6.2
+      - RECIPE.6.3
+    proof:
+      - kind: code
+        path: internal/core/specfmt/types.go
+      - kind: code
+        path: internal/core/specfmt/validate.go
+      - kind: code
+        path: internal/core/specfmt/resolver.go
+      - kind: code
+        path: internal/local/recipe/recipe.go
+      - kind: test
+        path: internal/local/recipe/spec_action_test.go
+        name: TestLoadFromTaskRefSpecActionPrependsTargetBody
+      - kind: test
+        path: internal/core/specfmt/spec_action_test.go
+        name: TestValidateSpecActionRecipeAcceptsHappyShape
+
   - id: implement-task-depends-on
     description: |
       Add tasks[].depends_on to the Go schema, the validator
@@ -379,6 +410,46 @@ components:
         free-form) that surfaces in the UI alongside the run button
         and in `--from-task` dry-run output. When omitted, the
         enclosing task's description is shown.
+      "6": |
+        `kind: spec_action` recipes attach a harness to a specific
+        target spec for authoring/amendment work. Required fields:
+        `harness` (registered adapter id), `prompt` (instruction
+        template — see `PROMPT.1`), `target` (kebab-case spec id),
+        and `action` (see `RECIPE.6.1`). May include
+        `permission_scope` with the same values `RECIPE.4`
+        enumerates.
+
+        The recipe resolver reads the target spec's YAML at run
+        time and prepends it to the rendered prompt with a clear
+        separator, so the harness always sees the current state
+        of the file it's working on. The run's `RunStartedEvent`
+        records both `from_task` (the recipe-bearing task) and a
+        synthetic spec_ref naming the target so `/specs/<target>`
+        surfaces the run alongside any other citations.
+      "6.1": |
+        `action` is one of `amend`, `draft`, or `review`. The
+        validator rejects anything else in strict mode (warning in
+        lenient mode). v1 uses the action only as part of the
+        rendered prompt prelude — it tells the harness what shape
+        of output to produce — and as a tag on `/runs/<id>` so
+        readers know what kind of work the run was for. Future
+        tooling may branch the executor's output-handling on it.
+      "6.2": |
+        `target` must be a kebab-case spec id that resolves to a
+        spec in the workspace. The recipe loader reads
+        `<workspace>/.rex/specs/<target>.yaml` (with the same
+        filename-or-metadata-id fallback the existing recipe
+        loader uses for `--from-task`). Targets that don't resolve
+        are a strict error / lenient warning at validate time.
+      "6.3": |
+        v1 does NOT auto-write the harness response back to the
+        target spec. The harness output lands verbatim in the
+        run's transcript on `/runs/<id>`; authors review and fold
+        it manually (typically into
+        `specs/_proposed/<target>-amendment-<date>.yaml` for
+        `action: amend`, or into a new file for `action: draft`).
+        Automated write-back requires the "harness mutates spec"
+        permission flow which is a separate amendment.
 
   PROMPT:
     name: Recipe prompt-template substitution

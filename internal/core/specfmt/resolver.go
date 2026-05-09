@@ -155,6 +155,34 @@ func ValidateWorkspace(w *Workspace, mode Mode) Result {
 			issues = append(issues, *iss)
 		}
 
+		// kind: spec_action target resolution (RECIPE.6.2). The
+		// per-doc validator handles shape; this pass adds the
+		// cross-spec "does the target actually exist" check.
+		for ti, task := range doc.Tasks {
+			if task.Run == nil || task.Run.Kind != RecipeKindSpecAction {
+				continue
+			}
+			if task.Run.Target == "" {
+				continue
+			}
+			if _, ok := w.Get(task.Run.Target); ok {
+				continue
+			}
+			severity := SeverityError
+			if mode == ModeLenient {
+				severity = SeverityWarning
+			}
+			issues = append(issues, Issue{
+				File:     doc.Path,
+				Path:     fmt.Sprintf("tasks[%d].run.target", ti),
+				Category: "dangling-spec-action-target",
+				Message: fmt.Sprintf(
+					"target %q does not match any spec in this workspace (spec-format.RECIPE.6.2)",
+					task.Run.Target),
+				Severity: severity,
+			})
+		}
+
 		// metadata.related_specs dangling-id warning (spec-format.META.7).
 		for ri, related := range doc.Metadata.RelatedSpecs {
 			if _, ok := w.Get(related); ok {

@@ -204,6 +204,25 @@ const (
 	RecipeKindShell        RecipeKind = "shell"
 	RecipeKindSpecValidate RecipeKind = "spec_validate"
 	RecipeKindHarness      RecipeKind = "harness"
+	// RecipeKindSpecAction (RECIPE.6) is a harness recipe with
+	// a structured "work on this spec" envelope: the loader
+	// pre-loads the target spec's YAML into the prompt, the
+	// validator gates the action enum + target resolution, and
+	// the run's provenance records the target alongside
+	// from_task.
+	RecipeKindSpecAction RecipeKind = "spec_action"
+)
+
+// SpecAction enumerates the v1 actions for kind: spec_action
+// (spec-format.RECIPE.6.1). The action is informational in v1 —
+// it shapes the rendered prompt prelude but doesn't branch the
+// executor's write path.
+type SpecAction string
+
+const (
+	SpecActionAmend  SpecAction = "amend"
+	SpecActionDraft  SpecAction = "draft"
+	SpecActionReview SpecAction = "review"
 )
 
 // PermissionScope is the v1 enumerated value set for harness recipes
@@ -236,10 +255,16 @@ type Recipe struct {
 	Strict      *bool    `yaml:"strict,omitempty"`
 	StrictUnset bool     `yaml:"-"`
 
-	// kind: harness
+	// kind: harness  (also used by kind: spec_action — same
+	// adapter / prompt / scope plumbing, plus the spec_action-
+	// specific Action + Target fields below.)
 	Harness         string          `yaml:"harness,omitempty"`
 	Prompt          string          `yaml:"prompt,omitempty"`
 	PermissionScope PermissionScope `yaml:"permission_scope,omitempty"`
+
+	// kind: spec_action
+	Action SpecAction `yaml:"action,omitempty"`
+	Target string     `yaml:"target,omitempty"`
 }
 
 // StrictValue reports whether the spec_validate recipe runs in strict

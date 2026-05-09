@@ -62,7 +62,11 @@ func (s *Server) handleSpecTaskRun(w http.ResponseWriter, r *http.Request) {
 			})
 			return err
 		})
-	case specfmt.RecipeKindHarness:
+	case specfmt.RecipeKindHarness, specfmt.RecipeKindSpecAction:
+		// spec_action goes through the harness path — the recipe
+		// loader has pre-pended the target spec's YAML to
+		// resolved.Prompt (RECIPE.6) and folded the target into
+		// resolved.SpecRefs.
 		reg := s.harnessRegistry()
 		if _, ok := reg.Lookup(resolved.Recipe.Harness); !ok {
 			_ = ws.Close()

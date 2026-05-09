@@ -112,12 +112,83 @@ func LoadFromTaskRef(workspaceRoot, ref string, extraRefs []string) (*Resolved, 
 		}
 	case specfmt.RecipeKindHarness:
 		out.Prompt = RenderTemplate(task.Run.Prompt, doc, task)
+	case specfmt.RecipeKindSpecAction:
+		// Pre-load the target spec's YAML and prepend it to the
+		// rendered prompt so the harness opens with full context
+		// (RECIPE.6). Also fold target into spec_refs so /specs/<target>
+		// surfaces this run alongside any other citations
+		// (RECIPE.6 — synthetic spec_ref for the target).
+		body, err := buildSpecActionPrompt(workspaceRoot, task.Run, doc, task)
+		if err != nil {
+			return nil, err
+		}
+		out.Prompt = body
+		// Synthesize a spec_ref pointing at the target so the
+		// run's provenance is bidirectional. The dedupe pass
+		// keeps it tidy if the task already references the target.
+		out.SpecRefs = DedupeRefs(append(out.SpecRefs, task.Run.Target))
 	case specfmt.RecipeKindSpecValidate:
 		return nil, fmt.Errorf("%w: spec_validate", ErrUnsupportedKind)
 	default:
 		return nil, fmt.Errorf("recipe kind %q not supported by this build", task.Run.Kind)
 	}
 	return out, nil
+}
+
+// buildSpecActionPrompt assembles the harness prompt for a
+// spec_action recipe: a clear preamble identifying the workspace
+// and target, the target spec's current YAML body verbatim, the
+// action enum, then the author's instruction.
+func buildSpecActionPrompt(workspaceRoot string, recipe *specfmt.Recipe, doc *specfmt.Document, task *specfmt.Task) (string, error) {
+	if recipe.Target == "" {
+		return "", fmt.Errorf("recipe: spec_action target is empty (RECIPE.6.2)")
+	}
+	dir := SpecsDir(workspaceRoot)
+	targetPath := filepath.Join(dir, recipe.Target+".yaml")
+	body, err := os.ReadFile(targetPath)
+	if err != nil {
+		// Fall back to filename-or-id resolution like the main loader.
+		matched, ferr := findSpecByID(dir, recipe.Target)
+		if ferr != nil || matched == "" {
+			return "", fmt.Errorf("recipe: spec_action target %q does not resolve in %s", recipe.Target, dir)
+		}
+		targetPath = matched
+		body, err = os.ReadFile(targetPath)
+		if err != nil {
+			return "", fmt.Errorf("recipe: read spec_action target %s: %w", targetPath, err)
+		}
+	}
+	action := string(recipe.Action)
+	if action == "" {
+		action = "amend"
+	}
+	rendered := RenderTemplate(recipe.Prompt, doc, task)
+	var b strings.Builder
+	fmt.Fprintf(&b, "You are working with the Rex spec at %s.\n", relTargetPath(workspaceRoot, targetPath))
+	fmt.Fprintf(&b, "\nAction requested: %s\n", action)
+	fmt.Fprintf(&b, "\nThe spec's current content:\n---\n%s\n---\n\n", strings.TrimRight(string(body), "\n"))
+	fmt.Fprintf(&b, "Author's instruction:\n%s\n\n", strings.TrimSpace(rendered))
+	switch specfmt.SpecAction(action) {
+	case specfmt.SpecActionAmend:
+		b.WriteString("Output a YAML body suitable for ")
+		fmt.Fprintf(&b, "specs/_proposed/%s-amendment-<date>.yaml. ", recipe.Target)
+		b.WriteString("Authors will review and fold the amendment manually; do not modify any other files.\n")
+	case specfmt.SpecActionDraft:
+		b.WriteString("Output a complete spec body. Authors will save it as a new spec file; do not modify any other files.\n")
+	case specfmt.SpecActionReview:
+		b.WriteString("Provide a Markdown review of the spec — gaps, contradictions, opportunities, and concrete suggestions. Do not output a YAML rewrite.\n")
+	}
+	return b.String(), nil
+}
+
+// relTargetPath formats the target spec's path workspace-relative
+// when possible so the prompt's preamble is short. Falls back to
+// the absolute path if filepath.Rel fails (e.g. cross-volume).
+func relTargetPath(workspaceRoot, abs string) string {
+	if rel, err := filepath.Rel(workspaceRoot, abs); err == nil {
+		return rel
+	}
+	return abs
 }
 
 func findSpecByID(dir, specID string) (string, error) {

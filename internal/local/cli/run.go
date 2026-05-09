@@ -304,7 +304,12 @@ during execution and the command exits when the run terminates.
 					return err
 				}
 				switch resolved.Recipe.Kind {
-				case specfmt.RecipeKindHarness:
+				case specfmt.RecipeKindHarness, specfmt.RecipeKindSpecAction:
+					// spec_action goes through the harness path —
+					// the recipe loader has already pre-pended the
+					// target spec's YAML to resolved.Prompt
+					// (RECIPE.6) and folded the target into
+					// resolved.SpecRefs.
 					if _, ok := adapter.Default().Lookup(resolved.Recipe.Harness); !ok {
 						return fmt.Errorf("recipe references harness %q which has no adapter registered (registered: %s)",
 							resolved.Recipe.Harness, strings.Join(adapter.Default().Names(), ", "))

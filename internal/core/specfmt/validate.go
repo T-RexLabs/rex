@@ -137,6 +137,14 @@ var recognizedRecipeKinds = map[RecipeKind]struct{}{
 	RecipeKindShell:        {},
 	RecipeKindSpecValidate: {},
 	RecipeKindHarness:      {},
+	RecipeKindSpecAction:   {},
+}
+
+// recognizedSpecActions enumerates the v1 RECIPE.6.1 action set.
+var recognizedSpecActions = map[SpecAction]struct{}{
+	SpecActionAmend:  {},
+	SpecActionDraft:  {},
+	SpecActionReview: {},
 }
 
 // recognizedPermissionScopes enumerates spec-format.RECIPE.4's v1
@@ -627,7 +635,64 @@ func (v *validator) checkRecipe(base string, taskIdx int, r *Recipe) {
 		v.checkSpecValidateRecipe(base, taskIdx, r)
 	case RecipeKindHarness:
 		v.checkHarnessRecipe(base, taskIdx, r)
+	case RecipeKindSpecAction:
+		v.checkSpecActionRecipe(base, taskIdx, r)
 	}
+}
+
+// checkSpecActionRecipe enforces RECIPE.6 / .6.1 / .6.2 on the
+// per-doc pass: required-field shape, action enum, target shape
+// (kebab-case). Cross-spec resolution of `target` happens in the
+// workspace validator since this single-doc validator can't see
+// other specs.
+func (v *validator) checkSpecActionRecipe(base string, taskIdx int, r *Recipe) {
+	if r.Harness == "" {
+		v.errf(base+".harness", "required-field",
+			"tasks[%d].run.harness is required for kind: spec_action (spec-format.RECIPE.6)", taskIdx)
+	}
+	if r.Prompt == "" {
+		v.errf(base+".prompt", "required-field",
+			"tasks[%d].run.prompt is required for kind: spec_action (spec-format.RECIPE.6)", taskIdx)
+	} else {
+		v.checkPromptTokens(base+".prompt", taskIdx, r.Prompt)
+	}
+	if r.Target == "" {
+		v.errf(base+".target", "required-field",
+			"tasks[%d].run.target is required for kind: spec_action (spec-format.RECIPE.6.2)", taskIdx)
+	} else if !IsKebab(r.Target) {
+		v.errf(base+".target", "format",
+			"tasks[%d].run.target %q is not kebab-case (spec-format.RECIPE.6.2)", taskIdx, r.Target)
+	}
+	if r.Action == "" {
+		v.errf(base+".action", "required-field",
+			"tasks[%d].run.action is required for kind: spec_action (spec-format.RECIPE.6.1)", taskIdx)
+	} else if _, ok := recognizedSpecActions[r.Action]; !ok {
+		switch v.mode {
+		case ModeStrict:
+			v.errf(base+".action", "format",
+				"tasks[%d].run.action %q is not one of amend, draft, review (spec-format.RECIPE.6.1)",
+				taskIdx, r.Action)
+		case ModeLenient:
+			v.warnf(base+".action", "format",
+				"tasks[%d].run.action %q is not one of amend, draft, review (spec-format.RECIPE.6.1)",
+				taskIdx, r.Action)
+		}
+	}
+	if r.PermissionScope != "" {
+		if _, ok := recognizedPermissionScopes[r.PermissionScope]; !ok {
+			v.errf(base+".permission_scope", "format",
+				"tasks[%d].run.permission_scope %q is not one of read_only, workspace, unrestricted (spec-format.RECIPE.4)",
+				taskIdx, r.PermissionScope)
+		}
+	}
+	v.rejectFieldsForKind(base, taskIdx, r, "spec_action",
+		[]rejectedField{
+			{len(r.Command) > 0, "command"},
+			{r.Cwd != "", "cwd"},
+			{r.Env != nil, "env"},
+			{r.Paths != nil, "paths"},
+			{r.Strict != nil, "strict"},
+		})
 }
 
 func (v *validator) checkShellRecipe(base string, taskIdx int, r *Recipe) {
