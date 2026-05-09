@@ -46,6 +46,17 @@ const (
 	EventTypeSpecCreated = "spec.created"
 	EventTypeSpecEdited  = "spec.edited"
 
+	// Spec amendment lifecycle (audit.TYPES.1 "every spec amendment
+	// proposed/accepted/rejected"; spec-format.AMEND.4). proposed
+	// has no producer in v1 — the harness drafter writes amendment
+	// files out-of-band (like a manual editor write), and tracking
+	// arbitrary file appearance under _proposed/ would require
+	// fsnotify on every workspace. accepted and rejected fire from
+	// the CLI / web surfaces that mediate the lifecycle transition.
+	EventTypeSpecAmendmentProposed = "spec.amendment.proposed"
+	EventTypeSpecAmendmentAccepted = "spec.amendment.accepted"
+	EventTypeSpecAmendmentRejected = "spec.amendment.rejected"
+
 	// Remote lifecycle (audit.TYPES.1 "every remote attach/detach").
 	EventTypeRemoteAttached = "remote.attached"
 	EventTypeRemoteDetached = "remote.detached"
@@ -91,30 +102,33 @@ const EventVersion uint32 = 1
 // because Go reads from a non-mutated map are safe.
 var auditEventTypes = func() map[string]struct{} {
 	out := map[string]struct{}{
-		EventTypeWorkspaceCreated:     {},
-		EventTypeRepoAdded:            {},
-		EventTypeRepoLinked:           {},
-		EventTypeRepoRemoved:          {},
-		EventTypeScheduleAdded:        {},
-		EventTypeScheduleRemoved:      {},
-		EventTypeWorkspaceArchived:    {},
-		EventTypeWorkspaceUnarchived:  {},
-		EventTypeWorkspaceDeleted:     {},
-		EventTypeSpecCreated:          {},
-		EventTypeSpecEdited:           {},
-		EventTypeRemoteAttached:       {},
-		EventTypeRemoteDetached:       {},
-		EventTypeHookCompleted:        {},
-		EventTypeHarnessBriefAttached: {},
-		EventTypeSyncGitRebased:       {},
-		EventTypeSyncGitConflicted:    {},
-		EventTypeSyncGitResolved:      {},
-		EventTypeAuthSuccess:          {},
-		EventTypeAuthFailure:          {},
-		EventTypeTokenIssued:          {},
-		EventTypeTokenRefreshed:       {},
-		EventTypeTokenRevoked:         {},
-		EventTypeAuthReplayAttempt:    {},
+		EventTypeWorkspaceCreated:      {},
+		EventTypeRepoAdded:             {},
+		EventTypeRepoLinked:            {},
+		EventTypeRepoRemoved:           {},
+		EventTypeScheduleAdded:         {},
+		EventTypeScheduleRemoved:       {},
+		EventTypeWorkspaceArchived:     {},
+		EventTypeWorkspaceUnarchived:   {},
+		EventTypeWorkspaceDeleted:      {},
+		EventTypeSpecCreated:           {},
+		EventTypeSpecEdited:            {},
+		EventTypeSpecAmendmentProposed: {},
+		EventTypeSpecAmendmentAccepted: {},
+		EventTypeSpecAmendmentRejected: {},
+		EventTypeRemoteAttached:        {},
+		EventTypeRemoteDetached:        {},
+		EventTypeHookCompleted:         {},
+		EventTypeHarnessBriefAttached:  {},
+		EventTypeSyncGitRebased:        {},
+		EventTypeSyncGitConflicted:     {},
+		EventTypeSyncGitResolved:       {},
+		EventTypeAuthSuccess:           {},
+		EventTypeAuthFailure:           {},
+		EventTypeTokenIssued:           {},
+		EventTypeTokenRefreshed:        {},
+		EventTypeTokenRevoked:          {},
+		EventTypeAuthReplayAttempt:     {},
 
 		// Runner events are audit-class per TYPES.1 ("every harness
 		// invocation start/end ... every workspace state change").
@@ -242,6 +256,24 @@ type SpecEditedEvent struct {
 	SpecID      string `json:"spec_id"`
 	Path        string `json:"path"`
 	HasErrors   bool   `json:"has_errors"`
+}
+
+// SpecAmendmentEvent is the shared payload for the three amendment
+// lifecycle events (proposed/accepted/rejected). AmendmentFor is the
+// target spec id, or "multi" when the amendment's target field is
+// `multi`. AmendmentDate is the YYYY-MM-DD parsed from the amendment
+// frontmatter. Stem is the filename without the .yaml extension and
+// is the canonical handle the CLI / web surfaces use to refer to an
+// amendment. FromPath records the on-disk location at event-fire
+// time; ToPath is populated only on accepted (the destination under
+// _proposed/_accepted/) and otherwise empty.
+type SpecAmendmentEvent struct {
+	WorkspaceID   string `json:"workspace_id"`
+	Stem          string `json:"stem"`
+	AmendmentFor  string `json:"amendment_for"`
+	AmendmentDate string `json:"amendment_date,omitempty"`
+	FromPath      string `json:"from_path"`
+	ToPath        string `json:"to_path,omitempty"`
 }
 
 // RemoteAttachedEvent is the payload for EventTypeRemoteAttached —

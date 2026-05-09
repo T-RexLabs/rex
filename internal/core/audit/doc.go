@@ -60,6 +60,23 @@
 //	  fires from `rex spec edit` after $EDITOR returns; HasErrors
 //	  records the post-edit validation outcome.
 //
+// Spec amendment lifecycle (audit.TYPES.1 "every spec amendment
+// proposed/accepted/rejected"; spec-format.AMEND.4). All three
+// share SpecAmendmentEvent as their payload:
+//
+//	spec.amendment.proposed payload: SpecAmendmentEvent
+//	  reserved — has no producer in v1. The harness drafter writes
+//	  amendment files out-of-band (analogous to a manual editor
+//	  write), and tracking arbitrary file appearance under
+//	  _proposed/ would require fsnotify on every workspace.
+//	spec.amendment.accepted payload: SpecAmendmentEvent
+//	  fires from `rex spec amend accept` and the web POST. ToPath
+//	  records the destination under _proposed/_accepted/.
+//	spec.amendment.rejected payload: SpecAmendmentEvent
+//	  fires from `rex spec amend reject` and the web POST. The
+//	  file is deleted before the event is appended; FromPath
+//	  preserves the location.
+//
 // Remote lifecycle (audit.TYPES.1 "every remote attach/detach"):
 //
 //	remote.attached         payload: RemoteAttachedEvent
