@@ -43,7 +43,8 @@ task X?" inspection.`,
 		Example: `  rex spec runs execution
   rex spec runs execution --task dag-primitives
   rex spec runs sync --status completed --limit 5`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeSpecIDs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			specID := args[0]
 			if !specfmt.IsKebab(specID) {
@@ -128,6 +129,7 @@ task X?" inspection.`,
 	cmd.Flags().StringVar(&taskFilter, "task", "", "narrow to runs launched from <id>.<task>")
 	cmd.Flags().StringVar(&statusFilter, "status", "", "only runs with the given final status")
 	cmd.Flags().IntVar(&limit, "limit", 0, "show only the N most recent runs (0 = no limit)")
+	_ = cmd.RegisterFlagCompletionFunc("task", completeTaskFlagForSpecRunsCmd)
 	return cmd
 }
 

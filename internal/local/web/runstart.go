@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync/atomic"
 
 	"github.com/asabla/rex/internal/core/runner"
 	"github.com/asabla/rex/internal/core/runner/adapter"
+	"github.com/asabla/rex/internal/core/specfmt"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
 	"github.com/asabla/rex/internal/local/runtask"
 )
@@ -25,20 +29,34 @@ type runNewData struct {
 	Model       string
 	Mode        string
 
-	// Spec-attachment fields (Phase-C parity with the CLI's
-	// --from-task and --spec-ref flags). Both optional;
-	// FromTask carries the `<spec-id>.<task-id>` form, SpecRefs
-	// is the user-typed comma-separated list of ACIDs that gets
-	// split + trimmed at submit time.
-	FromTask     string
-	SpecRefsRaw  string
-	SpecRefsList []string
+	// FromTask is the optional <spec-id>.<task-id> the run is
+	// attached to (execution.RUN.1.1). Submitted by the harness
+	// panel's spec/task dropdown — empty when the user picks
+	// the blank option or the workspace has no specs. The
+	// shell panel doesn't expose this field; ad-hoc shell runs
+	// rarely benefit from spec attachment, and authors who
+	// genuinely want it can use `rex run start --from-task` on
+	// the CLI which has tab completion.
+	FromTask string
+	// FromTaskOptions enumerates every <spec-id>.<task-id>
+	// pair in the workspace, sorted, for the dropdown.
+	FromTaskOptions []taskOption
 
 	Harnesses    []harnessFormOption
 	ModelOptions []string
 	ModeOptions  []string
 	ShowModel    bool
 	ShowMode     bool
+}
+
+// taskOption is one entry in the from_task dropdown. Value is
+// the wire form (`<spec-id>.<task-id>`) submitted on form post;
+// Label is what the user sees in the dropdown ("spec-id ·
+// task-id  — task description").
+type taskOption struct {
+	Value string
+	Label string
+	State string
 }
 
 func anyHarnessModels(opts []harnessFormOption) bool {
@@ -101,6 +119,7 @@ func (s *Server) prepareRunNewData(d runNewData) runNewData {
 	d.ModeOptions = append([]string(nil), selected.Modes...)
 	d.ShowModel = anyHarnessModels(d.Harnesses)
 	d.ShowMode = anyHarnessModes(d.Harnesses)
+	d.FromTaskOptions = loadFromTaskOptions(s.opts.WorkspaceRoot)
 	return d
 }
 
@@ -165,40 +184,35 @@ func (s *Server) handleRunNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base.NavSection = "runs"
+	// from_task may arrive prefilled via a deep link; pick the
+	// run type up too so /runs/new?from_task=… defaults to the
+	// harness panel where the field actually renders. Authors
+	// who want the shell panel can flip the dropdown after.
 	q := r.URL.Query()
+	runType := strings.TrimSpace(q.Get("run_type"))
+	if runType == "" {
+		runType = "shell"
+	}
+	fromTask := strings.TrimSpace(q.Get("from_task"))
+	if fromTask != "" && q.Get("run_type") == "" {
+		runType = "harness"
+	}
 	d := s.prepareRunNewData(runNewData{
-		pageData:    base,
-		RunType:     "shell",
-		FromTask:    strings.TrimSpace(q.Get("from_task")),
-		SpecRefsRaw: strings.Join(q["spec_ref"], ", "),
+		pageData: base,
+		RunType:  runType,
+		FromTask: fromTask,
 	})
 	s.render(w, r, "run_new.tmpl", d)
-}
-
-// parseSpecRefsField splits the user's comma-separated ACID
-// input into a clean []string, dropping blanks and trimming
-// whitespace. Validation of individual entries is best-effort —
-// the runner sees them verbatim, the spec-format validator's
-// dangling-acid pass catches typos at the next `rex spec
-// validate` run rather than blocking the start path.
-func parseSpecRefsField(raw string) []string {
-	if raw == "" {
-		return nil
-	}
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
 }
 
 // validateFromTaskField requires the standard <spec-id>.<task-id>
 // shape: at least one dot, no internal whitespace, both halves
 // non-empty. Empty input is fine — the field is optional.
+//
+// Kept around even though the form now uses a server-side
+// dropdown — handleRunStart still revalidates the submitted
+// value defensively, since a craftable POST or stale dropdown
+// could otherwise let a malformed string through.
 func validateFromTaskField(raw string) error {
 	if raw == "" {
 		return nil
@@ -211,6 +225,54 @@ func validateFromTaskField(raw string) error {
 		return fmt.Errorf("from_task %q must not contain whitespace", raw)
 	}
 	return nil
+}
+
+// loadFromTaskOptions walks the workspace's specs/ dir and
+// returns one option per (spec, task) pair, sorted by
+// spec-id then task-id. Best-effort: failures (missing
+// specs/ directory, unparseable spec) yield an empty list
+// rather than blocking the form. The field is optional so
+// "no options" gracefully renders as a dropdown with just
+// the blank "(none)" entry.
+func loadFromTaskOptions(workspaceRoot string) []taskOption {
+	dir := filepath.Join(workspaceRoot, ".rex", "specs")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []taskOption
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+			continue
+		}
+		doc, err := specfmt.ParseFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		for _, t := range doc.Tasks {
+			label := doc.Metadata.ID + " · " + t.ID
+			if t.Description != "" {
+				label += " — " + truncate(t.Description, 80)
+			}
+			out = append(out, taskOption{
+				Value: doc.Metadata.ID + "." + t.ID,
+				Label: label,
+				State: t.State,
+			})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Value < out[j].Value })
+	return out
+}
+
+// truncate caps a label at n characters; appends an ellipsis
+// when it had to cut. Keeps dropdown rows from running across
+// the page on chatty task descriptions.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
 }
 
 // handleRunStart validates the submitted form, launches the run in a
@@ -230,9 +292,7 @@ func (s *Server) handleRunStart(w http.ResponseWriter, r *http.Request) {
 		Model:       strings.TrimSpace(r.FormValue("model")),
 		Mode:        strings.TrimSpace(r.FormValue("mode")),
 		FromTask:    strings.TrimSpace(r.FormValue("from_task")),
-		SpecRefsRaw: strings.TrimSpace(r.FormValue("spec_refs")),
 	})
-	d.SpecRefsList = parseSpecRefsField(d.SpecRefsRaw)
 	if err := validateFromTaskField(d.FromTask); err != nil {
 		s.rerenderRunNew(w, r, err.Error(), d)
 		return
@@ -285,7 +345,6 @@ func (s *Server) handleRunStart(w http.ResponseWriter, r *http.Request) {
 				Command:  argv,
 				NodeID:   nodeID,
 				RunID:    runID,
-				SpecRefs: d.SpecRefsList,
 				FromTask: d.FromTask,
 				OnEvent:  onEvent,
 			})
@@ -310,7 +369,6 @@ func (s *Server) handleRunStart(w http.ResponseWriter, r *http.Request) {
 				NodeID:   nodeID,
 				RunID:    runID,
 				Adapters: reg,
-				SpecRefs: d.SpecRefsList,
 				FromTask: d.FromTask,
 				OnEvent:  onEvent,
 				OnInput:  onInput,

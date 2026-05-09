@@ -414,6 +414,8 @@ during execution and the command exits when the run terminates.
 	cmd.Flags().Bool("debug", false, "render full event payloads instead of one-line summaries")
 	cmd.Flags().StringVar(&fromTaskFlag, "from-task", "", "load a recipe from <spec-id>.<task-id> and prefill --harness/--prompt/--shell from it (execution.RUN.1.1)")
 	cmd.Flags().StringSliceVar(&specRefFlags, "spec-ref", nil, "fully-qualified ACID this run satisfies; may be repeated (execution.RUN.1.1)")
+	_ = cmd.RegisterFlagCompletionFunc("from-task", completeFromTaskRefs)
+	_ = cmd.RegisterFlagCompletionFunc("spec-ref", completeSpecRefs)
 	cmd.Flags().StringVar(&workTypeFlag, "work-type", "", "work-type tag (one of question/non_spec/spec/management/scheduled); inferred from --from-task when omitted (workspace.WORK.2)")
 	cmd.MarkFlagsOneRequired("shell", "harness", "from-task")
 	cmd.MarkFlagsMutuallyExclusive("shell", "harness", "from-task")

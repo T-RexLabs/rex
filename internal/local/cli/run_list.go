@@ -126,6 +126,8 @@ in run.started.spec_refs, --from-task filters by the
 	cmd.Flags().StringVar(&statusFilter, "status", "", "only show runs with the given final status")
 	cmd.Flags().StringSliceVar(&specRefFilters, "spec-ref", nil, "filter to runs that record this fully-qualified ACID; may be repeated (execution.RUN.1.2)")
 	cmd.Flags().StringVar(&fromTaskFilter, "from-task", "", "filter to runs launched from this <spec-id>.<task-id> (execution.RUN.1.2)")
+	_ = cmd.RegisterFlagCompletionFunc("spec-ref", completeSpecRefs)
+	_ = cmd.RegisterFlagCompletionFunc("from-task", completeFromTaskRefs)
 	cmd.Flags().IntVar(&limit, "limit", 0, "show only the N most recent runs (0 = no limit)")
 	return cmd
 }
