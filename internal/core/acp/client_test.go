@@ -111,7 +111,7 @@ func TestClientNewSessionRoundTrip(t *testing.T) {
 	res, err := c.NewSession(ctx, SessionNewParams{
 		Cwd: "/tmp/ws-1",
 		MCPServers: []MCPServer{
-			{Name: "fs", Command: []string{"mcp-fs"}},
+			{Name: "fs", Command: "mcp-fs"},
 		},
 	})
 	if err != nil {
@@ -119,6 +119,72 @@ func TestClientNewSessionRoundTrip(t *testing.T) {
 	}
 	if res.SessionID != "sess-9" {
 		t.Fatalf("session id: got %q", res.SessionID)
+	}
+}
+
+// TestSessionNewMCPServersWireShape pins the JSON shape of MCPServer
+// against the upstream ACP stdio variant. The Claude Agent ACP bridge
+// uses Zod to validate session/new params and rejects:
+//   - command as array (must be a string),
+//   - env as map (must be an array of {name,value}),
+//   - args/env undefined (must serialize as []).
+//
+// A regression here surfaces as a -32602 "Invalid params" RPC error at
+// session/new time, which kills the run before the prompt is sent.
+func TestSessionNewMCPServersWireShape(t *testing.T) {
+	t.Parallel()
+
+	p := newPipes()
+	captured := make(chan json.RawMessage, 1)
+	runMockHarness(t, p, func(raw RawMessage) Message {
+		captured <- raw.Message.Params
+		resp, _ := NewResponse(raw.Message.ID, SessionNewResult{SessionID: "s"})
+		return resp
+	})
+
+	c := newTestClient(t, Config{}, p)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if _, err := c.NewSession(ctx, SessionNewParams{
+		Cwd: "/tmp/ws",
+		MCPServers: []MCPServer{
+			{Name: "rex", Command: "/usr/local/bin/rex", Args: []string{"mcp", "--workspace", "/tmp/ws"}},
+			{Name: "fs", Command: "mcp-fs"}, // nil Args/Env must serialize as []
+		},
+	}); err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	var got struct {
+		Cwd        string `json:"cwd"`
+		MCPServers []struct {
+			Name    string          `json:"name"`
+			Command json.RawMessage `json:"command"`
+			Args    json.RawMessage `json:"args"`
+			Env     json.RawMessage `json:"env"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(<-captured, &got); err != nil {
+		t.Fatalf("unmarshal params: %v", err)
+	}
+	if len(got.MCPServers) != 2 {
+		t.Fatalf("server count: got %d, want 2", len(got.MCPServers))
+	}
+	for i, s := range got.MCPServers {
+		if len(s.Command) == 0 || s.Command[0] != '"' {
+			t.Errorf("server %d: command must serialize as JSON string, got %s", i, s.Command)
+		}
+		if string(s.Args) == "null" || len(s.Args) == 0 {
+			t.Errorf("server %d: args must serialize as array (got %s); upstream rejects undefined", i, s.Args)
+		} else if s.Args[0] != '[' {
+			t.Errorf("server %d: args must be a JSON array, got %s", i, s.Args)
+		}
+		if string(s.Env) == "null" || len(s.Env) == 0 {
+			t.Errorf("server %d: env must serialize as array (got %s); upstream rejects undefined", i, s.Env)
+		} else if s.Env[0] != '[' {
+			t.Errorf("server %d: env must be a JSON array of {name,value}, got %s", i, s.Env)
+		}
 	}
 }
 

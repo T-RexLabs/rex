@@ -18,10 +18,25 @@ const (
 // MCPServer describes one MCP server attachment passed to session/new
 // per execution.ACP.5. Rex passes these straight through to the
 // harness; no portal proxy intervenes in v1 (overview.SCOPE).
+//
+// Shape mirrors the ACP stdio variant — the only one v1 needs and the
+// baseline every ACP agent must support. Command is the executable
+// path (string), Args is the argv tail (array), Env is an array of
+// {name,value} pairs (not a map). All three fields are required on
+// the wire and serialize as `[]` rather than `null` when empty,
+// because the upstream Zod validator rejects null/undefined.
 type MCPServer struct {
-	Name    string            `json:"name"`
-	Command []string          `json:"command"`
-	Env     map[string]string `json:"env,omitempty"`
+	Name    string        `json:"name"`
+	Command string        `json:"command"`
+	Args    []string      `json:"args"`
+	Env     []EnvVariable `json:"env"`
+}
+
+// EnvVariable is one entry of MCPServer.Env. ACP requires env to be
+// an array of {name,value} objects rather than a map.
+type EnvVariable struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 // SessionNewParams is the payload for session/new. Mirrors the
@@ -107,6 +122,14 @@ type PermissionHandler func(ctx context.Context, req PermissionRequest) (Permiss
 func (c *Client) NewSession(ctx context.Context, params SessionNewParams) (SessionNewResult, error) {
 	if params.MCPServers == nil {
 		params.MCPServers = []MCPServer{}
+	}
+	for i := range params.MCPServers {
+		if params.MCPServers[i].Args == nil {
+			params.MCPServers[i].Args = []string{}
+		}
+		if params.MCPServers[i].Env == nil {
+			params.MCPServers[i].Env = []EnvVariable{}
+		}
 	}
 	raw, err := c.Call(ctx, MethodSessionNew, params)
 	if err != nil {

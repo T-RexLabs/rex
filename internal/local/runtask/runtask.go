@@ -452,9 +452,11 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 	// extra.disable_rex_mcp: true in workspace.yaml.
 	mcpServers := req.MCPServers
 	if !rexMCPDisabled(ws.Root) && !mcpServerListContainsRex(mcpServers) {
+		cmd, args := rexMCPCommand(ws.Root)
 		mcpServers = append(mcpServers, acp.MCPServer{
 			Name:    "rex",
-			Command: rexMCPCommand(ws.Root),
+			Command: cmd,
+			Args:    args,
 		})
 	}
 
@@ -822,17 +824,17 @@ func mcpServerListContainsRex(servers []acp.MCPServer) bool {
 	return false
 }
 
-// rexMCPCommand builds the argv for Rex's built-in MCP server
-// (tools.INTROSPECT.2). Resolves to the same binary that's
-// running so spawned harnesses use a self-consistent rex.
-// Falls back to the "rex" name on PATH when the executable
-// path can't be resolved (e.g. some test harnesses).
-func rexMCPCommand(workspaceRoot string) []string {
+// rexMCPCommand builds the executable + argv tail for Rex's built-in
+// MCP server (tools.INTROSPECT.2). Resolves to the same binary that's
+// running so spawned harnesses use a self-consistent rex. Falls back
+// to the "rex" name on PATH when the executable path can't be
+// resolved (e.g. some test harnesses).
+func rexMCPCommand(workspaceRoot string) (string, []string) {
 	exe, err := os.Executable()
 	if err != nil || exe == "" {
 		exe = "rex"
 	}
-	return []string{exe, "mcp", "--workspace", workspaceRoot}
+	return exe, []string{"mcp", "--workspace", workspaceRoot}
 }
 
 // rexMCPDisabled reads extra.disable_rex_mcp from workspace.yaml.
