@@ -160,6 +160,26 @@ func TestWorkspaceShowFailsWhenAbsent(t *testing.T) {
 	}
 }
 
+// TestWorkspaceShowAcceptsWorkspaceFlag covers the bug fix that
+// brought `rex workspace show` in line with the rest of the
+// `rex workspace` subcommands — the --workspace flag is now an
+// equivalent alternative to the positional [path] arg.
+func TestWorkspaceShowAcceptsWorkspaceFlag(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "f", "--name", "Flag"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	out, err := executeCommand(t, "workspace", "show", "--workspace", dir)
+	if err != nil {
+		t.Fatalf("show --workspace: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "id:         f") {
+		t.Fatalf("expected id=f in output: %s", out)
+	}
+}
+
 func TestWorkspaceInitEmitsWorkspaceCreatedAuditEvent(t *testing.T) {
 	t.Parallel()
 

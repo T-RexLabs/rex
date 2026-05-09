@@ -566,16 +566,27 @@ func newWorkspaceShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show [path]",
 		Short: "Show the workspace at the given path (default: walk up from cwd)",
-		Long: `Resolves a workspace from the supplied path (or the current working
-directory when omitted) and prints its settings and content counts.`,
+		Long: `Resolves a workspace from the supplied positional path or the
+--workspace flag (or the current working directory when neither is
+set) and prints its settings and content counts. The positional and
+flag forms are equivalent; the flag exists so 'rex workspace show'
+matches every other 'rex workspace <leaf>' subcommand's interface.`,
 		Example: `  rex workspace show
   rex workspace show /path/to/ws
+  rex workspace show --workspace /path/to/ws
   rex workspace show .`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			start := "."
+			// Positional arg wins (existing behaviour); --workspace
+			// flag is the secondary lookup; cwd-walk is the default.
+			start := ""
 			if len(args) == 1 {
 				start = args[0]
+			} else if v, _ := cmd.Flags().GetString(workspaceFlagName); v != "" {
+				start = v
+			}
+			if start == "" {
+				start = "."
 			}
 			root, err := findWorkspaceRoot(start)
 			if err != nil {
@@ -619,6 +630,7 @@ directory when omitted) and prints its settings and content counts.`,
 		"rex spec list",
 		"rex workspace reindex",
 	)
+	addWorkspacePersistentFlag(cmd)
 	return cmd
 }
 
