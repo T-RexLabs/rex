@@ -34,7 +34,10 @@ import (
 //     is stamped to the last received event
 //
 // Reconstructs workspace.yaml from the workspace.created event seen
-// during the pull. Without that event the clone fails with a clear
+// during the pull, then folds any subsequent workspace.archived /
+// unarchived / deleted events so the cloned state field matches the
+// authoritative current state (not just the initial "active").
+// Without a workspace.created event the clone fails with a clear
 // "workspace.created not found in stream" message.
 func newWorkspaceCloneCmd() *cobra.Command {
 	var (
@@ -117,6 +120,12 @@ Steps:
 				matched        int
 				sawCreated     bool
 				createdPayload audit.WorkspaceCreatedEvent
+				// resolvedState folds the latest state-transition
+				// event seen in the stream so the cloned
+				// workspace.yaml reflects the current state, not
+				// just the initial "active" from
+				// workspace.created (workspace.LIFE.3).
+				resolvedState = workspaceStateActive
 			)
 			_, err = c.Pull(ctx, "", func(rec eventlog.Record) error {
 				if rec.WorkspaceID != workspaceID {
@@ -127,10 +136,17 @@ Steps:
 				}
 				matched++
 				lastID = rec.ID
-				if rec.Type == audit.EventTypeWorkspaceCreated {
+				switch rec.Type {
+				case audit.EventTypeWorkspaceCreated:
 					if err := json.Unmarshal(rec.Payload, &createdPayload); err == nil {
 						sawCreated = true
 					}
+				case audit.EventTypeWorkspaceArchived:
+					resolvedState = workspaceStateArchived
+				case audit.EventTypeWorkspaceUnarchived:
+					resolvedState = workspaceStateActive
+				case audit.EventTypeWorkspaceDeleted:
+					resolvedState = workspaceStateDeleted
 				}
 				return nil
 			})
@@ -144,14 +160,16 @@ Steps:
 				return fmt.Errorf("workspace %q is missing a workspace.created event in the remote stream", workspaceID)
 			}
 
-			// Reconstruct workspace.yaml from the
-			// workspace.created event payload. State defaults to
-			// "active" when missing — replaying state-transition
-			// events into the file is post-v1 work.
+			// Reconstruct workspace.yaml from the workspace.created
+			// event payload, then fold subsequent state-transition
+			// events to capture the latest state (workspace.LIFE.3).
+			// Events are streamed in HLC order so the last
+			// transition we observe is the authoritative current
+			// state.
 			settings := workspaceSettings{
 				ID:        createdPayload.WorkspaceID,
 				Name:      createdPayload.Name,
-				State:     workspaceStateActive,
+				State:     resolvedState,
 				CreatedAt: createdPayload.CreatedAt,
 			}
 			body, err := yaml.Marshal(settings)

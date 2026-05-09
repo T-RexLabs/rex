@@ -142,6 +142,81 @@ func TestWorkspaceCloneNoMatchingWorkspace(t *testing.T) {
 	}
 }
 
+// TestWorkspaceCloneFoldsStateTransitions covers the bug fix that
+// brought clone in line with workspace.LIFE.3: archive / unarchive
+// / delete events on the source must surface in the cloned
+// workspace.yaml's state field. Pre-fix, clone hard-coded "active"
+// regardless of subsequent transitions.
+func TestWorkspaceCloneFoldsStateTransitions(t *testing.T) {
+	t.Parallel()
+
+	_, hs := startCentral(t)
+	src := initSyncWorkspace(t)
+
+	// Archive the source workspace, then push.
+	if _, err := executeCommand(t, "workspace", "archive", "--workspace", src); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	if _, err := executeCommand(t, "push",
+		"--workspace", src, "--url", hs.URL,
+	); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+
+	target := filepath.Join(t.TempDir(), "clone-archived")
+	if _, err := executeCommand(t, "workspace", "clone",
+		hs.URL, "demo", target,
+		"--remote-name", "primary",
+		"--remotes-file", filepath.Join(t.TempDir(), "remotes.toml"),
+		"--registry-file", filepath.Join(t.TempDir(), "registry.toml"),
+	); err != nil {
+		t.Fatalf("clone: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(target, ".rex", "workspace.yaml"))
+	if err != nil {
+		t.Fatalf("read workspace.yaml: %v", err)
+	}
+	if !strings.Contains(string(body), "state: archived") {
+		t.Fatalf("clone should have folded archived state; got: %s", body)
+	}
+}
+
+func TestWorkspaceCloneFoldsArchiveUnarchiveDelete(t *testing.T) {
+	t.Parallel()
+
+	_, hs := startCentral(t)
+	src := initSyncWorkspace(t)
+
+	// archive → unarchive → archive again. Last transition wins.
+	for _, cmd := range []string{"archive", "unarchive", "archive"} {
+		if _, err := executeCommand(t, "workspace", cmd, "--workspace", src); err != nil {
+			t.Fatalf("%s: %v", cmd, err)
+		}
+	}
+	if _, err := executeCommand(t, "push",
+		"--workspace", src, "--url", hs.URL,
+	); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+
+	target := filepath.Join(t.TempDir(), "clone-multitrans")
+	if _, err := executeCommand(t, "workspace", "clone",
+		hs.URL, "demo", target,
+		"--remote-name", "primary",
+		"--remotes-file", filepath.Join(t.TempDir(), "remotes.toml"),
+		"--registry-file", filepath.Join(t.TempDir(), "registry.toml"),
+	); err != nil {
+		t.Fatalf("clone: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(target, ".rex", "workspace.yaml"))
+	if err != nil {
+		t.Fatalf("read workspace.yaml: %v", err)
+	}
+	if !strings.Contains(string(body), "state: archived") {
+		t.Fatalf("expected last-transition state archived; got: %s", body)
+	}
+}
+
 func TestWorkspaceCloneJSON(t *testing.T) {
 	t.Parallel()
 
