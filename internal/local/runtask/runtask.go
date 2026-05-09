@@ -30,6 +30,7 @@ import (
 	"github.com/asabla/rex/internal/core/runner/adapter"
 	"github.com/asabla/rex/internal/core/runner/primapproval"
 	"github.com/asabla/rex/internal/core/runner/primharness"
+	"github.com/asabla/rex/internal/core/runner/primparallel"
 	"github.com/asabla/rex/internal/core/runner/primshell"
 	"github.com/asabla/rex/internal/core/search"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
@@ -277,6 +278,11 @@ func StartShellRun(ctx context.Context, ws *Workspace, req ShellRunRequest) (*Sh
 	reg.Register(primapproval.PrimitiveType, primapproval.New(primapproval.Options{
 		WorkspaceRoot: ws.Root,
 		Sink:          sink,
+	}))
+	// Register parallel last so its lookups always find the
+	// child primitives already in the registry (PRIM.6).
+	reg.Register(primparallel.PrimitiveType, primparallel.New(primparallel.Options{
+		Registry: reg,
 	}))
 
 	// Wire the cancel watcher (cli.RUN.5 / execution.RUN.5): a
