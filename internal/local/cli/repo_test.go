@@ -321,13 +321,17 @@ func TestRepoAddClonesThroughGit(t *testing.T) {
 
 	// Create a bare upstream repo; this is what `rex repo add` will
 	// clone from. Using an on-disk bare avoids needing network.
+	// --initial-branch=main pins the default-branch name so CI hosts
+	// whose git still defaults to "master" don't end up pushing to
+	// refs/heads/main while HEAD still points at refs/heads/master,
+	// which makes `git clone` produce an empty checkout.
 	upstream := filepath.Join(t.TempDir(), "upstream.git")
-	if out, err := exec.Command("git", "init", "--bare", upstream).CombinedOutput(); err != nil {
+	if out, err := exec.Command("git", "init", "--bare", "--initial-branch=main", upstream).CombinedOutput(); err != nil {
 		t.Fatalf("git init --bare: %v\n%s", err, out)
 	}
 	// Seed one commit so `git clone` produces a non-empty checkout.
 	work := filepath.Join(t.TempDir(), "seed")
-	if out, err := exec.Command("git", "init", work).CombinedOutput(); err != nil {
+	if out, err := exec.Command("git", "init", "--initial-branch=main", work).CombinedOutput(); err != nil {
 		t.Fatalf("git init seed: %v\n%s", err, out)
 	}
 	if err := os.WriteFile(filepath.Join(work, "README.md"), []byte("hi"), 0o644); err != nil {
