@@ -52,6 +52,12 @@ const (
 
 	// Hook lifecycle (audit.TYPES.1 "every hook invocation result").
 	EventTypeHookCompleted = "hook.completed"
+
+	// Harness brief attachment (audit.TYPES.1 "every harness
+	// invocation start/end" surface). Records what workspace
+	// context the harness saw — answer to the "what did the model
+	// have when it ran" question.
+	EventTypeHarnessBriefAttached = "harness.brief_attached"
 )
 
 // EventVersion is the schema version for audit-package event payloads.
@@ -64,20 +70,21 @@ const EventVersion uint32 = 1
 // because Go reads from a non-mutated map are safe.
 var auditEventTypes = func() map[string]struct{} {
 	out := map[string]struct{}{
-		EventTypeWorkspaceCreated:    {},
-		EventTypeRepoAdded:           {},
-		EventTypeRepoLinked:          {},
-		EventTypeRepoRemoved:         {},
-		EventTypeScheduleAdded:       {},
-		EventTypeScheduleRemoved:     {},
-		EventTypeWorkspaceArchived:   {},
-		EventTypeWorkspaceUnarchived: {},
-		EventTypeWorkspaceDeleted:    {},
-		EventTypeSpecCreated:         {},
-		EventTypeSpecEdited:          {},
-		EventTypeRemoteAttached:      {},
-		EventTypeRemoteDetached:      {},
-		EventTypeHookCompleted:       {},
+		EventTypeWorkspaceCreated:     {},
+		EventTypeRepoAdded:            {},
+		EventTypeRepoLinked:           {},
+		EventTypeRepoRemoved:          {},
+		EventTypeScheduleAdded:        {},
+		EventTypeScheduleRemoved:      {},
+		EventTypeWorkspaceArchived:    {},
+		EventTypeWorkspaceUnarchived:  {},
+		EventTypeWorkspaceDeleted:     {},
+		EventTypeSpecCreated:          {},
+		EventTypeSpecEdited:           {},
+		EventTypeRemoteAttached:       {},
+		EventTypeRemoteDetached:       {},
+		EventTypeHookCompleted:        {},
+		EventTypeHarnessBriefAttached: {},
 
 		// Runner events are audit-class per TYPES.1 ("every harness
 		// invocation start/end ... every workspace state change").
@@ -239,4 +246,22 @@ type HookCompletedEvent struct {
 	Skipped        bool   `json:"skipped,omitempty"`
 	Reason         string `json:"reason,omitempty"`
 	DurationMs     int64  `json:"duration_ms"`
+}
+
+// HarnessBriefAttachedEvent is the payload for
+// EventTypeHarnessBriefAttached — fires once per harness run
+// when Rex prepended a workspace brief to the prompt. Recording
+// the brief lets audit readers answer "what context did the
+// model have?" without re-deriving it from workspace state at
+// audit-read time. Length is included verbatim alongside a
+// short SHA-256 prefix so the event payload stays compact while
+// still tying the audit row to the exact bytes the harness saw.
+type HarnessBriefAttachedEvent struct {
+	WorkspaceID string `json:"workspace_id"`
+	RunID       string `json:"run_id"`
+	NodeID      string `json:"node_id"`
+	Harness     string `json:"harness"`
+	BriefBytes  int    `json:"brief_bytes"`
+	BriefSHA256 string `json:"brief_sha256"` // hex-encoded SHA-256 prefix (16 chars)
+	Source      string `json:"source"`       // "default" or "override"
 }

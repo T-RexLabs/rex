@@ -76,6 +76,17 @@
 //	  the originating event so audit-log readers can correlate
 //	  cause-and-effect.
 //
+// Harness brief lifecycle (audit.TYPES.1 "every harness invocation
+// start/end"):
+//
+//	harness.brief_attached  payload: HarnessBriefAttachedEvent
+//	  fires once per harness run when Rex prepended a workspace
+//	  brief to the prompt. Records BriefBytes + a 16-char hex
+//	  SHA-256 prefix so audit readers can answer "what context did
+//	  the model have?" without re-deriving the brief at audit-read
+//	  time. Source is "default" (built-in body) or "override" (a
+//	  per-workspace .rex/HARNESS.md.tmpl was used).
+//
 // Run lifecycle (re-exported from internal/core/runner so the
 // registry has a single source of truth — execution.DAG.2):
 //

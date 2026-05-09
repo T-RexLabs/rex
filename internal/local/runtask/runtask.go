@@ -13,6 +13,8 @@ package runtask
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -24,6 +26,8 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/asabla/rex/internal/core/acp"
+	"github.com/asabla/rex/internal/core/audit"
+	"github.com/asabla/rex/internal/core/harnessbrief"
 	"github.com/asabla/rex/internal/core/hooks"
 	"github.com/asabla/rex/internal/core/identity"
 	"github.com/asabla/rex/internal/core/runner"
@@ -351,6 +355,12 @@ type HarnessRunRequest struct {
 	// FromTask is the `<spec-id>.<task-id>` reference when launched
 	// via a spec recipe (execution.RUN.1.1).
 	FromTask string
+	// Brief is the harness primer rendered by harnessbrief.Build.
+	// When non-empty, primharness prepends it to the prompt with
+	// a clear separator so the harness opens with workspace
+	// context. Empty = skip the brief (e.g. for tests, or when
+	// the caller has already inlined the context).
+	Brief string
 	// Trigger records the originating schedule trigger when launched
 	// by the schedule daemon (execution.RUN.1.3). Nil for ad-hoc runs.
 	Trigger *runner.RunTrigger
@@ -412,9 +422,32 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 		dir = ws.Root
 	}
 
+	// Auto-build the workspace brief when the caller didn't
+	// pre-render one — every harness Rex spawns gets this
+	// preamble so the model opens with workspace context.
+	// Failures are silent: a missing specs/ dir or unreadable
+	// workspace.yaml degrades to a more terse brief, never
+	// blocks the run.
+	brief := req.Brief
+	briefSource := "passed-through"
+	if brief == "" {
+		built, _ := harnessbrief.Build(harnessbrief.Options{
+			WorkspaceRoot: ws.Root,
+			FromTask:      req.FromTask,
+			SpecRefs:      req.SpecRefs,
+			WorkspaceID:   ws.ID,
+		})
+		brief = built
+		briefSource = "default"
+		if hasBriefOverride(ws.Root) {
+			briefSource = "override"
+		}
+	}
+	finalPrompt := harnessbrief.Wrap(brief, req.Prompt)
+
 	cfg, err := json.Marshal(primharness.Config{
 		Harness:    req.Harness,
-		Prompt:     req.Prompt,
+		Prompt:     finalPrompt,
 		Model:      req.Model,
 		Mode:       req.Mode,
 		Dir:        dir,
@@ -434,6 +467,25 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 	runID := req.RunID
 	if runID == "" {
 		runID = ws.Clock.Now().String()
+	}
+
+	// Audit the brief attachment so readers can answer "what
+	// context did the model have?" without re-deriving it from
+	// workspace state at audit-read time. Emitted before the
+	// harness starts so the event chronologically precedes any
+	// harness frames; failures here are non-fatal — a brief
+	// audit gap shouldn't kill an otherwise-valid run.
+	if brief != "" {
+		_, _ = audit.NewAppender(ws.Writer).Append(audit.EventTypeHarnessBriefAttached,
+			audit.HarnessBriefAttachedEvent{
+				WorkspaceID: ws.ID,
+				RunID:       runID,
+				NodeID:      nodeID,
+				Harness:     req.Harness,
+				BriefBytes:  len(brief),
+				BriefSHA256: hashHexPrefix(brief),
+				Source:      briefSource,
+			})
 	}
 
 	// frameWriter persists each ACP frame as a harness.frame event
@@ -723,4 +775,23 @@ func globalHooksDir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(cfg, "rex", "hooks"), nil
+}
+
+// hasBriefOverride reports whether a per-workspace template
+// override exists for the harness brief. Used by the audit
+// event's `source` field so readers can tell at a glance
+// whether the body was the built-in default or the workspace's
+// custom template.
+func hasBriefOverride(root string) bool {
+	_, err := os.Stat(filepath.Join(root, ".rex", harnessbrief.TemplateFilename))
+	return err == nil
+}
+
+// hashHexPrefix returns the first 16 hex characters of the
+// SHA-256 of body. Cheap fingerprint for the audit event so
+// readers can pin a brief to its exact bytes without inflating
+// the event payload with the full text.
+func hashHexPrefix(body string) string {
+	sum := sha256.Sum256([]byte(body))
+	return hex.EncodeToString(sum[:])[:16]
 }
