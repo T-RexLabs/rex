@@ -34,6 +34,13 @@ type Options struct {
 	// default, dev/test), PostgresStore (durable production
 	// deployments — central-node.DB.*).
 	Store Store
+	// GitStore is the git-merged content store backing /sync/git
+	// (sync.API.4). New creates an in-memory GitStore if nil.
+	// Postgres durability is the follow-up under central-node.DB.*;
+	// in the meantime an operator running with --db Postgres still
+	// gets a working /sync/git surface but loses git revisions on
+	// restart.
+	GitStore GitStore
 	// Keystore holds the public keys the server trusts for
 	// signature verification (sync.SEC.1). When nil or empty,
 	// verification is skipped — useful for dev/test. In production
@@ -50,9 +57,10 @@ type Options struct {
 
 // Server bundles the central-node HTTP surface and the state it
 // serves. A Server is safe for concurrent use; the underlying Store
-// owns its own mutex.
+// and GitStore each own their own synchronization.
 type Server struct {
 	store    Store
+	gitStore GitStore
 	keypair  identity.Keypair
 	actor    identity.Actor
 	keystore *Keystore
@@ -68,6 +76,10 @@ func New(opts Options) (*Server, error) {
 	store := opts.Store
 	if store == nil {
 		store = NewStore()
+	}
+	gitStore := opts.GitStore
+	if gitStore == nil {
+		gitStore = NewMemoryGitStore()
 	}
 	var kp identity.Keypair
 	if opts.Keypair == nil {
@@ -94,6 +106,7 @@ func New(opts Options) (*Server, error) {
 	}
 	s := &Server{
 		store:    store,
+		gitStore: gitStore,
 		keypair:  kp,
 		actor:    central,
 		keystore: keystore,
@@ -110,6 +123,12 @@ func New(opts Options) (*Server, error) {
 	s.metrics.SetActiveSessionsSource(s.auth.activeSessions)
 	s.mux.HandleFunc("/sync/state", s.handleState)
 	s.mux.HandleFunc("/sync/events", s.handleEvents)
+	// /sync/git uses Go 1.22+ method-and-wildcard patterns: POST on
+	// the bare path is the push surface, GET with a multi-segment
+	// {entity...} captures `.rex/`-relative paths like
+	// "specs/sync.yaml" via r.PathValue("entity").
+	s.mux.HandleFunc("POST /sync/git", s.handleGitPush)
+	s.mux.HandleFunc("GET /sync/git/{entity...}", s.handleGitPull)
 	s.mux.HandleFunc(authChallengePath, s.handleAuthChallenge)
 	s.mux.HandleFunc(authVerifyPath, s.handleAuthVerify)
 	s.mux.HandleFunc("/health", s.handleHealth)
@@ -143,6 +162,10 @@ func (s *Server) Actor() identity.Actor { return s.actor }
 // Store returns the underlying event store. Tests use this to
 // pre-seed records or assert counts.
 func (s *Server) Store() Store { return s.store }
+
+// GitStore returns the underlying git-merged content store. Tests
+// use this to pre-seed entities or assert post-conditions.
+func (s *Server) GitStore() GitStore { return s.gitStore }
 
 // Keystore returns the server's keystore for tests and admin
 // surfaces.

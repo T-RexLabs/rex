@@ -61,8 +61,18 @@ tasks:
 
   - id: sync-api-server
     description: "Implement the central-node `/sync/...` endpoints (state, push, pull, conflict)"
-    state: todo
-    references: [API.1, API.2, API.3, API.4]
+    state: done
+    note: "API.1-3 (state, push with 409 + diverging tail, pull as SSE) shipped earlier in internal/central/server/server.go; this task closes API.4 (POST /sync/git + GET /sync/git/{entity-path...}) and folds in the sync.CAT.5 enforcement deferred from sync-categorization. /sync/git rejects any path not in the git_merged category via internal/core/storage/synccat. Postgres durability for git_entities is the v1.5 follow-up under central-node.DB.* — operators using --db Postgres still get a working /sync/git surface but git revisions live in MemoryGitStore until then."
+    references: [API.1, API.2, API.3, API.4, CAT.5]
+    proof:
+      - kind: code
+        path: internal/core/sync/proto/git.go
+      - kind: code
+        path: internal/central/server/git_store.go
+      - kind: code
+        path: internal/central/server/git_handler.go
+      - kind: test
+        path: internal/central/server/git_test.go
 
   - id: sync-api-client
     description: "Implement the local-node sync client: `rex push`, `rex pull`, `rex sync`"
