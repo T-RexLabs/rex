@@ -1,0 +1,91 @@
+# Spec-bookkeeping reconciliation pass — execution.
+#
+# Status: accepted.
+# Folded: 2026-05-09 — execution.yaml dag-executor + dag-primitives flipped to done with clarifying notes.
+#
+# The dag-primitives task can flip to done. With the three
+# commits in the 2026-05-09 push (branch + edge predicates,
+# human_approval, parallel) every PRIM.* requirement now has a
+# shipping implementation:
+#
+#   PRIM.1 harness_invocation : internal/core/runner/primharness/
+#   PRIM.2 shell_exec         : internal/core/runner/primshell/
+#   PRIM.3 spec_validate      : internal/core/runner/primspec/
+#   PRIM.4 human_approval     : internal/core/runner/primapproval/
+#   PRIM.5 branch             : internal/core/runner/primbranch/
+#                                + edge predicates in
+#                                  internal/core/runner/predicate.go
+#                                  (executor evaluates Edge.Predicate
+#                                   against upstream output and emits
+#                                   NodeSkippedEvent on no-match)
+#   PRIM.6 parallel           : internal/core/runner/primparallel/
+#                                (mini-executor: fan-out via goroutines,
+#                                 fan-in via WaitGroup; FailurePolicy
+#                                 of any/majority/all)
+#   PRIM.7 wait               : internal/core/runner/primwait/
+#   PRIM.8 indexing           : internal/core/runner/primindex/
+#   PRIM.9 scheduled_trigger  : explicitly no-op'd in v1 per PRIM.9.1
+#                                (single-node trigger surface lives on
+#                                 RunStartedEvent.Trigger; multi-node
+#                                 graph node lands with the workflow-
+#                                 format spec)
+#
+# All eight active primitives have unit-test coverage in their
+# package; each is registered in internal/local/runtask
+# (StartShellRun) so they are dispatchable from the v1 single-
+# node CLI surface today, and pre-registered for the multi-node
+# workflow YAML loader when it lands.
+#
+# dag-executor also flips to done. Its description names exactly
+# the surfaces this push completed: "node lifecycle, retries,
+# approval gating, parallel/branch primitives". DAG.1-4 are
+# satisfied:
+#
+#   DAG.1 — A run is a DAG of nodes; nodes have edges that may
+#           be conditional → executor.go evaluates Edge.Predicate
+#           via runner.Predicate{kind, path, value, regex} and
+#           emits NodeSkippedEvent on no-match.
+#   DAG.2 — Event-sourced; every state change emits an event →
+#           events.go enumerates run/node/permission lifecycle
+#           events; executor.emitApply is the single write site.
+#   DAG.3 — Replay reconstructs exact state → state.Apply is
+#           pure over each event; tests in state_test.go +
+#           cancel_watch_test.go exercise the fold.
+#   DAG.4 — Linear backoff up to 3 attempts, configurable per-
+#           node / per-workflow → types.RetryPolicy.Effective +
+#           DefaultRetryPolicy.
+#
+# Tasks remaining todo (rationale refresh — none are blocked by
+# this amendment):
+#
+#   - permission-prompt-flow — still partial. cli.RUN.7
+#     (rex run approve/deny) ships; the watching CLI prompt path
+#     and the not-watching queue/timeout policy (PERM.3) are
+#     unimplemented.
+#
+#   - schedule-engine — already done in the 2026-05-04 sweep;
+#     no change.
+
+target: execution
+amendment_kind: additive
+
+changes:
+  - kind: update-task-state
+    task_id: dag-primitives
+    from: todo
+    to: done
+    proof: "internal/core/runner/{primharness,primshell,primspec,primapproval,primbranch,primparallel,primwait,primindex} all ship with unit tests; PRIM.9 scheduled_trigger explicitly no-op'd in v1 per PRIM.9.1; all eight active primitives registered in internal/local/runtask.StartShellRun"
+
+  - kind: update-task-state
+    task_id: dag-executor
+    from: todo
+    to: done
+    proof: "internal/core/runner/executor.go covers DAG.1 (Edge.Predicate evaluation + NodeSkippedEvent), DAG.2 (event-sourced lifecycle via emitApply, events.go enumerates the catalog), DAG.3 (state.Apply replays cleanly, exercised by state_test.go + cancel_watch_test.go), DAG.4 (types.RetryPolicy.Effective with DefaultRetryPolicy = 3 attempts, linear backoff, per-node + per-DAG override)"
+
+  - kind: add-task-note
+    task_id: dag-primitives
+    note: "All eight active PRIM.* primitives ship; PRIM.9 (scheduled_trigger) intentionally no-op'd in v1 — the single-node trigger surface is the additive RunStartedEvent.Trigger field per RUN.1.3, and the graph-node form lands with the deferred workflow-format spec."
+
+  - kind: add-task-note
+    task_id: dag-executor
+    note: "Edge predicates ship as runner.Predicate (always/never/exit_code_eq/path_eq/path_match) evaluated by the executor between node completion and downstream scheduling — no-match emits NodeSkippedEvent and the skip cascades through dependenciesMet."
