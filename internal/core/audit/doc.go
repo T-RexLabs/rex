@@ -87,6 +87,9 @@
 //	node.succeeded          payload: runner.NodeSucceededEvent
 //	node.failed             payload: runner.NodeFailedEvent
 //	node.retried            payload: runner.NodeRetriedEvent
+//	node.skipped            payload: runner.NodeSkippedEvent
+//	  fires when an outgoing edge's predicate rejected this node
+//	  (execution.PRIM.5).
 //	permission.requested    payload: runner.PermissionRequestedEvent
 //	permission.granted      payload: runner.PermissionGrantedEvent
 //	permission.denied       payload: runner.PermissionDeniedEvent

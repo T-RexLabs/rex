@@ -89,6 +89,7 @@ var auditEventTypes = func() map[string]struct{} {
 		runner.EventTypeNodeSucceeded:       {},
 		runner.EventTypeNodeFailed:          {},
 		runner.EventTypeNodeRetried:         {},
+		runner.EventTypeNodeSkipped:         {},
 		runner.EventTypePermissionRequested: {},
 		runner.EventTypePermissionGranted:   {},
 		runner.EventTypePermissionDenied:    {},

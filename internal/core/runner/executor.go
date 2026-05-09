@@ -146,8 +146,47 @@ func (e *Executor) Run(ctx context.Context) (*RunState, error) {
 		}
 
 		// Schedule downstream Nodes whose dependencies are now all met.
+		// For each outgoing edge, evaluate Edge.Predicate against the
+		// just-completed node's output (execution.PRIM.5). A
+		// non-matching predicate emits NodeSkipped for the target;
+		// the skip cascades because dependenciesMet refuses to
+		// schedule a node whose upstream is not Succeeded.
+		fromOutput := state.Nodes[nodeID].Output
 		for _, edge := range e.cfg.DAG.Edges {
 			if edge.From != nodeID {
+				continue
+			}
+			predicate, perr := ParsePredicate(edge.Predicate)
+			if perr != nil {
+				_ = e.emitApply(state, RunAbortedEvent{
+					RunID:     e.cfg.RunID,
+					AbortedAt: e.cfg.Now(),
+					NodeID:    edge.To,
+					Reason:    fmt.Sprintf("edge %s -> %s: %v", edge.From, edge.To, perr),
+				})
+				return state, nil
+			}
+			matched, err := predicate.Evaluate(fromOutput)
+			if err != nil {
+				_ = e.emitApply(state, RunAbortedEvent{
+					RunID:     e.cfg.RunID,
+					AbortedAt: e.cfg.Now(),
+					NodeID:    edge.To,
+					Reason:    fmt.Sprintf("evaluate edge %s -> %s: %v", edge.From, edge.To, err),
+				})
+				return state, nil
+			}
+			if !matched {
+				if state.Nodes[edge.To].Status == NodeStatusPending {
+					_ = e.emitApply(state, NodeSkippedEvent{
+						RunID:     e.cfg.RunID,
+						NodeID:    edge.To,
+						From:      edge.From,
+						Predicate: edge.Predicate,
+						Reason:    "predicate did not match",
+						SkippedAt: e.cfg.Now(),
+					})
+				}
 				continue
 			}
 			if dependenciesMet(e.cfg.DAG, state, edge.To) {

@@ -117,6 +117,16 @@ func (s *RunState) Apply(evt any) error {
 		// NodeStarted will overwrite once the retry begins; this
 		// transient state lets a watcher say "queued for retry".
 		ns.Status = NodeStatusPending
+	case NodeSkippedEvent:
+		ns, err := s.nodeState(e.NodeID)
+		if err != nil {
+			return err
+		}
+		ns.Status = NodeStatusSkipped
+		ns.CompletedAt = e.SkippedAt
+		if e.Reason != "" {
+			ns.LastError = e.Reason
+		}
 	case PermissionRequestedEvent:
 		s.Permissions[e.RequestID] = &PermissionState{
 			NodeID:      e.NodeID,

@@ -394,6 +394,139 @@ func TestExecutorBranchedDAG(t *testing.T) {
 	_ = idx
 }
 
+// newBranchTestRegistry registers a "noop-output" primitive that
+// returns whatever JSON output the test wires into Node.Config so
+// predicates downstream have something deterministic to evaluate
+// against.
+func newBranchTestRegistry() *PrimitiveRegistry {
+	r := NewPrimitiveRegistry()
+	r.Register("noop", PrimitiveFunc(func(ctx context.Context, in PrimitiveInput) (PrimitiveOutput, error) {
+		return PrimitiveOutput{Output: json.RawMessage(`{"id":"` + string(in.Node.ID) + `"}`)}, nil
+	}))
+	r.Register("noop-output", PrimitiveFunc(func(ctx context.Context, in PrimitiveInput) (PrimitiveOutput, error) {
+		out := in.Node.Config
+		if len(out) == 0 {
+			out = json.RawMessage("{}")
+		}
+		return PrimitiveOutput{Output: out}, nil
+	}))
+	return r
+}
+
+func TestExecutorPredicateGatesEdges(t *testing.T) {
+	t.Parallel()
+
+	// root → {left, right}; predicate on root→left matches, predicate
+	// on root→right does not. Expect: left runs, right is skipped.
+	dag := DAG{
+		Nodes: []Node{
+			{ID: "root", Type: "noop-output", Config: json.RawMessage(`{"branch":"left"}`)},
+			{ID: "left", Type: "noop"},
+			{ID: "right", Type: "noop"},
+		},
+		Edges: []Edge{
+			{From: "root", To: "left", Predicate: `{"kind":"path_eq","path":"branch","value":"left"}`},
+			{From: "root", To: "right", Predicate: `{"kind":"path_eq","path":"branch","value":"right"}`},
+		},
+	}
+	sink := &InMemorySink{}
+	exec, err := NewExecutor(ExecConfig{
+		RunID: "r-branch", DAG: dag, Sink: sink,
+		Registry: newBranchTestRegistry(),
+		Now:      fakeNow(),
+		Sleep:    func(time.Duration) {},
+	})
+	if err != nil {
+		t.Fatalf("NewExecutor: %v", err)
+	}
+	state, err := exec.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if state.Status != RunStatusCompleted {
+		t.Fatalf("status: %q", state.Status)
+	}
+	if state.Nodes["root"].Status != NodeStatusSucceeded {
+		t.Fatalf("root: %q", state.Nodes["root"].Status)
+	}
+	if state.Nodes["left"].Status != NodeStatusSucceeded {
+		t.Fatalf("left should have run: %q", state.Nodes["left"].Status)
+	}
+	if state.Nodes["right"].Status != NodeStatusSkipped {
+		t.Fatalf("right should be skipped: %q", state.Nodes["right"].Status)
+	}
+	// At least one node.skipped event landed.
+	var sawSkipped bool
+	for _, e := range sink.Events {
+		if e.Type == EventTypeNodeSkipped {
+			sawSkipped = true
+			break
+		}
+	}
+	if !sawSkipped {
+		t.Fatal("expected node.skipped event in the sink")
+	}
+}
+
+func TestExecutorPredicateNeverSkipsAllDownstream(t *testing.T) {
+	t.Parallel()
+
+	dag := DAG{
+		Nodes: []Node{
+			{ID: "root", Type: "noop"},
+			{ID: "downstream", Type: "noop"},
+		},
+		Edges: []Edge{
+			{From: "root", To: "downstream", Predicate: `{"kind":"never"}`},
+		},
+	}
+	sink := &InMemorySink{}
+	exec, _ := NewExecutor(ExecConfig{
+		RunID: "r-never", DAG: dag, Sink: sink,
+		Registry: newBranchTestRegistry(),
+		Now:      fakeNow(),
+		Sleep:    func(time.Duration) {},
+	})
+	state, err := exec.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if state.Nodes["downstream"].Status != NodeStatusSkipped {
+		t.Fatalf("downstream should be skipped: %q", state.Nodes["downstream"].Status)
+	}
+	if state.Status != RunStatusCompleted {
+		t.Fatalf("run should complete (skipped is not abort): %q", state.Status)
+	}
+}
+
+func TestExecutorMalformedPredicateAborts(t *testing.T) {
+	t.Parallel()
+
+	dag := DAG{
+		Nodes: []Node{
+			{ID: "root", Type: "noop"},
+			{ID: "down", Type: "noop"},
+		},
+		Edges: []Edge{
+			{From: "root", To: "down", Predicate: `not json`},
+		},
+	}
+	sink := &InMemorySink{}
+	exec, _ := NewExecutor(ExecConfig{
+		RunID: "r-bad-pred", DAG: dag, Sink: sink,
+		Registry: newBranchTestRegistry(),
+		Now:      fakeNow(),
+		Sleep:    func(time.Duration) {},
+	})
+	state, err := exec.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if state.Status != RunStatusAborted {
+		t.Fatalf("expected aborted run on malformed predicate, got %q", state.Status)
+	}
+}
+
 func newDecoderRegistry() decoderRegistry {
 	dr := decoderRegistry{m: map[string]func([]byte) (any, error){}}
 	dr.m[EventTypeRunStarted] = func(b []byte) (any, error) { return decodeAs[RunStartedEvent](1, b) }
@@ -404,6 +537,7 @@ func newDecoderRegistry() decoderRegistry {
 	dr.m[EventTypeNodeSucceeded] = func(b []byte) (any, error) { return decodeAs[NodeSucceededEvent](1, b) }
 	dr.m[EventTypeNodeFailed] = func(b []byte) (any, error) { return decodeAs[NodeFailedEvent](1, b) }
 	dr.m[EventTypeNodeRetried] = func(b []byte) (any, error) { return decodeAs[NodeRetriedEvent](1, b) }
+	dr.m[EventTypeNodeSkipped] = func(b []byte) (any, error) { return decodeAs[NodeSkippedEvent](1, b) }
 	dr.m[EventTypePermissionRequested] = func(b []byte) (any, error) { return decodeAs[PermissionRequestedEvent](1, b) }
 	dr.m[EventTypePermissionGranted] = func(b []byte) (any, error) { return decodeAs[PermissionGrantedEvent](1, b) }
 	dr.m[EventTypePermissionDenied] = func(b []byte) (any, error) { return decodeAs[PermissionDeniedEvent](1, b) }

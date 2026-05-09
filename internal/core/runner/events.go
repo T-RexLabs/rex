@@ -12,14 +12,20 @@ import (
 // eventlog.Record.Type and the keys callers register decoders against.
 // They match execution.DAG.2 verbatim.
 const (
-	EventTypeRunStarted          = "run.started"
-	EventTypeRunCompleted        = "run.completed"
-	EventTypeRunCancelled        = "run.cancelled"
-	EventTypeRunAborted          = "run.aborted"
-	EventTypeNodeStarted         = "node.started"
-	EventTypeNodeSucceeded       = "node.succeeded"
-	EventTypeNodeFailed          = "node.failed"
-	EventTypeNodeRetried         = "node.retried"
+	EventTypeRunStarted    = "run.started"
+	EventTypeRunCompleted  = "run.completed"
+	EventTypeRunCancelled  = "run.cancelled"
+	EventTypeRunAborted    = "run.aborted"
+	EventTypeNodeStarted   = "node.started"
+	EventTypeNodeSucceeded = "node.succeeded"
+	EventTypeNodeFailed    = "node.failed"
+	EventTypeNodeRetried   = "node.retried"
+	// EventTypeNodeSkipped fires when an incoming edge's predicate
+	// rejected the node (execution.PRIM.5). The node never runs;
+	// downstream nodes whose only path was through this skip see
+	// dependenciesMet return false and stay pending unless reached
+	// from another path.
+	EventTypeNodeSkipped         = "node.skipped"
 	EventTypePermissionRequested = "permission.requested"
 	EventTypePermissionGranted   = "permission.granted"
 	EventTypePermissionDenied    = "permission.denied"
@@ -186,6 +192,19 @@ type NodeRetriedEvent struct {
 	BackoffFor  time.Duration `json:"backoff_for"`
 }
 
+// NodeSkippedEvent fires when an incoming edge's predicate rejected
+// the node (execution.PRIM.5). The "from" + "predicate" fields
+// record which upstream / which test produced the skip so a
+// reader can reconstruct the branching decision.
+type NodeSkippedEvent struct {
+	RunID     string    `json:"run_id"`
+	NodeID    NodeID    `json:"node_id"`
+	From      NodeID    `json:"from,omitempty"`
+	Predicate string    `json:"predicate,omitempty"`
+	Reason    string    `json:"reason,omitempty"`
+	SkippedAt time.Time `json:"skipped_at"`
+}
+
 // PermissionRequestedEvent fires when a primitive (typically
 // harness_invocation receiving a session/request_permission) needs
 // human authorization to proceed.
@@ -253,6 +272,7 @@ func RegisterEvents(r *event.Registry) {
 	r.Register(EventTypeNodeSucceeded, EventVersion, decodeAs[NodeSucceededEvent])
 	r.Register(EventTypeNodeFailed, EventVersion, decodeAs[NodeFailedEvent])
 	r.Register(EventTypeNodeRetried, EventVersion, decodeAs[NodeRetriedEvent])
+	r.Register(EventTypeNodeSkipped, EventVersion, decodeAs[NodeSkippedEvent])
 	r.Register(EventTypePermissionRequested, EventVersion, decodeAs[PermissionRequestedEvent])
 	r.Register(EventTypePermissionGranted, EventVersion, decodeAs[PermissionGrantedEvent])
 	r.Register(EventTypePermissionDenied, EventVersion, decodeAs[PermissionDeniedEvent])
@@ -289,6 +309,8 @@ func classifyEvent(evt any) (string, uint32, error) {
 		return EventTypeNodeFailed, EventVersion, nil
 	case NodeRetriedEvent:
 		return EventTypeNodeRetried, EventVersion, nil
+	case NodeSkippedEvent:
+		return EventTypeNodeSkipped, EventVersion, nil
 	case PermissionRequestedEvent:
 		return EventTypePermissionRequested, EventVersion, nil
 	case PermissionGrantedEvent:

@@ -25,6 +25,8 @@ func MatchesRun(decoded any, runID string) bool {
 		return ev.RunID == runID
 	case NodeRetriedEvent:
 		return ev.RunID == runID
+	case NodeSkippedEvent:
+		return ev.RunID == runID
 	case PermissionRequestedEvent:
 		return ev.RunID == runID
 	case PermissionGrantedEvent:
@@ -102,6 +104,8 @@ func (s *RunSummary) FoldEvent(decoded any) bool {
 		s.NodeEvents++
 	case NodeRetriedEvent:
 		s.NodeEvents++
+	case NodeSkippedEvent:
+		s.NodeEvents++
 	}
 	return true
 }
@@ -126,6 +130,8 @@ func summaryRunID(decoded any) string {
 	case NodeFailedEvent:
 		return ev.RunID
 	case NodeRetriedEvent:
+		return ev.RunID
+	case NodeSkippedEvent:
 		return ev.RunID
 	case PermissionRequestedEvent:
 		return ev.RunID
