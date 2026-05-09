@@ -389,7 +389,7 @@ func writeAmendmentShowText(cmd *cobra.Command, a *specamend.Amendment) {
 		}
 	}
 	fmt.Fprintln(out, "---")
-	out.Write(a.Body)
+	_, _ = out.Write(a.Body)
 	if len(a.Body) == 0 || a.Body[len(a.Body)-1] != '\n' {
 		fmt.Fprintln(out)
 	}
