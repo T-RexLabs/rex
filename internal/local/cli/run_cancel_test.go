@@ -48,9 +48,9 @@ func readCancellationRequestedFor(t *testing.T, root, runID string) []runner.Run
 }
 
 // TestRunCancelWritesEvent runs a shell command, then issues a
-// `rex run cancel` against its run id (resolved via prefix). The
-// run is already complete so cancel doesn't change its outcome,
-// but the event lands in the log — proving the wire-up.
+// `rex run cancel --force` against its run id. The run is already
+// complete; --force overrides the new pre-flight terminal-state
+// guard so the event still lands — proving the wire-up.
 func TestRunCancelWritesEvent(t *testing.T) {
 	t.Parallel()
 
@@ -65,9 +65,9 @@ func TestRunCancelWritesEvent(t *testing.T) {
 	}
 
 	out, err := executeCommand(t, "run", "cancel",
-		"--workspace", dir, "r-cancel-1", "--reason", "test cancel")
+		"--workspace", dir, "r-cancel-1", "--force", "--reason", "test cancel")
 	if err != nil {
-		t.Fatalf("run cancel: %v\n%s", err, out)
+		t.Fatalf("run cancel --force: %v\n%s", err, out)
 	}
 	if !strings.Contains(out, "cancellation requested") {
 		t.Fatalf("output: %q", out)
@@ -82,6 +82,34 @@ func TestRunCancelWritesEvent(t *testing.T) {
 	}
 	if events[0].Requester == "" {
 		t.Fatal("requester should be the actor string")
+	}
+}
+
+// TestRunCancelRefusesTerminalRun guards the new pre-flight check:
+// without --force, cancel of a completed run errors with a clear
+// hint instead of silently writing a no-op event.
+func TestRunCancelRefusesTerminalRun(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if _, err := executeCommand(t, "workspace", "init", dir,
+		"--registry-file", filepath.Join(t.TempDir(), "reg.toml")); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if _, err := executeCommand(t, "run", "start",
+		"--workspace", dir, "--shell", "true", "--run-id", "r-terminal"); err != nil {
+		t.Fatalf("run start: %v", err)
+	}
+	_, err := executeCommand(t, "run", "cancel", "--workspace", dir, "r-terminal")
+	if err == nil {
+		t.Fatal("expected refusal for terminal run")
+	}
+	if !strings.Contains(err.Error(), "already") || !strings.Contains(err.Error(), "completed") {
+		t.Fatalf("error wording: %v", err)
+	}
+	// And the event must NOT have been written under the no-force path.
+	if got := readCancellationRequestedFor(t, dir, "r-terminal"); len(got) != 0 {
+		t.Fatalf("expected zero cancellation events on refused cancel, got %d", len(got))
 	}
 }
 
@@ -113,9 +141,9 @@ func TestRunCancelJSONOutput(t *testing.T) {
 	}
 
 	out, err := executeCommand(t, "run", "cancel",
-		"--workspace", dir, "r-cancel-json", "--json")
+		"--workspace", dir, "r-cancel-json", "--force", "--json")
 	if err != nil {
-		t.Fatalf("run cancel --json: %v", err)
+		t.Fatalf("run cancel --force --json: %v", err)
 	}
 	var v map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &v); err != nil {

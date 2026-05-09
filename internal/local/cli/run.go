@@ -66,6 +66,7 @@ need a daemon model that v1 does not have.`,
 func newRunCancelCmd() *cobra.Command {
 	var (
 		reasonFlag string
+		forceFlag  bool
 	)
 	cmd := &cobra.Command{
 		Use:   "cancel <run-id>",
@@ -85,11 +86,14 @@ wind down before the process is terminated. For shell runs, the
 process gets SIGKILL via os/exec when the parent context
 finishes.
 
-Best-effort: if no process is running the named run, the event
-still lands but nothing reacts. 'rex run cancel' returns success
-either way.`,
+Refuses to cancel a run that has already terminated (completed /
+cancelled / aborted) with a clear error pointing at 'rex run show'.
+Pass --force to write the event anyway — useful when the run-list
+fold hasn't observed the terminal event yet but the user knows
+the run is still in flight.`,
 		Example: `  rex run cancel curious-giraffe
-  rex run cancel curious-giraffe --reason "wrong path; redoing"`,
+  rex run cancel curious-giraffe --reason "wrong path; redoing"
+  rex run cancel curious-giraffe --force`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := requiredWorkspaceRoot(cmd)
@@ -99,6 +103,19 @@ either way.`,
 			runID, err := resolveRunID(root, args[0])
 			if err != nil {
 				return err
+			}
+
+			// Pre-flight: refuse to cancel a terminal run.
+			// Without this guard, `rex run cancel` of a completed
+			// run silently writes a no-op event — confusing UX
+			// because the CLI returns success and "cancellation
+			// requested" but nothing reacts.
+			if !forceFlag {
+				if status, ok := lookupRunStatus(root, runID); ok && isTerminalRunStatus(status) {
+					return fmt.Errorf(
+						"run %s is already %s; nothing to cancel (pass --force to write the event anyway)",
+						runner.FriendlyName(runID), status)
+				}
 			}
 
 			signer, err := loadOrCreateDefaultSigner(cmd)
@@ -149,8 +166,41 @@ either way.`,
 	}
 	addWorkspacePersistentFlag(cmd)
 	cmd.Flags().StringVar(&reasonFlag, "reason", "", "free-form reason recorded with the request")
+	cmd.Flags().BoolVar(&forceFlag, "force", false, "write the event even when the run appears to be terminal")
 	setRelated(cmd, "rex run attach <run-id>", "rex run show <run-id>", "rex run list")
 	return cmd
+}
+
+// lookupRunStatus folds the run's events.log entries to determine
+// its effective status. Returns false when the run id has no
+// events (resolveRunID would have already errored upstream) or the
+// log is unreadable; the caller treats false as "no info, fall
+// through to the cancel-event-write path".
+func lookupRunStatus(root, runID string) (runner.RunStatus, bool) {
+	summaries, err := readRunSummaries(root)
+	if err != nil {
+		return "", false
+	}
+	for _, s := range summaries {
+		if s.RunID == runID {
+			// summary.Status already holds the effective status
+			// (the list helper folds it via runner.RunSummary
+			// before constructing the local runSummary).
+			return s.Status, true
+		}
+	}
+	return "", false
+}
+
+// isTerminalRunStatus reports whether status represents a run that
+// has finished — completed, cancelled, or aborted. The status
+// strings come from runner.RunStatus.
+func isTerminalRunStatus(status runner.RunStatus) bool {
+	switch status {
+	case runner.RunStatusCompleted, runner.RunStatusCancelled, runner.RunStatusAborted:
+		return true
+	}
+	return false
 }
 
 // eventLogPath returns the canonical events.log path for a workspace.
