@@ -41,6 +41,7 @@ func (s *Server) handleSpecDetail(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	data.Harnesses = s.harnesses.snapshot()
 	data.NavSection = "specs"
 	s.render(w, r, "spec_detail.tmpl", data)
 }

@@ -139,6 +139,10 @@ type specDetailData struct {
 	AllRuns []runRow
 	// RunCount is the count rendered in the runs tab badge.
 	RunCount int
+	// Harnesses populates the harness dropdown on the ad-hoc
+	// ask/amend form. Empty when no adapters are registered (the
+	// runs tab shows a "no harnesses" hint instead of the form).
+	Harnesses []harnessFormOption
 }
 
 func loadSpecsList(opts Options) (specsListData, error) {

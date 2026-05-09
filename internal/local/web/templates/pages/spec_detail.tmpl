@@ -1,11 +1,49 @@
 {{define "title"}}rex — {{.Spec.ID}}{{end}}
 
+{{define "spec-ad-hoc-form"}}
+  <details class="card spec-ad-hoc">
+    <summary><strong>Ask a harness about this spec</strong> <span class="muted small">— ad-hoc run with the spec preloaded</span></summary>
+    {{if not .Harnesses}}
+      <p class="muted small">No harness adapters are registered in this build. Configure one with <code>rex tools mcp add</code> or run the CLI's <code>rex spec ask</code> instead.</p>
+    {{else}}
+      <form method="post" action="/specs/{{.Spec.ID}}/ask" class="form spec-ad-hoc-form">
+        <div class="form-grid">
+          <label class="field">
+            <span class="field-label">action</span>
+            <select class="field-input" name="action">
+              <option value="review" selected>review (read-only commentary, like <code>rex spec ask</code>)</option>
+              <option value="amend">amend (draft a YAML amendment, like <code>rex spec amend</code>)</option>
+              <option value="draft">draft (produce a complete spec body)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">harness</span>
+            <select class="field-input" name="harness" required>
+              <option value="">select a harness</option>
+              {{range .Harnesses}}
+                <option value="{{.Name}}">{{.Name}}</option>
+              {{end}}
+            </select>
+          </label>
+          <label class="field full">
+            <span class="field-label">prompt</span>
+            <textarea class="field-input mono" name="prompt" rows="4" required placeholder="what's missing in the SCOPE component?"></textarea>
+            <span class="field-hint">The harness opens with this spec's full YAML preloaded; your prompt is the instruction. Action shapes the closing instruction (review → Markdown commentary; amend → YAML body for <code>specs/_proposed/</code>; draft → full spec body).</span>
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">start run</button>
+        </div>
+      </form>
+    {{end}}
+  </details>
+{{end}}
+
 {{define "content"}}
 <header class="page-header">
   <div class="header-row">
     <h1>{{.Spec.Name}}</h1>
     <div class="header-actions">
-      <a class="btn" href="/runs?spec={{.Spec.ID}}">view runs</a>
       <a class="btn" href="/specs/{{.Spec.ID}}/edit">edit</a>
     </div>
   </div>
@@ -166,6 +204,8 @@
     {{end}}
 
   {{else if eq .ActiveTab "runs"}}
+    {{template "spec-ad-hoc-form" .}}
+
     {{if .AllRuns}}
       <p class="muted small">{{len .AllRuns}} run{{if ne (len .AllRuns) 1}}s{{end}} cite this spec via <code>from_task</code> or <code>spec_refs</code>. Most recent first.</p>
       <div class="card">
@@ -200,8 +240,7 @@
       </div>
       <p class="muted small">Need broader context? <a href="/runs?spec={{.Spec.ID}}">View this list on the runs page</a> for sortable columns + filters.</p>
     {{else}}
-      <p class="muted">no runs cite this spec yet.</p>
-      <p class="muted small">Start one from the <a href="?tab=tasks">tasks tab</a> (per-task recipes) or the <a href="/runs/new?from_task={{.Spec.ID}}.">runs page</a> (ad-hoc with attachment).</p>
+      <p class="muted">no runs cite this spec yet — use the form above to start one.</p>
     {{end}}
   {{end}}
 </section>
