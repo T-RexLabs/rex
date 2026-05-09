@@ -88,6 +88,7 @@ for each command group.`,
 	root.AddCommand(newLogCmd())
 	root.AddCommand(newSearchCmd())
 	root.AddCommand(newServeCmd(version))
+	root.AddCommand(newMCPCmd())
 
 	return root
 }

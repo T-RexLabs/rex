@@ -445,6 +445,19 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 	}
 	finalPrompt := harnessbrief.Wrap(brief, req.Prompt)
 
+	// Auto-attach Rex's built-in MCP server (tools.INTROSPECT.2)
+	// so the harness can introspect workspace state mid-session
+	// (rex.spec.list, rex.spec.read, rex.spec.validate, …). The
+	// caller can opt out per-workspace via
+	// extra.disable_rex_mcp: true in workspace.yaml.
+	mcpServers := req.MCPServers
+	if !rexMCPDisabled(ws.Root) && !mcpServerListContainsRex(mcpServers) {
+		mcpServers = append(mcpServers, acp.MCPServer{
+			Name:    "rex",
+			Command: rexMCPCommand(ws.Root),
+		})
+	}
+
 	cfg, err := json.Marshal(primharness.Config{
 		Harness:    req.Harness,
 		Prompt:     finalPrompt,
@@ -452,7 +465,7 @@ func StartHarnessRun(ctx context.Context, ws *Workspace, req HarnessRunRequest) 
 		Mode:       req.Mode,
 		Dir:        dir,
 		Env:        req.Env,
-		MCPServers: req.MCPServers,
+		MCPServers: mcpServers,
 		Timeout:    req.Timeout,
 	})
 	if err != nil {
@@ -794,4 +807,52 @@ func hasBriefOverride(root string) bool {
 func hashHexPrefix(body string) string {
 	sum := sha256.Sum256([]byte(body))
 	return hex.EncodeToString(sum[:])[:16]
+}
+
+// mcpServerListContainsRex reports whether servers already
+// includes a "rex" entry. Used by StartHarnessRun's auto-attach
+// path so manually-added rex MCP entries from the caller
+// aren't double-attached.
+func mcpServerListContainsRex(servers []acp.MCPServer) bool {
+	for _, s := range servers {
+		if s.Name == "rex" {
+			return true
+		}
+	}
+	return false
+}
+
+// rexMCPCommand builds the argv for Rex's built-in MCP server
+// (tools.INTROSPECT.2). Resolves to the same binary that's
+// running so spawned harnesses use a self-consistent rex.
+// Falls back to the "rex" name on PATH when the executable
+// path can't be resolved (e.g. some test harnesses).
+func rexMCPCommand(workspaceRoot string) []string {
+	exe, err := os.Executable()
+	if err != nil || exe == "" {
+		exe = "rex"
+	}
+	return []string{exe, "mcp", "--workspace", workspaceRoot}
+}
+
+// rexMCPDisabled reads extra.disable_rex_mcp from workspace.yaml.
+// Default false (auto-attach is on); the flag is the
+// per-workspace opt-out tools.INTROSPECT.2 references.
+func rexMCPDisabled(root string) bool {
+	body, err := os.ReadFile(filepath.Join(root, ".rex", "workspace.yaml"))
+	if err != nil {
+		return false
+	}
+	var raw struct {
+		Extra map[string]any `yaml:"extra"`
+	}
+	if err := yaml.Unmarshal(body, &raw); err != nil {
+		return false
+	}
+	v, ok := raw.Extra["disable_rex_mcp"]
+	if !ok {
+		return false
+	}
+	b, _ := v.(bool)
+	return b
 }

@@ -46,6 +46,34 @@ tasks:
     state: todo
     references: [MCP.5, MCP.6]
 
+  - id: implement-rex-mcp-server
+    description: |
+      Ship the `rex mcp` subcommand and the introspection tool
+      surface (INTROSPECT.1-4). Includes the JSON-RPC handler,
+      tool dispatch, auto-attach in StartHarnessRun, and tests.
+    state: done
+    note: "internal/core/mcpserver implements the JSON-RPC handler + the v1 tool surface (rex.workspace.brief, rex.spec.list/read/validate/verify, rex.events.recent). cmd/rex mcp runs it on stdio. StartHarnessRun auto-appends the rex MCP server to session/new's mcpServers (workspaces opt out via extra.disable_rex_mcp). INTROSPECT.4 (mutating tools via permission flow) lands in a follow-up; v1 ships read-only."
+    references:
+      - INTROSPECT.1
+      - INTROSPECT.2
+      - INTROSPECT.3
+      - INTROSPECT.4
+    proof:
+      - kind: code
+        path: internal/core/mcpserver/server.go
+      - kind: code
+        path: internal/core/mcpserver/tools.go
+      - kind: code
+        path: internal/local/cli/mcp.go
+      - kind: code
+        path: internal/local/runtask/runtask.go
+      - kind: test
+        path: internal/core/mcpserver/server_test.go
+        name: TestServerSequencedRequests
+      - kind: test
+        path: internal/core/mcpserver/tools_test.go
+        name: TestRexSpecListReturnsAllSpecs
+
   - id: app-integrations
     description: "Implement the app-integration framework with per-integration adapters for an initial set (GitHub, Slack, Linear, generic webhook)"
     state: todo
@@ -91,6 +119,47 @@ components:
       "1": "`rex tools list` shows all tools (MCP + app integrations) attached to the current workspace, with scope and status columns"
       "2": "`rex tools mcp <subcommand>` and `rex tools integration <subcommand>` are the two subgroups"
       "3": "`rex tools test <name>` runs a connectivity check (ping the MCP server / call the integration's health endpoint) and reports success/failure"
+
+  INTROSPECT:
+    name: Rex's built-in MCP server
+    requirements:
+      "1": |
+        `rex mcp` is a stdio MCP server: spawned as a child
+        process, speaks JSON-RPC NDJSON on stdio per the MCP
+        protocol. The subcommand inherits the parent run's
+        workspace root via `--workspace <path>` so the tools
+        scope to the right workspace from launch.
+      "2": |
+        Auto-attached to every harness session Rex spawns by
+        appending a `{name: "rex", command: ["rex", "mcp",
+        "--workspace", <root>]}` entry to ACP `session/new`'s
+        `mcpServers` parameter. Workspaces opt out via
+        `extra.disable_rex_mcp: true` on workspace.yaml.
+      "3": |
+        v1 tool surface (read-mostly):
+
+          `rex.workspace.brief()`         — fetch the same primer
+                                            `harnessbrief.Build` emits
+          `rex.spec.list()`               — enumerate workspace specs
+          `rex.spec.read(id)`             — fetch a spec's YAML body
+          `rex.spec.validate(id?)`        — run the validator
+          `rex.spec.verify(id?)`          — exercise structured proof
+          `rex.spec.runs(id, task?)`      — list runs that cite a spec
+          `rex.events.recent(type?, n?)`  — tail audit-class events
+
+        Tool calls are stateless from Rex's side; each call
+        re-reads the workspace's current state.
+      "4": |
+        Mutating tools (in v1 just `rex.run.cite` for adding
+        spec citations to the active run) gate through the
+        existing PermissionRequested/Granted/Denied event
+        flow. The MCP server emits a `permission.requested`
+        event before the mutation, blocks the tool call until
+        the run's permission scope (read_only / workspace /
+        unrestricted) auto-resolves it or a human approves
+        via `rex run approve`. This piggy-backs on the
+        existing permission stack rather than introducing a
+        new authorization layer.
 
 constraints:
 
