@@ -359,7 +359,12 @@ func (idx *Index) Search(query string, opts SearchOptions) ([]Result, error) {
 	if limit <= 0 {
 		limit = 25
 	}
-	query = escapeFTSQuery(query)
+	// Each table gets its own escape pass: a `type:foo` qualifier
+	// is a column qualifier against events_fts but a literal
+	// phrase against specs_fts (which has no `type` column).
+	specsQuery := escapeFTSQuery(query, specsFTSColumns)
+	eventsQuery := escapeFTSQuery(query, eventsFTSColumns)
+	_ = allFTSColumns // referenced for callers that build their own queries
 
 	out := make([]Result, 0, limit)
 
@@ -371,7 +376,7 @@ func (idx *Index) Search(query string, opts SearchOptions) ([]Result, error) {
 		 WHERE specs_fts MATCH ?
 		 ORDER BY rank
 		 LIMIT ?`,
-		query, limit,
+		specsQuery, limit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("search: query specs: %w", err)
@@ -404,7 +409,7 @@ func (idx *Index) Search(query string, opts SearchOptions) ([]Result, error) {
 		 WHERE events_fts MATCH ?
 		 ORDER BY rank
 		 LIMIT ?`,
-		query, limit,
+		eventsQuery, limit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("search: query events: %w", err)
@@ -470,7 +475,7 @@ func (idx *Index) SearchEvents(query string, opts SearchEventsOptions) ([]EventR
 	if limit <= 0 {
 		limit = 25
 	}
-	q := escapeFTSQuery(query)
+	q := escapeFTSQuery(query, eventsFTSColumns)
 
 	sqlStr := `SELECT event_id, type, workspace_id,
 			snippet(events_fts, -1, '<<', '>>', '...', 12) AS sn,
@@ -522,20 +527,71 @@ func IndexPath(workspaceRoot string) string {
 	return filepath.Join(workspaceRoot, ".rex", IndexFileName)
 }
 
+// eventsFTSColumns / specsFTSColumns are the per-table indexed
+// columns FTS5 will accept as `column:phrase` qualifiers.
+// Qualifiers must match the table being queried — applying a
+// `type:foo` qualifier to specs_fts (which has no `type` column)
+// would surface as a SQL error. The escape pass therefore takes a
+// table-scoped allow set; each query in this file passes its own.
+var (
+	eventsFTSColumns = map[string]struct{}{
+		"type":    {},
+		"payload": {},
+	}
+	specsFTSColumns = map[string]struct{}{
+		"name":        {},
+		"description": {},
+		"raw_yaml":    {},
+	}
+	// allFTSColumns is the union used by `rex search` when the
+	// query straddles both tables in one pass. The Search method
+	// prepares two queries (one per table) using the table-scoped
+	// sets so a qualifier for the wrong table degrades to the
+	// literal-phrase form rather than a SQL error.
+	allFTSColumns = unionFTSColumns(eventsFTSColumns, specsFTSColumns)
+)
+
+func unionFTSColumns(sets ...map[string]struct{}) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, s := range sets {
+		for k := range s {
+			out[k] = struct{}{}
+		}
+	}
+	return out
+}
+
 // escapeFTSQuery makes a free-form user query safe to pass to
 // SQLite FTS5. FTS5 reads unquoted hyphens as NOT and unquoted
 // colons as column qualifiers — both common in our event payload
-// content (kebab-cased ids, "type:event"). This pre-pass tokenizes
-// on whitespace and double-quotes any token containing FTS-special
-// characters, while letting AND / OR / NOT operators pass through
-// unquoted so users can still build compound queries.
-func escapeFTSQuery(q string) string {
+// content (kebab-cased ids, "type:event"). This pre-pass:
+//
+//   - lets AND / OR / NOT operators pass through unquoted
+//   - recognises `<key>:<value>` for columns that exist on the
+//     target table and emits a proper FTS5 column qualifier
+//     (`key:"value"`) so `type:run.completed` actually narrows by
+//     event type instead of becoming a literal phrase search
+//   - degrades qualifiers for the wrong table (e.g. `type:foo`
+//     against specs_fts) to the literal-phrase form so the SQL
+//     query stays valid; the qualifier just won't match anything
+//     in that table
+//   - double-quotes every other token containing FTS-special
+//     characters so kebab-cased ids and dotted refs stay safe
+//
+// allowedColumns is the per-table indexed-column set. Pass nil for
+// "no qualifier rewriting" — every key falls through to the
+// literal-phrase quoting path.
+func escapeFTSQuery(q string, allowedColumns map[string]struct{}) string {
 	tokens := strings.Fields(q)
 	out := make([]string, 0, len(tokens))
 	for _, t := range tokens {
 		upper := strings.ToUpper(t)
 		if upper == "AND" || upper == "OR" || upper == "NOT" {
 			out = append(out, upper)
+			continue
+		}
+		if rendered, ok := renderColumnQualifier(t, allowedColumns); ok {
+			out = append(out, rendered)
 			continue
 		}
 		if strings.ContainsAny(t, "-:.,;()'") || strings.HasPrefix(t, "\"") {
@@ -546,6 +602,41 @@ func escapeFTSQuery(q string) string {
 		out = append(out, t)
 	}
 	return strings.Join(out, " ")
+}
+
+// renderColumnQualifier inspects t for the `<key>:<value>` shape
+// and emits the FTS5 column-qualifier form when key is one of the
+// columns in allowed. Returns false on any other shape so the
+// caller can fall through to the conservative quoting path. nil
+// allowed returns false for every input.
+func renderColumnQualifier(t string, allowed map[string]struct{}) (string, bool) {
+	if allowed == nil {
+		return "", false
+	}
+	idx := strings.IndexByte(t, ':')
+	if idx <= 0 || idx == len(t)-1 {
+		return "", false
+	}
+	key := t[:idx]
+	value := t[idx+1:]
+	if _, ok := allowed[strings.ToLower(key)]; !ok {
+		return "", false
+	}
+	// Key must be a bare identifier so a payload-string colon-
+	// prefix like "https://..." doesn't accidentally classify as a
+	// qualifier.
+	for _, r := range key {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '_':
+		default:
+			return "", false
+		}
+	}
+	value = strings.ReplaceAll(value, `"`, `""`)
+	return strings.ToLower(key) + `:"` + value + `"`, true
 }
 
 // EventIndexer is the eventlog.OnAppend-shaped adapter the CLI

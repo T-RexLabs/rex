@@ -316,6 +316,73 @@ func TestSearchEventsFiltersByType(t *testing.T) {
 	}
 }
 
+func TestEscapeFTSQueryColumnQualifier(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		input   string
+		columns map[string]struct{}
+		want    string
+	}{
+		{"events-type-qualifier", "type:run.completed", eventsFTSColumns, `type:"run.completed"`},
+		{"events-type-qualifier-2", "type:repo.added", eventsFTSColumns, `type:"repo.added"`},
+		{"specs-name-qualifier", "name:Foo", specsFTSColumns, `name:"Foo"`},
+		{"specs-description-qualifier", "description:bar", specsFTSColumns, `description:"bar"`},
+		// Same query against specs_fts → qualifier doesn't apply
+		// (specs_fts has no type column); falls back to literal-
+		// phrase form so the SQL stays valid.
+		{"type-on-specs-fallback", "type:foo", specsFTSColumns, `"type:foo"`},
+		// Unknown / UNINDEXED column keys fall back to the
+		// conservative full-token quoting path.
+		{"unindexed-actor", "actor:l-abc", eventsFTSColumns, `"actor:l-abc"`},
+		{"unindexed-event-id", "event_id:42", eventsFTSColumns, `"event_id:42"`},
+		{"url-prefix", "https://x.io", eventsFTSColumns, `"https://x.io"`},
+		// Bare tokens stay untouched.
+		{"bare", "hello", eventsFTSColumns, "hello"},
+		// Operators pass through.
+		{"and", "AND", eventsFTSColumns, "AND"},
+		{"or", "OR", eventsFTSColumns, "OR"},
+		// nil columns disables qualifier rewriting entirely.
+		{"nil-columns", "type:run.completed", nil, `"type:run.completed"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := escapeFTSQuery(tc.input, tc.columns); got != tc.want {
+				t.Errorf("escapeFTSQuery(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSearchEventsColumnQualifierNarrows(t *testing.T) {
+	t.Parallel()
+	root := initWorkspace(t)
+	idx, _ := Open(root)
+	defer idx.Close()
+
+	mk := func(id, typ, payload string) eventlog.Record {
+		return eventlog.Record{
+			ID: id, Type: typ, Version: 1, Actor: "a", WorkspaceID: "ws",
+			Payload: json.RawMessage(payload),
+		}
+	}
+	_ = idx.UpsertEvent(mk("e1", "run.completed", `{"text":"common-word"}`))
+	_ = idx.UpsertEvent(mk("e2", "node.started", `{"text":"common-word"}`))
+
+	// Without the new column qualifier, "type:run.completed" used
+	// to be auto-quoted into a literal phrase that didn't match
+	// either record. Now it acts as an FTS5 column qualifier and
+	// narrows to e1.
+	results, err := idx.SearchEvents("type:run.completed", SearchEventsOptions{})
+	if err != nil {
+		t.Fatalf("SearchEvents: %v", err)
+	}
+	if len(results) != 1 || results[0].EventID != "e1" {
+		t.Fatalf("type-qualifier should narrow to e1; got %+v", results)
+	}
+}
+
 func TestSearchEventsEmptyQueryErrors(t *testing.T) {
 	t.Parallel()
 
