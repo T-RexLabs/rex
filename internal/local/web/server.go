@@ -148,6 +148,29 @@ func loadPages() (map[string]*template.Template, error) {
 		name := filepath.Base(p)
 		t, err := template.New(name).Funcs(template.FuncMap{
 			"joinCSV": func(xs []string) string { return strings.Join(xs, ",") },
+			// splitTaskRef cracks `<spec-id>.<task-id>` into its
+			// two parts so the template can build a /specs/<id>
+			// link with a #<task-id> anchor. Returns the original
+			// string in slot 0 if it doesn't match the expected
+			// shape so the caller can fall back to a plain code
+			// span.
+			"splitTaskRef": func(s string) []string {
+				idx := strings.Index(s, ".")
+				if idx < 0 {
+					return []string{s}
+				}
+				return []string{s[:idx], s[idx+1:]}
+			},
+			// splitACID returns the spec id portion of an ACID
+			// (everything before the first dot). Used to link a
+			// run's spec_refs back to /specs/<spec-id>.
+			"splitACID": func(s string) []string {
+				idx := strings.Index(s, ".")
+				if idx < 0 {
+					return nil
+				}
+				return []string{s[:idx]}
+			},
 		}).ParseFS(templateFS, "templates/base.tmpl", p)
 		if err != nil {
 			return nil, fmt.Errorf("web: parse %s: %w", p, err)

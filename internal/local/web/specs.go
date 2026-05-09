@@ -123,6 +123,15 @@ type specDetailData struct {
 	RawYAML    string
 	YAMLPretty template.HTML // chroma-highlighted view of RawYAML
 	ActiveTab  string
+	// RunsByTask maps task ids to runs launched from that task,
+	// most-recent-first. Empty when the events.log has no
+	// matching runs. Phase-C surface; the template uses it to
+	// render a status dot + recent-run links per task.
+	RunsByTask map[string][]runRow
+	// UntaskedRuns are runs that cite the spec via spec_refs but
+	// without naming a task — surfaced in the runs link in the
+	// header rather than per task.
+	UntaskedRuns []runRow
 }
 
 func loadSpecsList(opts Options) (specsListData, error) {
@@ -205,6 +214,13 @@ func loadSpecDetail(opts Options, id, tab string, hl *Highlighter) (specDetailDa
 	}
 	if hl != nil {
 		d.YAMLPretty = hl.HighlightYAML(string(raw))
+	}
+	// Best-effort run lookup. Failures here (missing events.log
+	// on a fresh workspace, parse error mid-log) shouldn't
+	// 500 the spec page — we just skip the affordance.
+	if byTask, untasked, err := loadRunsByTaskID(opts.WorkspaceRoot, doc.Metadata.ID); err == nil {
+		d.RunsByTask = byTask
+		d.UntaskedRuns = untasked
 	}
 	return d, true, nil
 }

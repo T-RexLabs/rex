@@ -153,6 +153,31 @@
       <a href="/runs/{{.RunID}}?debug=1" class="muted small">show raw frames (debug)</a>
     {{end}}
   </div>
+  {{if or .FromTask .SpecRefs}}
+    <div class="meta run-spec-link">
+      <span class="muted small">launched from</span>
+      {{if .FromTask}}
+        {{$parts := splitTaskRef .FromTask}}
+        {{if eq (len $parts) 2}}
+          <a href="/specs/{{index $parts 0}}#{{index $parts 1}}"><code>{{.FromTask}}</code></a>
+        {{else}}
+          <code>{{.FromTask}}</code>
+        {{end}}
+      {{end}}
+      {{if .SpecRefs}}
+        {{if .FromTask}}<span class="muted">·</span>{{end}}
+        <span class="muted small">cites</span>
+        {{range .SpecRefs}}
+          {{$parts := splitACID .}}
+          {{if gt (len $parts) 0}}
+            <a class="acid acid-sm" data-acid="{{.}}" href="/specs/{{index $parts 0}}" title="{{.}}">{{.}}</a>
+          {{else}}
+            <code>{{.}}</code>
+          {{end}}
+        {{end}}
+      {{end}}
+    </div>
+  {{end}}
 </header>
 
 <section class="section{{if .Debug}} run-debug{{end}}"

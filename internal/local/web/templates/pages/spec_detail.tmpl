@@ -103,6 +103,7 @@
     {{if .Spec.Tasks}}
       <div class="card">
         {{range .Spec.Tasks}}
+          {{$runs := index $.RunsByTask .ID}}
           <div class="task">
             <div class="task-id"><code>{{.ID}}</code></div>
             <div><span class="pill pill-{{.State}}"><i class="dot"></i>{{.State}}</span></div>
@@ -121,10 +122,42 @@
                   <span class="muted">via <code>{{.RecipeKind}}</code> recipe</span>
                 </form>
               {{end}}
+              {{if $runs}}
+                {{$latest := index $runs 0}}
+                <details class="task-runs">
+                  <summary>
+                    <span class="pill pill-{{$latest.Status}}" title="latest run: {{$latest.Status}}"><i class="dot"></i>{{len $runs}} run{{if ne (len $runs) 1}}s{{end}}</span>
+                    <span class="muted">latest <a href="/runs/{{$latest.RunID}}"><code>{{$latest.Name}}</code></a></span>
+                  </summary>
+                  <ul class="task-runs-list">
+                    {{range $runs}}
+                      <li>
+                        <span class="pill pill-{{.Status}} pill-sm"><i class="dot"></i>{{.Status}}</span>
+                        <a href="/runs/{{.RunID}}"><code>{{.Name}}</code></a>
+                        <time class="muted small">{{.StartedAt}}</time>
+                      </li>
+                    {{end}}
+                  </ul>
+                </details>
+              {{end}}
             </div>
           </div>
         {{end}}
       </div>
+      {{if .UntaskedRuns}}
+        <div class="card untasked-runs">
+          <h3 class="section-h3">runs citing this spec without a task</h3>
+          <ul class="task-runs-list">
+            {{range .UntaskedRuns}}
+              <li>
+                <span class="pill pill-{{.Status}} pill-sm"><i class="dot"></i>{{.Status}}</span>
+                <a href="/runs/{{.RunID}}"><code>{{.Name}}</code></a>
+                <time class="muted small">{{.StartedAt}}</time>
+              </li>
+            {{end}}
+          </ul>
+        </div>
+      {{end}}
     {{else}}
       <p class="muted">no tasks defined.</p>
     {{end}}

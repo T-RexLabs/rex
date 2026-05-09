@@ -176,6 +176,55 @@ func matchesSpecFilter(r runRow, filter string) bool {
 	return false
 }
 
+// loadRunsByTaskID groups every run that cites specID into
+// per-task buckets (keyed by the task id suffix of from_task)
+// and an "untasked" bucket for runs that cite the spec via
+// spec_refs without naming a task. Used by /specs/<id> to render
+// the per-task run-history affordance.
+//
+// Within each bucket, runs are ordered most-recent-first so the
+// UI's "latest run" indicator (status dot) reads off the head.
+func loadRunsByTaskID(root, specID string) (map[string][]runRow, []runRow, error) {
+	all, err := loadRunRows(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	prefix := specID + "."
+	byTask := make(map[string][]runRow)
+	var untasked []runRow
+	for _, r := range all {
+		if !matchesSpecFilter(r, specID) {
+			continue
+		}
+		if strings.HasPrefix(r.FromTask, prefix) {
+			taskID := strings.TrimPrefix(r.FromTask, prefix)
+			byTask[taskID] = append(byTask[taskID], r)
+			continue
+		}
+		untasked = append(untasked, r)
+	}
+	// Most-recent-first per bucket. loadRunRows produces no
+	// guaranteed order; we sort by started timestamp string
+	// (RFC3339, lexically sortable).
+	for k := range byTask {
+		buck := byTask[k]
+		sortRunsDesc(buck)
+		byTask[k] = buck
+	}
+	sortRunsDesc(untasked)
+	return byTask, untasked, nil
+}
+
+// sortRunsDesc orders runs most-recent-started first. Reverse-
+// alphabetical works because StartedAt is RFC3339.
+func sortRunsDesc(rows []runRow) {
+	for i := 1; i < len(rows); i++ {
+		for j := i; j > 0 && rows[j].StartedAt > rows[j-1].StartedAt; j-- {
+			rows[j], rows[j-1] = rows[j-1], rows[j]
+		}
+	}
+}
+
 // runDetailData backs run_detail.tmpl.
 //
 // LastEventID is the id of the chronologically last event the
@@ -205,6 +254,14 @@ type runDetailData struct {
 	// to render OptimisticPrompt — if the harness already echoed, the
 	// synthetic row is redundant.
 	HasUserMessage bool
+	// SpecRefs are the fully-qualified ACIDs the run cited at
+	// start (execution.RUN.1.1). Phase-C surfaces them as
+	// clickable links back to the originating spec.
+	SpecRefs []string
+	// FromTask is the `<spec-id>.<task-id>` reference when the
+	// run was launched from a recipe; empty otherwise. The
+	// template renders it as a link to /specs/<spec-id> when set.
+	FromTask string
 }
 
 // loadRunDetail walks events.log and returns the records whose
@@ -322,6 +379,15 @@ func loadRunDetail(opts Options, runID string, hl *Highlighter) (runDetailData, 
 		switch ev := decoded.(type) {
 		case runner.RunStartedEvent:
 			row.Compact, row.Summary = true, "run started"
+			// Capture the spec linkage Phase-C renders in the
+			// run-detail header. Earlier RunStartedEvents win
+			// in the unlikely case of duplicates (replayed log).
+			if d.FromTask == "" {
+				d.FromTask = ev.FromTask
+			}
+			if len(d.SpecRefs) == 0 && len(ev.SpecRefs) > 0 {
+				d.SpecRefs = append([]string{}, ev.SpecRefs...)
+			}
 		case runner.RunCompletedEvent:
 			row.Compact, row.Summary = true, "run completed"
 		case runner.RunCancelledEvent:
