@@ -28,6 +28,12 @@ coverage.html
 /.rex/
 *.local.yaml
 
+# Local test/scratch workspaces — these get created by ad-hoc
+# `rex workspace init` runs at the repo root. Anything under
+# /test/ that's a real Rex workspace (its own .rex/ skeleton)
+# is per-machine state, not source.
+/test/
+
 # Local env files
 .env
 .env.local

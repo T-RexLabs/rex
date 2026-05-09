@@ -1,7 +1,0 @@
-spec_version: 1
-metadata:
-    id: interactive-soda-site
-    name: Interactive soda site
-    state: active
-    created_at: "2026-05-09T12:15:23Z"
-    updated_at: "2026-05-09T12:15:23Z"
