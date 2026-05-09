@@ -42,31 +42,6 @@ surfaces it alongside any recipe-driven runs.`,
 	})
 }
 
-// newSpecAmendCmd implements `rex spec amend <id> [prompt]` —
-// the mutation-style counterpart to `rex spec ask`. Same
-// machinery, action: amend, so the harness produces a YAML
-// amendment body suitable for specs/_proposed/. v1 does NOT
-// auto-write — authors review the response on /runs/<id> and
-// fold it manually (RECIPE.6.3).
-func newSpecAmendCmd() *cobra.Command {
-	return newSpecActionAdHocCmd(specActionAdHocSpec{
-		Use:    "amend <id> [prompt]",
-		Short:  "Ask a harness to draft an amendment to a spec",
-		Action: specfmt.SpecActionAmend,
-		Long: `Opens a harness session preloaded with the named spec's full YAML
-content and sends your prompt as the amendment instruction. The
-harness is asked to produce a YAML body suitable for
-` + "`specs/_proposed/<id>-amendment-<date>.yaml`" + `.
-
-Per spec-format.RECIPE.6.3: v1 does not auto-write the response.
-Review the harness output on /runs/<id>, copy the YAML into a new
-file under specs/_proposed/, then fold it through the existing
-amendment flow (rex spec validate, then move to _accepted/).`,
-		Example: `  rex spec amend overview "tighten SYS.4 and add a SYS.7 about offline mode"
-  rex spec amend cli --harness claude-code "extend rex run list with --since"`,
-	})
-}
-
 // specActionAdHocSpec carries the per-command differences for
 // the shared ad-hoc spec_action runner. Three commands today
 // (ask / amend) — only the action enum + prose differs.
