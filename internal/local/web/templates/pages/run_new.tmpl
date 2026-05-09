@@ -113,6 +113,32 @@
         {{end}}
       </div>
 
+      <fieldset class="form-fieldset">
+        <legend class="field-label">attach to a spec <span class="muted small">(optional)</span></legend>
+        <div class="form-grid">
+          <label class="field full">
+            <span class="field-label">from task</span>
+            <input class="field-input mono"
+                   type="text"
+                   name="from_task"
+                   autocomplete="off"
+                   placeholder="execution.dag-primitives"
+                   value="{{.FromTask}}">
+            <span class="field-hint">Records a <code>from_task</code> on this run's <code>run.started</code> event so it surfaces under that task on <code>/specs/&lt;id&gt;</code>. Format: <code>&lt;spec-id&gt;.&lt;task-id&gt;</code>.</span>
+          </label>
+          <label class="field full">
+            <span class="field-label">spec refs</span>
+            <input class="field-input mono"
+                   type="text"
+                   name="spec_refs"
+                   autocomplete="off"
+                   placeholder="execution.PRIM.6, sync.ORDER.3"
+                   value="{{.SpecRefsRaw}}">
+            <span class="field-hint">Comma-separated ACIDs the run satisfies. Surfaced as clickable links in the run detail header and used by <code>rex run list --spec-ref</code>.</span>
+          </label>
+        </div>
+      </fieldset>
+
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">start run</button>
         <a class="btn btn-ghost" href="/runs">cancel</a>

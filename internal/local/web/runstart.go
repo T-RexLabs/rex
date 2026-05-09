@@ -25,6 +25,15 @@ type runNewData struct {
 	Model       string
 	Mode        string
 
+	// Spec-attachment fields (Phase-C parity with the CLI's
+	// --from-task and --spec-ref flags). Both optional;
+	// FromTask carries the `<spec-id>.<task-id>` form, SpecRefs
+	// is the user-typed comma-separated list of ACIDs that gets
+	// split + trimmed at submit time.
+	FromTask     string
+	SpecRefsRaw  string
+	SpecRefsList []string
+
 	Harnesses    []harnessFormOption
 	ModelOptions []string
 	ModeOptions  []string
@@ -142,6 +151,13 @@ func defaultNodeID(runType string) string {
 // returns as soon as the run's first event is durably written, then
 // redirects to the live run page so the user sees progress instead of
 // waiting on a blank form submit.
+//
+// Query parameters prefill the spec-attachment fields so deep links
+// from a spec page (or another tool) can land here with the
+// linkage already typed:
+//
+//	/runs/new?from_task=execution.dag-primitives
+//	/runs/new?spec_ref=execution.PRIM.6&spec_ref=execution.PRIM.5
 func (s *Server) handleRunNew(w http.ResponseWriter, r *http.Request) {
 	base := s.basePageData()
 	if base.Workspace == nil {
@@ -149,8 +165,52 @@ func (s *Server) handleRunNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base.NavSection = "runs"
-	d := s.prepareRunNewData(runNewData{pageData: base, RunType: "shell"})
+	q := r.URL.Query()
+	d := s.prepareRunNewData(runNewData{
+		pageData:    base,
+		RunType:     "shell",
+		FromTask:    strings.TrimSpace(q.Get("from_task")),
+		SpecRefsRaw: strings.Join(q["spec_ref"], ", "),
+	})
 	s.render(w, r, "run_new.tmpl", d)
+}
+
+// parseSpecRefsField splits the user's comma-separated ACID
+// input into a clean []string, dropping blanks and trimming
+// whitespace. Validation of individual entries is best-effort —
+// the runner sees them verbatim, the spec-format validator's
+// dangling-acid pass catches typos at the next `rex spec
+// validate` run rather than blocking the start path.
+func parseSpecRefsField(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// validateFromTaskField requires the standard <spec-id>.<task-id>
+// shape: at least one dot, no internal whitespace, both halves
+// non-empty. Empty input is fine — the field is optional.
+func validateFromTaskField(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	idx := strings.Index(raw, ".")
+	if idx <= 0 || idx == len(raw)-1 {
+		return fmt.Errorf("from_task %q must be in <spec-id>.<task-id> form", raw)
+	}
+	if strings.ContainsAny(raw, " \t\n") {
+		return fmt.Errorf("from_task %q must not contain whitespace", raw)
+	}
+	return nil
 }
 
 // handleRunStart validates the submitted form, launches the run in a
@@ -169,7 +229,14 @@ func (s *Server) handleRunStart(w http.ResponseWriter, r *http.Request) {
 		Prompt:      strings.TrimSpace(r.FormValue("prompt")),
 		Model:       strings.TrimSpace(r.FormValue("model")),
 		Mode:        strings.TrimSpace(r.FormValue("mode")),
+		FromTask:    strings.TrimSpace(r.FormValue("from_task")),
+		SpecRefsRaw: strings.TrimSpace(r.FormValue("spec_refs")),
 	})
+	d.SpecRefsList = parseSpecRefsField(d.SpecRefsRaw)
+	if err := validateFromTaskField(d.FromTask); err != nil {
+		s.rerenderRunNew(w, r, err.Error(), d)
+		return
+	}
 
 	switch d.RunType {
 	case "shell":
@@ -215,10 +282,12 @@ func (s *Server) handleRunStart(w http.ResponseWriter, r *http.Request) {
 		}
 		startedCh, errCh = s.launchRunAsync(ws, func(onEvent func(eventlog.Record)) error {
 			_, err := runtask.StartShellRun(s.ctx, ws, runtask.ShellRunRequest{
-				Command: argv,
-				NodeID:  nodeID,
-				RunID:   runID,
-				OnEvent: onEvent,
+				Command:  argv,
+				NodeID:   nodeID,
+				RunID:    runID,
+				SpecRefs: d.SpecRefsList,
+				FromTask: d.FromTask,
+				OnEvent:  onEvent,
 			})
 			return err
 		})
@@ -241,6 +310,8 @@ func (s *Server) handleRunStart(w http.ResponseWriter, r *http.Request) {
 				NodeID:   nodeID,
 				RunID:    runID,
 				Adapters: reg,
+				SpecRefs: d.SpecRefsList,
+				FromTask: d.FromTask,
 				OnEvent:  onEvent,
 				OnInput:  onInput,
 				OnPermission: func(ctx context.Context, req runner.PermissionRequestedEvent) (runtask.PermissionResolution, error) {
