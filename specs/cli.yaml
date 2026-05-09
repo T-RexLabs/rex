@@ -7,7 +7,7 @@ metadata:
   owners: []
   related_specs: [overview, workspace, sync, execution, audit, search, tools, hooks, web-ui]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-09T00:00:00Z
+  updated_at: 2026-05-10T00:00:00Z
 
 description: |
   The CLI is Rex's primary interface for v1. The web UI exists from day
@@ -134,6 +134,11 @@ components:
       "4": "`rex spec validate [<id>...]` — validate one or more specs (default: all in workspace); exits non-zero on validation errors"
       "5": "`rex spec edit <id>` — open the spec in `$EDITOR`"
       "6": "`rex spec acid <ACID>` — resolve an ACID reference and show the underlying requirement"
+      "7": "`rex spec amend list [--state proposed|accepted] [--for <spec-id>]` — list amendments under `.rex/specs/_proposed/` (and `_accepted/`)"
+      "8": "`rex spec amend show <file-or-stem>` — print an amendment's frontmatter and body"
+      "9": "`rex spec amend accept <file-or-stem>` — move the amendment from `_proposed/` to `_proposed/_accepted/`, rewrite `state: proposed` to `accepted`, and emit a `spec.amendment.accepted` audit event. Acceptance does not modify the target spec (per `spec-format.AMEND.5`)"
+      "10": "`rex spec amend reject <file-or-stem>` — delete the file and emit a `spec.amendment.rejected` audit event"
+      "11": "`rex spec amend draft <id> [prompt]` — drive a harness to draft a YAML amendment for the named spec; the previous bare `rex spec amend <id>` form is kept as a deprecated alias for one minor version"
 
   RUN:
     name: Run subcommands

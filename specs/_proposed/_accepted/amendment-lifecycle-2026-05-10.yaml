@@ -1,0 +1,461 @@
+# Proposed amendment — make the spec-amendment lifecycle a first-class
+# concept across spec-format, storage, cli, web-ui, and audit.
+#
+# Status: accepted
+# Date:   2026-05-10
+# Folded: 2026-05-10 — spec-format.AMEND component (req 1-6) added,
+#         storage.WS.2.2.1 added, cli.SPEC.7-11 added, web-ui.LOCAL.1
+#         text replaced + LOCAL.4.1, 7, 7.1 added, audit.TYPES.1 text
+#         replaced. All five touched specs bumped updated_at to
+#         2026-05-10. Three audit event types
+#         (spec.amendment.proposed/accepted/rejected) are reserved
+#         here; their catalog entry lands with the implementation
+#         work, not this fold.
+#
+# Surfaced by:
+#   Author asked why proposed amendments aren't visible in the web UI
+#   and why the only "fold an accepted amendment" path is a harness
+#   recipe. Today the convention exists informally — the rex repo's
+#   own specs/_proposed/ + specs/_proposed/_accepted/ directories,
+#   the `_accepted/` exclusion in spec-format.SCOPE, and CLAUDE.md
+#   prose — but nothing in the spec contract pins file location, file
+#   naming, the proposed→accepted transition, or the surfaces that
+#   should expose them. The result is the asymmetry the author
+#   flagged:
+#
+#     - You can't see proposed amendments in the web UI at all.
+#     - "Accepting" an amendment is a manual `mv`; no audit signal,
+#       no programmatic entry point, no CLI command.
+#     - `rex spec amend` exists but only drafts (via harness); it has
+#       no `list`, `show`, or `accept` siblings.
+#
+#   This amendment establishes the **visibility + bookkeeping** layer
+#   only. It deliberately does NOT cover programmatic spec-edit
+#   application (folding the amendment's diff into the target spec);
+#   that requires a structured `edits` schema and a comment-preserving
+#   YAML applier, and is left for a future phase.
+#
+#   The author labelled this "phase 1" in the design conversation;
+#   "phase 2" (the programmatic applier) is explicitly out of scope.
+#
+# This amendment touches five specs.
+
+target: multi
+state: accepted
+amendment_kind: additive
+
+# -----------------------------------------------------------------
+# Decision 1 — workspace amendment location.
+#
+# In the rex repo itself, amendments live at `specs/_proposed/` and
+# accepted ones at `specs/_proposed/_accepted/`. That works because
+# the rex repo *is* the contract — it ships its own spec set at the
+# repo root.
+#
+# In a user workspace, the spec set lives at `.rex/specs/` (per
+# storage.WS.2.2 and the existing recipe loader at
+# internal/local/recipe/recipe.go:46). The amendment lifecycle
+# therefore mirrors the spec lifecycle and lives at:
+#
+#   .rex/specs/_proposed/                      # proposed amendments
+#   .rex/specs/_proposed/_accepted/            # accepted (folded) amendments
+#
+# Same directory layout as the rex repo, just rooted under .rex/.
+# Both directories are git-merged content like the parent specs/
+# directory; nothing about sync category changes.
+#
+# Filename convention is unchanged from existing practice:
+#
+#   <target-spec-id>-amendment-<YYYY-MM-DD>[-<slug>].yaml
+#
+# When two amendments target the same spec on the same day, the
+# `<slug>` segment disambiguates. The slug is kebab-case ASCII; the
+# validator does not parse the filename, only enforces the prefix
+# and suffix.
+# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------
+# Decision 2 — required frontmatter fields.
+#
+# Existing accepted amendments already converge on these fields
+# (sample-checked across `_accepted/`). This amendment formalises
+# them as **required** for new amendments only — historical
+# amendments already in `_accepted/` are grandfathered (the
+# validator does not retro-check them).
+#
+# Required:
+#   amendment_for: <kebab-spec-id>     # the target spec; must resolve
+#                                      # in the workspace's specs/
+#   amendment_date: <YYYY-MM-DD>       # ISO date matching the filename
+#   state: proposed | accepted         # lifecycle state; see Decision 3
+#   summary: <free text>               # one-paragraph human summary
+#
+# Optional (existing convention):
+#   amendment_kind: additive | breaking | clarifying
+#   migration_impact: <free text>      # how callers should migrate
+#   changes: [<change>, ...]           # author-facing change blocks
+#   verification: [<entry>, ...]       # author-facing proof links
+#   extra: <map>                       # author metadata (handles, etc.)
+#
+# Note: `target: multi` is allowed when an amendment touches more
+# than one spec (this very file uses it). When `target: multi`, the
+# `amendment_for` field is omitted and the amendment must list
+# the touched specs in its `changes[].affects` blocks. Validators
+# should treat `target: multi` as the multi-spec sentinel rather
+# than rejecting the missing `amendment_for`.
+# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------
+# Decision 3 — lifecycle states and transitions.
+#
+# Two states, three transitions, all observable:
+#
+#   proposed   ── accept ──>  accepted
+#   proposed   ── reject ──>  (file deleted; audit event records the
+#                              removal — no on-disk tombstone)
+#   accepted   ── (folded) ──> (no further state change; "folded"
+#                              describes whether the amendment's
+#                              edits have been applied to the target
+#                              spec; that lives in the amendment file's
+#                              free-text comment header, not the
+#                              `state` field)
+#
+# `accept` moves the file from `_proposed/` to `_proposed/_accepted/`,
+# rewrites `state: proposed` → `state: accepted`, and emits an audit
+# event. The actual spec edit (folding the amendment's prose into the
+# target YAML) remains a separate manual or harness-driven step;
+# accepting the amendment only signals "the author has approved this
+# change in principle". This is the deliberate phase-1 boundary.
+#
+# `reject` deletes the file and emits an audit event. There is no
+# `_rejected/` directory — git history preserves what was proposed,
+# and keeping rejected proposals around tends to confuse the diff
+# review later.
+# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------
+# Decision 4 — surfaces.
+#
+# CLI (cli.SPEC):
+#   rex spec amend list [--state proposed|accepted] [--for <spec-id>]
+#   rex spec amend show <file-or-stem>
+#   rex spec amend accept <file-or-stem>
+#   rex spec amend reject <file-or-stem>
+#
+#   The existing `rex spec amend <id> [prompt]` (the harness drafter)
+#   becomes `rex spec amend draft <id> [prompt]`; the bare form is
+#   kept as a deprecated alias for one minor version, then dropped.
+#
+# Web UI (web-ui.LOCAL):
+#   /amendments                           # list, filterable by state
+#   /amendments/<file-stem>               # detail view (rendered + YAML)
+#   POST /amendments/<file-stem>/accept   # accept (move + state rewrite)
+#   POST /amendments/<file-stem>/reject   # reject (delete)
+#   /specs/<spec-id>                      # gains a "Proposed amendments"
+#                                         # panel listing matches
+#
+# Audit (audit.TYPES):
+#   spec.amendment.proposed   # written when a new file appears in
+#                             # `.rex/specs/_proposed/` via a tracked
+#                             # entry point (CLI, web, or `rex spec
+#                             # amend draft` writeback). Out-of-band
+#                             # `mv`/editor writes are NOT audited;
+#                             # this matches existing spec.created
+#                             # behavior.
+#   spec.amendment.accepted   # written by accept (CLI or web)
+#   spec.amendment.rejected   # written by reject (CLI or web)
+#
+# Storage (storage.WS):
+#   `.rex/specs/_proposed/` and `.rex/specs/_proposed/_accepted/`
+#   join the existing inventory of git-merged workspace content.
+# -----------------------------------------------------------------
+
+summary: |
+  Make the spec-amendment lifecycle a first-class concept: pin the
+  on-disk location (`.rex/specs/_proposed/` and its `_accepted/`
+  subdirectory), require a small frontmatter (`amendment_for`,
+  `amendment_date`, `state`, `summary`) on new amendments, define
+  proposed/accepted states with `accept`/`reject` transitions, and
+  add CLI + web-UI surfaces plus three audit event types. The
+  amendment-to-spec folding step (applying an accepted amendment's
+  edits to the target spec) is intentionally out of scope here.
+
+migration_impact: |
+  Additive across all five touched specs. No existing CLI or web
+  route is renamed or removed. The bare `rex spec amend <id>` form
+  is kept as a deprecated alias for one minor version. Existing
+  amendments under `specs/_proposed/_accepted/` are grandfathered
+  (the validator does not retro-check their frontmatter).
+
+  The web UI does not gain authentication for accept/reject in
+  this amendment — `rex serve` is loopback-only by default per
+  web-ui.LOCAL.2, so the existing local-machine trust boundary
+  applies.
+
+changes:
+
+  - id: spec-format-amendment-lifecycle
+    title: Add an amendment-lifecycle section to spec-format
+    affects: [spec-format]
+    rationale: |
+      spec-format already mentions `_proposed/` and `_accepted/` in
+      its SCOPE component as carve-outs from the validator. It
+      should also describe the lifecycle those directories
+      participate in: required frontmatter, the proposed/accepted
+      states, and the accept/reject transitions. Without this, the
+      contract under-specifies what a well-formed amendment file
+      looks like.
+    edits:
+      - target: AMEND  # NEW component
+        kind: add-component
+        component_name: Amendment lifecycle
+        requirements:
+          "1": |
+            Amendments to a spec live as YAML files under
+            `<workspace>/.rex/specs/_proposed/`. Filename:
+            `<target-spec-id>-amendment-<YYYY-MM-DD>[-<slug>].yaml`.
+            The validator does not parse the filename beyond the
+            prefix and suffix.
+          "2": |
+            Required frontmatter for amendments authored after this
+            requirement ships: `amendment_for` (kebab spec id, or
+            omitted when `target: multi`), `amendment_date`
+            (YYYY-MM-DD matching the filename), `state` (one of
+            `proposed`, `accepted`), and `summary` (free text). The
+            validator emits errors on missing fields in strict mode
+            and warnings in lenient mode.
+          "3": |
+            Optional fields that existing accepted amendments use:
+            `amendment_kind` (additive | breaking | clarifying),
+            `migration_impact`, `changes`, `verification`, `extra`.
+            v1 does not constrain their inner shape; they are
+            human-facing prose.
+          "4": |
+            Lifecycle: a `proposed` amendment lives in
+            `_proposed/`. Acceptance moves the file to
+            `_proposed/_accepted/` and rewrites `state` to
+            `accepted`. Rejection deletes the file. There is no
+            `_rejected/` directory — git history is the audit
+            trail for rejected proposals.
+          "5": |
+            Acceptance does NOT modify the target spec; folding the
+            amendment's edits into the target spec is a separate
+            (currently manual or harness-driven) step. v1 does not
+            ship a programmatic applier.
+          "6": |
+            `target: multi` is allowed when an amendment spans more
+            than one spec; the `amendment_for` field is then omitted
+            and the touched specs are listed in `changes[].affects`.
+
+  - id: storage-amendment-dirs
+    title: Add `.rex/specs/_proposed/` to the workspace inventory
+    affects: [storage]
+    rationale: |
+      storage.WS.2 enumerates the workspace directory tree but does
+      not mention amendments. This amendment adds them; same sync
+      category as the parent `specs/` directory (git-merged).
+    edits:
+      - target: WS
+        kind: add-requirement
+        requirement_id: "2.2.1"
+        text: |
+          `specs/_proposed/<file>.yaml` — proposed amendments to
+          existing specs (git-merged). `specs/_proposed/_accepted/`
+          holds accepted amendments. Both directories share the
+          sync category and authority of the parent `specs/`
+          directory.
+
+  - id: cli-amend-subcommands
+    title: Add `list`/`show`/`accept`/`reject`/`draft` under `rex spec amend`
+    affects: [cli]
+    rationale: |
+      `rex spec amend <id>` currently only drafts via a harness.
+      The lifecycle needs read and lifecycle-transition siblings.
+      Renaming the bare drafter to `draft` makes room for the
+      verbs. The bare form is kept as a deprecated alias.
+    edits:
+      - target: SPEC
+        kind: add-requirement
+        requirement_id: "7"
+        text: |
+          `rex spec amend list [--state proposed|accepted] [--for <spec-id>]`
+          — list amendments under `.rex/specs/_proposed/`
+          (and `_accepted/`).
+      - target: SPEC
+        kind: add-requirement
+        requirement_id: "8"
+        text: |
+          `rex spec amend show <file-or-stem>` — print the
+          amendment's frontmatter and body.
+      - target: SPEC
+        kind: add-requirement
+        requirement_id: "9"
+        text: |
+          `rex spec amend accept <file-or-stem>` — move the
+          amendment from `_proposed/` to `_proposed/_accepted/`,
+          rewrite `state: proposed` to `accepted`, and emit a
+          `spec.amendment.accepted` audit event. Acceptance does
+          not modify the target spec.
+      - target: SPEC
+        kind: add-requirement
+        requirement_id: "10"
+        text: |
+          `rex spec amend reject <file-or-stem>` — delete the
+          file and emit a `spec.amendment.rejected` audit event.
+      - target: SPEC
+        kind: add-requirement
+        requirement_id: "11"
+        text: |
+          `rex spec amend draft <id> [prompt]` — drive a harness
+          to draft a YAML amendment for the named spec; replaces
+          the previous bare `rex spec amend <id>` form, which is
+          kept as a deprecated alias for one minor version.
+
+  - id: web-ui-amendments-routes
+    title: Add `/amendments` routes and a per-spec panel
+    affects: [web-ui]
+    rationale: |
+      Proposed amendments are currently invisible in the web UI.
+      A first-class index plus a panel on the spec detail page
+      makes them discoverable and reviewable.
+    edits:
+      - target: LOCAL
+        kind: replace-requirement-text
+        requirement_id: "1"
+        replaced_meaning: false
+        rationale_for_no_meaning_change: |
+          Adds `/amendments` and `/amendments/<stem>` to the
+          enumerated route set; existing routes are unchanged.
+        current_text: |
+          Routes (v1, single-workspace binding per LOCAL.1.1):
+          `/`, `/specs`, `/specs/<spec-id>`, `/runs`,
+          `/runs/<run-id>` (live), `/audit`, `/remotes`,
+          `/settings`. The workspace-id-prefixed variants
+          (`/workspaces/<id>/...`) are reserved for the post-v1
+          multi-workspace daemon shape.
+        new_text: |
+          Routes (v1, single-workspace binding per LOCAL.1.1):
+          `/`, `/specs`, `/specs/<spec-id>`, `/amendments`,
+          `/amendments/<stem>`, `/runs`, `/runs/<run-id>` (live),
+          `/audit`, `/remotes`, `/settings`. The
+          workspace-id-prefixed variants (`/workspaces/<id>/...`)
+          are reserved for the post-v1 multi-workspace daemon
+          shape.
+      - target: LOCAL
+        kind: add-requirement
+        requirement_id: "7"
+        text: |
+          `/amendments` lists proposed and accepted amendments
+          under `.rex/specs/_proposed/`. Filterable by state and
+          by target spec id. Each row links to the detail view.
+      - target: LOCAL
+        kind: add-requirement
+        requirement_id: "7.1"
+        text: |
+          `/amendments/<file-stem>` renders the amendment's
+          frontmatter (target spec, date, state, summary) plus
+          the YAML body, with click-to-copy on the file path.
+          Includes accept/reject buttons when state is
+          `proposed`; both POST to a sibling endpoint
+          (`/amendments/<stem>/accept`, `/amendments/<stem>/reject`).
+          Buttons are absent when state is `accepted`.
+      - target: LOCAL
+        kind: add-requirement
+        requirement_id: "4.1"
+        text: |
+          Spec detail view (`/specs/<spec-id>`) gains a "Proposed
+          amendments" panel listing amendments whose
+          `amendment_for` matches this spec, plus a link to
+          `/amendments?for=<spec-id>` for the full filtered list.
+
+  - id: audit-amendment-event-types
+    title: Add three amendment-lifecycle event types
+    affects: [audit]
+    rationale: |
+      The lifecycle transitions need audit signals. The three
+      events match the three CLI / web verbs and follow the
+      existing `spec.created` / `spec.edited` naming pattern from
+      audit-event-types-catalog.
+    edits:
+      - target: TYPES
+        kind: replace-requirement-text
+        requirement_id: "1"
+        replaced_meaning: false
+        rationale_for_no_meaning_change: |
+          Adds amendment proposal/acceptance/rejection to the
+          enumerated minimum; the rest is unchanged.
+        current_text: |
+          Audit-recorded events include at minimum: every harness
+          invocation start/end, every tool call (where Rex has
+          visibility), every spec change, every permission
+          grant/deny, every RBAC change, every remote
+          attach/detach, every dispatch, every authentication
+          success/failure, every token issuance/refresh/revocation,
+          every sync push/pull, every workspace state change,
+          every hook invocation result
+        new_text: |
+          Audit-recorded events include at minimum: every harness
+          invocation start/end, every tool call (where Rex has
+          visibility), every spec change, every spec amendment
+          proposed/accepted/rejected, every permission grant/deny,
+          every RBAC change, every remote attach/detach, every
+          dispatch, every authentication success/failure, every
+          token issuance/refresh/revocation, every sync push/pull,
+          every workspace state change, every hook invocation
+          result
+
+verification:
+  - existing_implementation: internal/core/specfmt/validate.go
+    notes: |
+      AMEND requirements 1–6 add validator checks for amendments
+      under `_proposed/`. The validator currently skips
+      `_proposed/` (per spec-format.SCOPE.5); this amendment
+      narrows the carve-out to "skip when running spec validate
+      against the parent specs/" while adding a new
+      `rex spec amend validate` mode (or equivalent surface) for
+      validating the amendment frontmatter. Implementation detail
+      left to the implementer.
+
+  - existing_implementation: internal/local/cli/spec_ask.go
+    notes: |
+      Houses the existing harness-drafter under `rex spec amend`.
+      The rename to `rex spec amend draft` keeps the same handler;
+      a deprecated alias on the bare form preserves
+      backward-compat for one minor version.
+
+  - existing_implementation: internal/local/web/specs.go
+    notes: |
+      Spec detail page is the host for the new "Proposed
+      amendments" panel. The panel reads from
+      `.rex/specs/_proposed/`; missing-directory means an empty
+      list, not an error.
+
+  - existing_implementation: internal/core/audit/types.go
+    notes: |
+      Three new event types are added to the catalog and the
+      registry; `internal/core/audit/catalog_test.go` will catch
+      drift if the doc.go catalog falls behind.
+
+extra:
+  authors: [claude]
+  follow_up: |
+    On signoff, fold each `changes[]` entry into its target spec
+    at the indicated requirement id, bump each touched spec's
+    `metadata.updated_at` to 2026-05-10, then move this proposal
+    file to `.rex/specs/_proposed/_accepted/` (using the rex repo
+    layout — i.e. `specs/_proposed/_accepted/` — since this is
+    the rex repo itself).
+  scope:
+    in:
+      - on-disk file location and naming
+      - frontmatter fields and lifecycle states
+      - CLI list/show/accept/reject + draft rename
+      - web UI index, detail, accept/reject buttons, per-spec panel
+      - three audit event types
+    out:
+      - programmatic application of an amendment's edits to the
+        target spec (deferred; needs a structured `edits` schema
+        and a comment-preserving YAML applier)
+      - rejection tombstones / a `_rejected/` directory
+      - authentication/authorization for accept/reject (covered by
+        loopback-only default per web-ui.LOCAL.2)

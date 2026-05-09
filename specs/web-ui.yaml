@@ -7,7 +7,7 @@ metadata:
   owners: []
   related_specs: [overview, cli, execution, search, audit, central-node, sync]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-09T00:00:00Z
+  updated_at: 2026-05-10T00:00:00Z
 
 description: |
   Rex ships two web UIs from day one: a local UI served by the local
@@ -109,7 +109,7 @@ components:
   LOCAL:
     name: Local UI route set
     requirements:
-      "1": "Routes (v1, single-workspace binding per LOCAL.1.1): `/`, `/specs`, `/specs/<spec-id>`, `/runs`, `/runs/<run-id>` (live), `/audit`, `/remotes`, `/settings`. The workspace-id-prefixed variants (`/workspaces/<id>/...`) are reserved for the post-v1 multi-workspace daemon shape."
+      "1": "Routes (v1, single-workspace binding per LOCAL.1.1): `/`, `/specs`, `/specs/<spec-id>`, `/amendments`, `/amendments/<stem>`, `/runs`, `/runs/<run-id>` (live), `/audit`, `/remotes`, `/settings`. The workspace-id-prefixed variants (`/workspaces/<id>/...`) are reserved for the post-v1 multi-workspace daemon shape."
       "1.1": |
         `rex serve` in v1 binds one process to exactly one workspace
         — the workspace at cwd, or the --workspace flag's target.
@@ -126,8 +126,11 @@ components:
       "2": "Authentication is local-machine: the binary listens on localhost only by default, and the user is implicitly the owner of the machine identity; remote-network exposure requires opt-in config"
       "3": "Workspace overview page shows: workspace state, draft counts, recent runs, attached remotes, quick-action buttons (start run, validate specs, sync now)"
       "4": "Spec detail view has tabs: rendered (markdown), YAML source, tasks, history; ACID badges are click-to-copy"
+      "4.1": "Spec detail view (`/specs/<spec-id>`) gains a 'Proposed amendments' panel listing amendments whose `amendment_for` matches this spec, plus a link to `/amendments?for=<spec-id>` for the full filtered list. An empty `_proposed/` directory yields an empty (but still rendered) panel rather than a 500"
       "5": "Run detail view streams transcript live via SSE during an active run; supports inline approve/deny for permission prompts"
       "6": "Settings is a single-page form covering identity selection, default remote, log levels, hook search paths"
+      "7": "`/amendments` lists proposed and accepted amendments under `.rex/specs/_proposed/`. Filterable by state and by target spec id (`?state=proposed|accepted`, `?for=<spec-id>`). Each row links to the detail view"
+      "7.1": "`/amendments/<file-stem>` renders the amendment's frontmatter (target spec, date, state, summary) plus the YAML body, with click-to-copy on the file path. Includes accept/reject buttons when state is `proposed`; both POST to a sibling endpoint (`/amendments/<stem>/accept`, `/amendments/<stem>/reject`). Buttons are absent when state is `accepted`. Accept/reject rely on the loopback-only default for trust per `LOCAL.2`"
 
   CENTRAL:
     name: Central UI additional surfaces

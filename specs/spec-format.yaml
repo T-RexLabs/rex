@@ -7,7 +7,7 @@ metadata:
   owners: []
   related_specs: [overview, workspace]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-09T00:00:00Z
+  updated_at: 2026-05-10T00:00:00Z
 
 description: |
   The YAML format used by every spec in a Rex workspace, including this one.
@@ -514,6 +514,56 @@ components:
         Proof entries are read-only references — the validator
         never mutates them. The on-disk evidence is the source of
         truth; the proof block is the index into it.
+
+  AMEND:
+    name: Amendment lifecycle
+    requirements:
+      "1": |
+        Amendments to a spec live as YAML files under
+        `<workspace>/.rex/specs/_proposed/`. Filename:
+        `<target-spec-id>-amendment-<YYYY-MM-DD>[-<slug>].yaml`.
+        The validator does not parse the filename beyond the
+        `<target-spec-id>-amendment-` prefix and the `.yaml`
+        suffix. The optional `<slug>` segment disambiguates when
+        two amendments target the same spec on the same day; it
+        is kebab-case ASCII.
+      "2": |
+        Required frontmatter for amendments authored after this
+        requirement ships: `amendment_for` (kebab spec id, or
+        omitted when `target: multi`), `amendment_date`
+        (YYYY-MM-DD matching the filename), `state` (one of
+        `proposed`, `accepted`), and `summary` (free text). The
+        validator emits errors on missing fields in strict mode
+        and warnings in lenient mode. Amendments already under
+        `_proposed/_accepted/` at the time this requirement ships
+        are grandfathered — the validator does not retro-check
+        their frontmatter.
+      "3": |
+        Optional fields amendments may use: `amendment_kind`
+        (one of `additive`, `breaking`, `clarifying`),
+        `migration_impact`, `changes`, `verification`, `extra`.
+        v1 does not constrain their inner shape; they are
+        human-facing prose for review.
+      "4": |
+        Lifecycle: a `proposed` amendment lives in `_proposed/`.
+        Acceptance moves the file to `_proposed/_accepted/` and
+        rewrites `state: proposed` to `accepted`. Rejection
+        deletes the file. There is no `_rejected/` directory —
+        git history is the audit trail for rejected proposals.
+      "5": |
+        Acceptance does NOT modify the target spec. Folding the
+        amendment's edits into the target spec is a separate
+        (currently manual or harness-driven) step. v1 does not
+        ship a programmatic applier for amendment edits; the
+        `changes[]` and `edits[]` blocks are author-facing prose,
+        not a structured patch language.
+      "6": |
+        `target: multi` is allowed when an amendment spans more
+        than one spec. The `amendment_for` field is then omitted
+        and the touched specs are listed in `changes[].affects`.
+        Validators treat `target: multi` as the multi-spec
+        sentinel rather than rejecting the missing
+        `amendment_for`.
 
   VAL:
     name: Validation behavior (the `rex spec validate` contract)

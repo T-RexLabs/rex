@@ -7,7 +7,7 @@ metadata:
   owners: []
   related_specs: [overview, workspace, sync, identity-and-trust, audit, search, hooks]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-09T00:00:00Z
+  updated_at: 2026-05-10T00:00:00Z
 
 description: |
   Storage in Rex follows the Git pattern: a small global config + registry
@@ -102,6 +102,7 @@ components:
       "2": "The layout is:"
       "2.1": "`workspace.yaml` — workspace settings (git-merged)"
       "2.2": "`specs/` — `<spec-id>.yaml` files (git-merged)"
+      "2.2.1": "`specs/_proposed/<file>.yaml` — proposed amendments to existing specs (git-merged). `specs/_proposed/_accepted/` holds accepted amendments. Both directories share the sync category and authority of the parent `specs/` directory; their lifecycle is governed by `spec-format.AMEND.*`"
       "2.3": "`schedules/` — scheduled-job definitions (git-merged)"
       "2.4": "`rbac.yaml` — workspace-level RBAC (git-merged); only meaningful when synced to a central node"
       "2.5": "`templates/` — workspace-scoped spec templates (git-merged)"

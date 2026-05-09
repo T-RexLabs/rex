@@ -7,7 +7,7 @@ metadata:
   owners: []
   related_specs: [overview, identity-and-trust, sync, storage, central-node]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-09T00:00:00Z
+  updated_at: 2026-05-10T00:00:00Z
 
 description: |
   The audit log is the durable record of who did what and when, intended
@@ -72,7 +72,7 @@ components:
   TYPES:
     name: What gets recorded
     requirements:
-      "1": "Audit-recorded events include at minimum: every harness invocation start/end, every tool call (where Rex has visibility), every spec change, every permission grant/deny, every RBAC change, every remote attach/detach, every dispatch, every authentication success/failure, every token issuance/refresh/revocation, every sync push/pull, every workspace state change, every hook invocation result"
+      "1": "Audit-recorded events include at minimum: every harness invocation start/end, every tool call (where Rex has visibility), every spec change, every spec amendment proposed/accepted/rejected (per `spec-format.AMEND.4`), every permission grant/deny, every RBAC change, every remote attach/detach, every dispatch, every authentication success/failure, every token issuance/refresh/revocation, every sync push/pull, every workspace state change, every hook invocation result"
       "2": "Each audit event carries: event ID (HLC), timestamp (HLC), event type, actor (public-key fingerprint), workspace ID (where applicable), org ID (central-only), target entity, before/after values for state changes, signature"
 
   STORE:
