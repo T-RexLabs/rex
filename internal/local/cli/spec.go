@@ -45,6 +45,8 @@ specs/spec-format.yaml.`,
 	cmd.AddCommand(newSpecEditCmd())
 	cmd.AddCommand(newSpecACIDCmd())
 	cmd.AddCommand(newSpecRunsCmd())
+	cmd.AddCommand(newSpecAskCmd())
+	cmd.AddCommand(newSpecAmendCmd())
 	return cmd
 }
 

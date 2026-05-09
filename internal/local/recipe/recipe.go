@@ -118,7 +118,7 @@ func LoadFromTaskRef(workspaceRoot, ref string, extraRefs []string) (*Resolved, 
 		// (RECIPE.6). Also fold target into spec_refs so /specs/<target>
 		// surfaces this run alongside any other citations
 		// (RECIPE.6 — synthetic spec_ref for the target).
-		body, err := buildSpecActionPrompt(workspaceRoot, task.Run, doc, task)
+		body, err := BuildSpecActionPrompt(workspaceRoot, task.Run, doc, task)
 		if err != nil {
 			return nil, err
 		}
@@ -135,11 +135,15 @@ func LoadFromTaskRef(workspaceRoot, ref string, extraRefs []string) (*Resolved, 
 	return out, nil
 }
 
-// buildSpecActionPrompt assembles the harness prompt for a
+// BuildSpecActionPrompt assembles the harness prompt for a
 // spec_action recipe: a clear preamble identifying the workspace
 // and target, the target spec's current YAML body verbatim, the
 // action enum, then the author's instruction.
-func buildSpecActionPrompt(workspaceRoot string, recipe *specfmt.Recipe, doc *specfmt.Document, task *specfmt.Task) (string, error) {
+//
+// Exported so the CLI's `rex spec ask` / `rex spec amend`
+// surfaces can build the same prompt for ad-hoc runs that don't
+// have a recipe-bearing task in any spec.
+func BuildSpecActionPrompt(workspaceRoot string, recipe *specfmt.Recipe, doc *specfmt.Document, task *specfmt.Task) (string, error) {
 	if recipe.Target == "" {
 		return "", fmt.Errorf("recipe: spec_action target is empty (RECIPE.6.2)")
 	}
