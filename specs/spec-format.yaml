@@ -137,13 +137,24 @@ tasks:
       exists, test function present, run_id in events.log,
       commit reachable, ACID resolves). Distinct from
       `rex spec validate` which remains pure-schema.
-    state: todo
+    state: done
+    note: "Lives in internal/core/specverify/ (separate package so eventlog + runner imports don't pollute specfmt). FromCLI auto-derives EventLogPath + GitDir from the workspace; missing git or events.log degrades to a warning rather than a hard error so fresh clones still pass. The CLI command at `rex spec verify` mirrors `rex spec validate`'s --lenient/--json shape."
     references:
       - PROOF.2
       - PROOF.2.1
       - PROOF.3
       - PROOF.4
       - PROOF.5
+    proof:
+      - kind: code
+        path: internal/core/specverify/verify.go
+      - kind: test
+        path: internal/core/specverify/verify_test.go
+      - kind: code
+        path: internal/local/cli/spec.go
+      - kind: test
+        path: internal/local/cli/spec_test.go
+        name: TestSpecVerifyOnRealRepo
 
 components:
 

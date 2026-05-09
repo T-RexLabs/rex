@@ -46,7 +46,7 @@ tasks:
       - kind: code
         path: internal/core/audit/appender.go
       - kind: code
-        path: internal/core/storage/eventlog/writer.go
+        path: internal/core/storage/eventlog/log.go
       - kind: test
         path: internal/core/audit/audit_test.go
 

@@ -62,6 +62,92 @@ func TestSpecValidateOnRealRepo(t *testing.T) {
 	}
 }
 
+// TestSpecVerifyOnRealRepo confirms the workspace's own
+// backfilled specs all resolve through the verify path. Acts as
+// regression guard against typos in proof entries (path drift,
+// commit ref drift) that would silently degrade the spec set.
+func TestSpecVerifyOnRealRepo(t *testing.T) {
+	t.Parallel()
+
+	specsPath := filepath.Join(repoRoot(t), "specs")
+	matches, err := filepath.Glob(filepath.Join(specsPath, "*.yaml"))
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
+	if len(matches) < 14 {
+		t.Fatalf("found %d real specs, want >= 14", len(matches))
+	}
+	args := append([]string{"spec", "verify", "--workspace", repoRoot(t)}, matches...)
+	out, err := executeCommand(t, args...)
+	if err != nil {
+		t.Fatalf("verify real specs: err=%v out=%s", err, out)
+	}
+	if !strings.Contains(out, "0 error(s)") {
+		t.Fatalf("expected 0 errors, got: %s", out)
+	}
+}
+
+// TestSpecVerifyDetectsMissingPath drives a fake workspace whose
+// done task points at a path that doesn't exist; verify must
+// surface the mismatch.
+func TestSpecVerifyDetectsMissingPath(t *testing.T) {
+	t.Parallel()
+
+	root := makeFakeWorkspace(t, map[string]string{
+		"thing.yaml": `spec_version: 1
+metadata:
+  id: thing
+  name: Thing
+  state: draft
+tasks:
+  - id: t1
+    description: thing
+    state: done
+    proof:
+      - kind: code
+        path: nope/this/does/not/exist.go
+`,
+	})
+	out, err := executeCommand(t, "spec", "verify", "--workspace", root)
+	if err == nil {
+		t.Fatalf("expected verify error on missing path; out=%s", out)
+	}
+	if !strings.Contains(out, "missing-path") {
+		t.Fatalf("expected missing-path category; got: %s", out)
+	}
+}
+
+// TestSpecVerifyLenientDowngradesToWarning confirms --lenient
+// turns the missing-path error into a warning so the command
+// exits zero. (Run id misses are warnings in both modes — that
+// behaviour is exercised at the package level in specverify.)
+func TestSpecVerifyLenientDowngradesToWarning(t *testing.T) {
+	t.Parallel()
+
+	root := makeFakeWorkspace(t, map[string]string{
+		"thing.yaml": `spec_version: 1
+metadata:
+  id: thing
+  name: Thing
+  state: draft
+tasks:
+  - id: t1
+    description: thing
+    state: done
+    proof:
+      - kind: code
+        path: nope.go
+`,
+	})
+	out, err := executeCommand(t, "spec", "verify", "--workspace", root, "--lenient")
+	if err != nil {
+		t.Fatalf("lenient should pass: err=%v out=%s", err, out)
+	}
+	if !strings.Contains(out, "1 warning(s)") {
+		t.Fatalf("expected 1 warning; got: %s", out)
+	}
+}
+
 func TestSpecValidateFailsOnBrokenSpec(t *testing.T) {
 	t.Parallel()
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/asabla/rex/internal/core/audit"
 	"github.com/asabla/rex/internal/core/specfmt"
+	"github.com/asabla/rex/internal/core/specverify"
 )
 
 // newSpecCmd returns the `rex spec` parent and wires its leaves.
@@ -38,6 +39,7 @@ specs/spec-format.yaml.`,
 	addWorkspacePersistentFlag(cmd)
 	cmd.AddCommand(newSpecCreateCmd())
 	cmd.AddCommand(newSpecValidateCmd())
+	cmd.AddCommand(newSpecVerifyCmd())
 	cmd.AddCommand(newSpecListCmd())
 	cmd.AddCommand(newSpecShowCmd())
 	cmd.AddCommand(newSpecEditCmd())
@@ -269,6 +271,92 @@ Per spec-format.VAL.5: exit 0 on success, 1 on any validation error,
 		"rex spec acid <ACID>",
 	)
 	cmd.Flags().BoolVar(&lenient, "lenient", false, "treat unknown top-level keys and dangling ACIDs as warnings")
+	return cmd
+}
+
+// newSpecVerifyCmd is the disk-checking counterpart to validate.
+// validate enforces schema; verify exercises every structured
+// proof entry against the workspace (file exists, test func
+// present, run id in events.log, commit reachable, ACID
+// resolves) per spec-format.PROOF.* / VAL.7.
+func newSpecVerifyCmd() *cobra.Command {
+	var lenient bool
+	cmd := &cobra.Command{
+		Use:   "verify [<id-or-path>...]",
+		Short: "Exercise structured proof entries against on-disk evidence",
+		Long: `Walks every task with a structured proof block (state: done
+tasks always have one per spec-format.VAL.7) and exercises each
+entry against the workspace:
+
+  - kind: code / test  → path exists on disk
+  - kind: test         → optional name greps as ` + "`func <name>(`" + ` in the file
+  - kind: run          → run_id appears in .rex/events.log (warning if missing)
+  - kind: commit       → ref reachable via ` + "`git cat-file -e <ref>^{commit}`" + `
+  - kind: spec         → ACID resolves through the workspace's specs
+
+Distinct from ` + "`rex spec validate`" + `: validate is pure schema and
+side-effect-free; verify reaches out to the filesystem, the
+events.log, and the local git repo. Per spec-format.VAL.5: exit
+0 on success, 1 on any verification error, 2 on internal failure.`,
+		Example: `  rex spec verify
+  rex spec verify execution
+  rex spec verify --lenient`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			mode := specfmt.ModeStrict
+			if lenient {
+				mode = specfmt.ModeLenient
+			}
+			jsonOut, _ := cmd.Flags().GetBool("json")
+			workspaceFlag := workspaceFlagValue(cmd)
+			root, err := workspaceRootForOrError(workspaceFlag)
+			if err != nil {
+				return err
+			}
+			paths, err := pathsFromArgs(args, workspaceFlag)
+			if err != nil {
+				return err
+			}
+			if len(paths) == 0 {
+				fmt.Fprintln(cmd.ErrOrStderr(), "rex spec verify: no specs found")
+				return nil
+			}
+			ws, parseFailures, _ := loadWorkspace(paths)
+			ws.SetDefaultTemplateID(workspaceDefaultTemplateID(root))
+
+			res := specverify.Verify(ws, specverify.FromCLI(root, mode))
+
+			// Parse failures still surface — a spec we can't read is
+			// a verify failure too.
+			for _, pf := range parseFailures {
+				res.Issues = append(res.Issues, specfmt.Issue{
+					File:     pf.Path,
+					Path:     "",
+					Category: "parse",
+					Message:  pf.Err.Error(),
+					Severity: specfmt.SeverityError,
+				})
+			}
+
+			if jsonOut {
+				return writeIssuesJSON(cmd.OutOrStdout(), res.Issues)
+			}
+			writeIssuesTextW(cmd.OutOrStdout(), res.Issues)
+			fmt.Fprintf(cmd.OutOrStdout(), "\n%d spec(s) verified, %d error(s), %d warning(s)\n",
+				len(paths), len(res.Errors()), len(res.Warnings()))
+
+			if res.HasErrors() {
+				cmd.SilenceErrors = true
+				return errors.New("verification failed")
+			}
+			return nil
+		},
+	}
+	setRelated(cmd,
+		"rex spec validate",
+		"rex spec list",
+		"rex spec show <id>",
+	)
+	cmd.Flags().BoolVar(&lenient, "lenient", false, "downgrade verification failures to warnings")
 	return cmd
 }
 
