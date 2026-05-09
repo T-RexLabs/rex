@@ -225,7 +225,11 @@ during execution and the command exits when the run terminates.
 				return err
 			}
 
-			ws, err := runtask.Open(root)
+			signer, err := loadOrCreateDefaultSigner(cmd)
+			if err != nil {
+				return err
+			}
+			ws, err := runtask.Open(root, runtask.WithSigner(signer))
 			if err != nil {
 				return err
 			}

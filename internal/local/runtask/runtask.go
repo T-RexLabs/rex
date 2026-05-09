@@ -25,6 +25,7 @@ import (
 
 	"github.com/asabla/rex/internal/core/acp"
 	"github.com/asabla/rex/internal/core/hooks"
+	"github.com/asabla/rex/internal/core/identity"
 	"github.com/asabla/rex/internal/core/runner"
 	"github.com/asabla/rex/internal/core/runner/adapter"
 	"github.com/asabla/rex/internal/core/runner/primharness"
@@ -32,6 +33,31 @@ import (
 	"github.com/asabla/rex/internal/core/search"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
 )
+
+// envIdentityDir is the env var $REX_IDENTITY_DIR. Read by the
+// auto-load fallback when no signer is passed to Open. Mirrors
+// the constant in internal/local/cli so test fixtures that set
+// the env var work for both surfaces (CLI + web).
+const envIdentityDir = "REX_IDENTITY_DIR"
+
+// OpenOption configures Open. The zero option set is fine; pass
+// WithSigner when the caller already has one (e.g. the CLI's
+// loadOrCreateDefaultSigner) so the writer's Actor and Sign hook
+// fire correctly. Without an explicit signer, Open auto-loads the
+// default identity (honouring $REX_IDENTITY_DIR) so events from
+// both the web UI and the CLI carry an actor.
+type OpenOption func(*openOptions)
+
+type openOptions struct {
+	signer identity.Signer
+}
+
+// WithSigner attaches a Signer the writer uses to stamp Record.Actor
+// and produce signatures (audit.SEC.1 / SEC.3). Nil is treated as
+// "auto-load the default signer".
+func WithSigner(s identity.Signer) OpenOption {
+	return func(o *openOptions) { o.signer = s }
+}
 
 // Workspace is an opened, write-ready workspace handle composed of
 // every side effect a run produces: events.log writer, HLC clock,
@@ -51,12 +77,32 @@ type Workspace struct {
 // helper used to do internally. Caller MUST call ws.Close() when
 // done (typically via defer); skipping it leaks hook workers and
 // the SQLite handle.
-func Open(root string) (*Workspace, error) {
+//
+// Pass WithSigner to attach an Actor + signature to every event
+// the workspace's writer emits (audit.SEC.1 / SEC.3). When no
+// signer is passed, Open auto-loads the default identity so events
+// from CLI runs and web-UI runs alike carry an actor.
+func Open(root string, opts ...OpenOption) (*Workspace, error) {
+	o := openOptions{}
+	for _, fn := range opts {
+		fn(&o)
+	}
 	settings, err := readWorkspaceSettings(root)
 	if err != nil {
 		return nil, err
 	}
 	clock := eventlog.NewClock()
+
+	signer := o.signer
+	if signer == nil {
+		// Auto-load: honour $REX_IDENTITY_DIR like the CLI's
+		// loadOrCreateDefaultSigner does, fall back to the
+		// platform's user-config-dir/rex/identity. Failures are
+		// non-fatal — Open still returns a usable workspace,
+		// just one whose events carry an empty Actor (matches
+		// pre-2026-05-09 behaviour).
+		signer, _ = autoLoadDefaultSigner()
+	}
 
 	global, _ := globalHooksDir()
 	disp := hooks.New(hooks.Options{
@@ -72,12 +118,17 @@ func Open(root string) (*Workspace, error) {
 		indexerCB(rec)
 	}
 
-	w, err := eventlog.OpenWriter(eventlog.WriterConfig{
+	cfg := eventlog.WriterConfig{
 		Path:        EventLogPath(root),
 		WorkspaceID: settings.ID,
 		Clock:       clock,
 		OnAppend:    onAppend,
-	})
+	}
+	if signer != nil {
+		cfg.Actor = signer.Actor().String()
+		cfg.Sign = identity.SignFunc(signer)
+	}
+	w, err := eventlog.OpenWriter(cfg)
 	if err != nil {
 		disp.Drain()
 		if idx != nil {
@@ -93,6 +144,24 @@ func Open(root string) (*Workspace, error) {
 		indexer: idx,
 		hooks:   disp,
 	}, nil
+}
+
+// autoLoadDefaultSigner mirrors cli.loadOrCreateDefaultSigner but
+// without the cobra dependency: env var first, platform default
+// second, no flag. Returns nil + nil when the platform lookup
+// fails — Open treats nil as "no signing" and writes events with
+// empty Actor.
+func autoLoadDefaultSigner() (identity.Signer, error) {
+	dir := os.Getenv(envIdentityDir)
+	if dir == "" {
+		def, err := identity.DefaultStoreDir()
+		if err != nil {
+			return nil, err
+		}
+		dir = def
+	}
+	store := identity.NewStore(dir)
+	return identity.EnsureDefaultStoreSigner(store)
 }
 
 // Close flushes the event-log writer, drains hook workers, and

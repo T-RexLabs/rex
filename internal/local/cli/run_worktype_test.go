@@ -122,6 +122,39 @@ func TestRunStartFromTaskInfersSpec(t *testing.T) {
 	}
 }
 
+// TestRunStartedEventCarriesActor covers the bug fix that brought
+// run-lifecycle events in line with workspace-/spec-/repo- audit
+// events: the events.log writer now stamps Actor from the
+// authenticated signer that runtask.Open auto-loads (or that the
+// CLI threads through via WithSigner).
+//
+// Pre-fix, every run.* and node.* event landed with empty Actor
+// because runtask.Open didn't pass Actor / Sign in the
+// eventlog.WriterConfig. This test guards against the regression.
+func TestRunStartedEventCarriesActor(t *testing.T) {
+	t.Parallel()
+
+	root := initWorkspace(t, t.TempDir())
+	if _, err := executeCommand(t, "run", "start",
+		"--workspace", root, "--shell", "true", "--run-id", "r-actor-1"); err != nil {
+		t.Fatalf("run start: %v", err)
+	}
+	events := readAuditEvents(t, root, "run.started")
+	if len(events) == 0 {
+		t.Fatal("no run.started events recorded")
+	}
+	last := events[len(events)-1]
+	if last.Actor == "" {
+		t.Fatalf("run.started must carry an Actor; got empty")
+	}
+	if !strings.HasPrefix(last.Actor, "l-") {
+		t.Fatalf("Actor should be a local-scoped identity (prefix l-); got %q", last.Actor)
+	}
+	if last.Signature == "" {
+		t.Fatalf("signed writer must produce a non-empty Signature; got empty")
+	}
+}
+
 func TestScheduleTriggerStampsScheduledWorkType(t *testing.T) {
 	t.Parallel()
 

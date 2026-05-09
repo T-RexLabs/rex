@@ -444,7 +444,11 @@ func buildScheduleDispatcher(cmd *cobra.Command, root string) schedule.Dispatche
 		mu.Lock()
 		defer mu.Unlock()
 
-		ws, err := runtask.Open(root)
+		signer, err := loadOrCreateDefaultSigner(cmd)
+		if err != nil {
+			return err
+		}
+		ws, err := runtask.Open(root, runtask.WithSigner(signer))
 		if err != nil {
 			return err
 		}
