@@ -1,0 +1,16 @@
+{{/* audit_row — one row of an audit-log table (web-ui.SHARED.1).
+
+Expects fields: ID, Type, Actor, WorkspaceID, Timestamp.
+Type is rendered as a code span so dotted event names like
+"sync.git.rebased" stay readable; Actor falls back to em-dash
+when empty (anonymous local-mode events). */}}
+
+{{define "audit_row"}}
+<tr>
+  <td><time>{{.Timestamp}}</time></td>
+  <td><code>{{.Type}}</code></td>
+  <td>{{if .Actor}}<code>{{.Actor}}</code>{{else}}<span class="dim">—</span>{{end}}</td>
+  <td>{{.WorkspaceID}}</td>
+  <td><code class="dim">{{.ID}}</code></td>
+</tr>
+{{end}}

@@ -146,7 +146,7 @@ type specDetailData struct {
 }
 
 func loadSpecsList(opts Options) (specsListData, error) {
-	base := pageData{BindAddr: opts.BindAddr, Version: opts.Version}
+	base := newPageDataFromOpts(opts)
 	ws, _ := loadWorkspaceSummary(opts.WorkspaceRoot)
 	base.Workspace = ws
 
@@ -213,7 +213,7 @@ func loadSpecDetail(opts Options, id, tab string, hl *Highlighter) (specDetailDa
 		tab = "rendered"
 	}
 
-	base := pageData{BindAddr: opts.BindAddr, Version: opts.Version}
+	base := newPageDataFromOpts(opts)
 	ws, _ := loadWorkspaceSummary(opts.WorkspaceRoot)
 	base.Workspace = ws
 

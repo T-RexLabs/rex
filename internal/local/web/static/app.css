@@ -1717,3 +1717,97 @@ mark {
     gap: var(--sp-2);
   }
 }
+
+/* shared components (web-ui.SHARED.1).
+   Styles for draft_indicator, scope_picker, and workspace_card —
+   the partials lifted from per-page inline markup in the
+   shared-component-lib task.
+*/
+
+.draft-indicator {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+/* draft / synced / rebase pills carry redundant labels so colour
+   is not the only signal (web-ui.ACCESS.2). */
+.pill-drafts {
+  background: rgba(46, 111, 255, 0.18);
+  color: var(--text);
+  border: 1px solid rgba(46, 111, 255, 0.38);
+}
+.pill-synced {
+  background: rgba(34, 162, 76, 0.14);
+  color: var(--text);
+  border: 1px solid rgba(34, 162, 76, 0.38);
+}
+.pill-rebase {
+  background: rgba(214, 87, 34, 0.18);
+  color: var(--text);
+  border: 1px solid rgba(214, 87, 34, 0.45);
+  font-weight: 600;
+}
+
+.scope-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: var(--sp-2);
+}
+.scope-picker-label {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.scope-picker-select {
+  font: inherit;
+  font-size: var(--fs-sm);
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+}
+
+.workspace-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: var(--sp-3);
+  background: var(--surface);
+}
+.workspace-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-1);
+}
+.workspace-card-head h3 {
+  margin: 0;
+  font-size: var(--fs-base);
+}
+.workspace-card-name {
+  margin: 0 0 var(--sp-2) 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.workspace-card-stats {
+  display: flex;
+  gap: var(--sp-3);
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+.workspace-card-stats > div {
+  display: flex;
+  flex-direction: column;
+}
+.workspace-card-stats dt {
+  color: var(--muted);
+  font-size: var(--fs-xs, 0.78rem);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.workspace-card-stats dd {
+  margin: 0;
+  font-family: var(--font-mono);
+}

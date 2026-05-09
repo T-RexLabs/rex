@@ -10,12 +10,22 @@ import (
 // remoteDetailRow extends remoteRow (used on the home page) with
 // fields the dedicated /remotes page surfaces.
 type remoteDetailRow struct {
-	Name        string
-	URL         string
-	Fingerprint string
-	AddedAt     string
-	LastSeen    string
-	Drafts      int
+	Name             string
+	URL              string
+	Fingerprint      string
+	AddedAt          string
+	LastSeen         string
+	Drafts           int
+	NeedsRebase      bool
+	LastConflictHead string
+}
+
+// IndicatorView returns the partial-friendly view of r.
+func (r remoteDetailRow) IndicatorView() DraftIndicator {
+	return DraftIndicator{
+		Name: r.Name, Drafts: r.Drafts,
+		NeedsRebase: r.NeedsRebase, LastConflictHead: r.LastConflictHead,
+	}
 }
 
 // remotesData backs remotes.tmpl.
@@ -28,7 +38,7 @@ type remotesData struct {
 // per-remote watermarks. Read-only: the web UI doesn't yet support
 // remote add/remove/test (those stay CLI for v1).
 func loadRemotesData(opts Options) (remotesData, error) {
-	base := pageData{BindAddr: opts.BindAddr, Version: opts.Version}
+	base := newPageDataFromOpts(opts)
 	ws, _ := loadWorkspaceSummary(opts.WorkspaceRoot)
 	base.Workspace = ws
 
@@ -66,6 +76,8 @@ func loadRemotesData(opts Options) (remotesData, error) {
 		if wm, ok := wmByName[r.Name]; ok {
 			count, _ := syncclient.CountEventsAfter(logPath, wm.LastAckedEventID)
 			row.Drafts = count
+			row.NeedsRebase = wm.NeedsRebase
+			row.LastConflictHead = wm.LastConflictHead
 		}
 		d.Rows = append(d.Rows, row)
 	}

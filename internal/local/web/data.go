@@ -15,7 +15,6 @@ import (
 	"github.com/asabla/rex/internal/core/event"
 	"github.com/asabla/rex/internal/core/runner"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
-	"github.com/asabla/rex/internal/local/remotes"
 	syncclient "github.com/asabla/rex/internal/local/sync"
 )
 
@@ -66,10 +65,35 @@ type runRow struct {
 }
 
 // remoteRow is one entry in the remotes table on the home page.
+//
+// Carries the sync.DRAFT.2 rebase-needed signal so the shared
+// draft_indicator partial can render the per-remote pill without a
+// second lookup. The same fields drive the indicator on /remotes
+// (remoteDetailRow embeds the equivalent state).
 type remoteRow struct {
-	Name     string
-	Drafts   int
-	LastSync string
+	Name             string
+	Drafts           int
+	LastSync         string
+	NeedsRebase      bool
+	LastConflictHead string
+}
+
+// DraftIndicator is the shape the draft_indicator partial expects.
+// remoteRow / remoteDetailRow both expose IndicatorView() to return
+// it, so any callsite can pipe a row directly into the partial.
+type DraftIndicator struct {
+	Name             string
+	Drafts           int
+	NeedsRebase      bool
+	LastConflictHead string
+}
+
+// IndicatorView returns the partial-friendly view of r.
+func (r remoteRow) IndicatorView() DraftIndicator {
+	return DraftIndicator{
+		Name: r.Name, Drafts: r.Drafts,
+		NeedsRebase: r.NeedsRebase, LastConflictHead: r.LastConflictHead,
+	}
 }
 
 // homeData is the page-specific payload for the / route.
@@ -86,7 +110,7 @@ type homeData struct {
 // the CLI commands read. Failures are tolerated per-section: a
 // missing events.log yields zero events rather than a 500.
 func loadHomeData(opts Options) (homeData, error) {
-	base := pageData{BindAddr: opts.BindAddr, Version: opts.Version}
+	base := newPageDataFromOpts(opts)
 	ws, err := loadWorkspaceSummary(opts.WorkspaceRoot)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return homeData{}, fmt.Errorf("web: read workspace.yaml: %w", err)
@@ -239,13 +263,13 @@ func loadRemoteRows(root string) []remoteRow {
 		if !wm.AckedAt.IsZero() {
 			last = wm.AckedAt.UTC().Format(time.RFC3339)
 		}
-		out = append(out, remoteRow{Name: wm.Remote, Drafts: count, LastSync: last})
+		out = append(out, remoteRow{
+			Name:             wm.Remote,
+			Drafts:           count,
+			LastSync:         last,
+			NeedsRebase:      wm.NeedsRebase,
+			LastConflictHead: wm.LastConflictHead,
+		})
 	}
 	return out
 }
-
-// _ keeps the remotes package referenced for when /remotes lands —
-// avoids "imported but not used" while the home page only consults
-// watermarks. Will be replaced with a real call once the route is
-// wired.
-var _ = remotes.FileName

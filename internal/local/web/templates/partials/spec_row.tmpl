@@ -1,0 +1,15 @@
+{{/* spec_row — one row of a specs table (web-ui.SHARED.1).
+
+Expects fields: ID, Name, State, TaskCount, ComponentCount.
+Used by /specs (specs_list) and any future "specs in this scope"
+table; the row delegates the click target to /specs/<id>. */}}
+
+{{define "spec_row"}}
+<tr>
+  <td><a href="/specs/{{.ID}}"><code>{{.ID}}</code></a></td>
+  <td>{{.Name}}</td>
+  <td><span class="pill pill-{{.State}}"><i class="dot"></i>{{.State}}</span></td>
+  <td class="col-numeric">{{.TaskCount}}</td>
+  <td class="col-numeric">{{.ComponentCount}}</td>
+</tr>
+{{end}}

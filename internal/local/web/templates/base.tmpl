@@ -27,6 +27,7 @@
                placeholder="search…"
                aria-label="search workspace"
                autocomplete="off">
+        {{template "scope_picker" .SearchScope}}
       </form>
       {{if .Workspace}}
         <span class="ws-badge" title="active workspace">{{.Workspace.ID}}</span>

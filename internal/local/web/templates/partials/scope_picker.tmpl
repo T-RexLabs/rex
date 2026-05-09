@@ -1,0 +1,25 @@
+{{/* scope_picker — search scope selector (web-ui.SHARED.1, web-ui.SEARCH.1).
+
+Expects:
+  Selected   string         // selected option value; "" = current workspace
+  Remotes    []ScopeOption  // each with Value/Label
+
+The "current workspace" entry is implicit (value=""). When at
+least one remote is registered an "all remotes" pseudo-option
+joins the list. The form-element name is `scope` so the search
+handler reads it consistently. */}}
+
+{{define "scope_picker"}}
+<label class="scope-picker">
+  <span class="scope-picker-label" aria-hidden="true">in</span>
+  <select name="scope" class="scope-picker-select" aria-label="search scope">
+    <option value="" {{if eq .Selected ""}}selected{{end}}>current workspace</option>
+    {{- range .Remotes -}}
+      <option value="{{.Value}}" {{if eq $.Selected .Value}}selected{{end}}>{{.Label}}</option>
+    {{- end -}}
+    {{- if .Remotes -}}
+      <option value="*" {{if eq .Selected "*"}}selected{{end}}>all remotes</option>
+    {{- end -}}
+  </select>
+</label>
+{{end}}

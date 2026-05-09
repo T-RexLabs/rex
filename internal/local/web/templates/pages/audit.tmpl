@@ -23,13 +23,7 @@
         </thead>
         <tbody>
           {{range .Rows}}
-          <tr>
-            <td><time>{{.Timestamp}}</time></td>
-            <td><code>{{.Type}}</code></td>
-            <td>{{if .Actor}}<code>{{.Actor}}</code>{{else}}<span class="dim">—</span>{{end}}</td>
-            <td>{{.WorkspaceID}}</td>
-            <td><code class="dim">{{.ID}}</code></td>
-          </tr>
+            {{template "audit_row" .}}
           {{end}}
         </tbody>
       </table>

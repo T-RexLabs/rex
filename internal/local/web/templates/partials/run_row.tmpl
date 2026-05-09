@@ -1,0 +1,29 @@
+{{/* run_row — one row of a runs table (web-ui.SHARED.1).
+
+Expects fields: RunID, Name, Kind, Status, FromTask, StartedAt,
+EndedAt, Duration. Built to be used by both the home-page recent-
+runs strip and the /runs full-list table; the home strip can pass
+WithEnded=false in a wrapper to skip the ended/finished column. */}}
+
+{{define "run_row"}}
+<tr>
+  <td><a href="/runs/{{.RunID}}"><code>{{.Name}}</code></a></td>
+  <td><span class="pill pill-{{.Kind}}">{{.Kind}}</span></td>
+  <td><span class="pill pill-{{.Status}}"><i class="dot"></i>{{.Status}}</span></td>
+  <td>
+    {{- if .FromTask -}}
+      {{$parts := splitTaskRef .FromTask}}
+      {{- if eq (len $parts) 2 -}}
+        <a href="/specs/{{index $parts 0}}#{{index $parts 1}}" class="muted small"><code>{{.FromTask}}</code></a>
+      {{- else -}}
+        <code class="muted small">{{.FromTask}}</code>
+      {{- end -}}
+    {{- else -}}
+      <span class="dim">—</span>
+    {{- end -}}
+  </td>
+  <td><time>{{.StartedAt}}</time></td>
+  <td>{{if .EndedAt}}<time>{{.EndedAt}}</time>{{else}}<span class="dim">—</span>{{end}}</td>
+  <td class="col-numeric">{{if .Duration}}{{.Duration}}{{else}}<span class="dim">—</span>{{end}}</td>
+</tr>
+{{end}}

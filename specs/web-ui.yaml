@@ -36,8 +36,20 @@ tasks:
 
   - id: shared-component-lib
     description: "Build the small set of shared components used in both UIs (cards, tables, run-transcript, ACID badge, draft indicator)"
-    state: todo
+    state: done
+    note: "Seven partials shipped under templates/partials/ (workspace_card, spec_row, run_row, audit_row, acid_badge, draft_indicator, scope_picker). loadPages parses every partial alongside base.tmpl + each page so any caller can {{template ...}} them without enumeration. Page templates refactored to use spec_row/run_row/audit_row partials. The draft_indicator wires the sync.DRAFT.2 NeedsRebase + LastConflictHead signals through remoteRow / remoteDetailRow's IndicatorView() — both colour AND text labels carry state per ACCESS.2. The scope_picker is wired into the global topbar search; remote options come from the registered remotes.toml. Run-transcript is the one component still inlined on /runs/<id> — it is heavy enough that lifting it would split frame_view.go's rendering helpers; deferred until central-ui-routes needs it. SHARED.2's identical-rendering invariant is structural: every partial uses no local-only data, only fields that render the same in either UI."
     references: [SHARED.1, SHARED.2]
+    proof:
+      - kind: code
+        path: internal/local/web/templates/partials/
+      - kind: code
+        path: internal/local/web/server.go
+      - kind: code
+        path: internal/local/web/data.go
+      - kind: code
+        path: internal/local/web/remotes.go
+      - kind: test
+        path: internal/local/web/partials_test.go
 
   - id: local-ui-routes
     description: "Implement the local UI route set: workspaces, specs, runs, audit, remotes, settings"

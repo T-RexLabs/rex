@@ -28,13 +28,7 @@
         </thead>
         <tbody>
           {{range .Specs}}
-          <tr>
-            <td><a href="/specs/{{.ID}}"><code>{{.ID}}</code></a></td>
-            <td>{{.Name}}</td>
-            <td><span class="pill pill-{{.State}}"><i class="dot"></i>{{.State}}</span></td>
-            <td class="col-numeric">{{.TaskCount}}</td>
-            <td class="col-numeric">{{.ComponentCount}}</td>
-          </tr>
+            {{template "spec_row" .}}
           {{end}}
         </tbody>
       </table>

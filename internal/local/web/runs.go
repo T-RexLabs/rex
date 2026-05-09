@@ -132,7 +132,7 @@ type runsListData struct {
 // `/specs/<id>` shows runs whose spec_refs contain any ACID
 // prefixed by `<id>.` plus runs launched from that spec.
 func loadRunsListFiltered(opts Options, specFilter string) (runsListData, error) {
-	base := pageData{BindAddr: opts.BindAddr, Version: opts.Version}
+	base := newPageDataFromOpts(opts)
 	ws, _ := loadWorkspaceSummary(opts.WorkspaceRoot)
 	base.Workspace = ws
 
@@ -269,7 +269,7 @@ type runDetailData struct {
 // id matches no events at all. hl is used to pre-render each
 // payload as syntax-highlighted JSON.
 func loadRunDetail(opts Options, runID string, hl *Highlighter) (runDetailData, bool, error) {
-	base := pageData{BindAddr: opts.BindAddr, Version: opts.Version}
+	base := newPageDataFromOpts(opts)
 	ws, _ := loadWorkspaceSummary(opts.WorkspaceRoot)
 	base.Workspace = ws
 

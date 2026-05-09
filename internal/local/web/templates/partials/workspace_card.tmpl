@@ -1,0 +1,21 @@
+{{/* workspace_card — compact summary of one workspace
+(web-ui.SHARED.1).
+
+Expects fields: ID, Name, State, SpecCount, RunCount, EventCount.
+The local UI shows exactly one card (the rooted workspace);
+central UI uses it in lists where many workspaces appear. */}}
+
+{{define "workspace_card"}}
+<article class="workspace-card">
+  <header class="workspace-card-head">
+    <h3><a href="/"><code>{{.ID}}</code></a></h3>
+    <span class="pill pill-{{.State}}"><i class="dot"></i>{{.State}}</span>
+  </header>
+  {{if .Name}}<p class="workspace-card-name">{{.Name}}</p>{{end}}
+  <dl class="workspace-card-stats">
+    <div><dt>specs</dt><dd>{{.SpecCount}}</dd></div>
+    <div><dt>runs</dt><dd>{{.RunCount}}</dd></div>
+    <div><dt>events</dt><dd>{{.EventCount}}</dd></div>
+  </dl>
+</article>
+{{end}}

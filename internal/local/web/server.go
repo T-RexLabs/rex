@@ -12,9 +12,10 @@ import (
 	"strings"
 
 	"github.com/asabla/rex/internal/core/runner/adapter"
+	"github.com/asabla/rex/internal/local/remotes"
 )
 
-//go:embed templates/*.tmpl templates/pages/*.tmpl
+//go:embed templates/*.tmpl templates/pages/*.tmpl templates/partials/*.tmpl
 var templateFS embed.FS
 
 //go:embed static/*
@@ -132,18 +133,29 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /sync", s.handleSyncRun)
 }
 
-// loadPages reads base.tmpl + every templates/pages/*.tmpl and
-// returns a map keyed by page basename ("home.tmpl" → composed
-// template). Each entry parses base.tmpl + that page in one
-// ParseFS call so html/template's contextual escaper analyzes the
-// combined tree once. Splitting it into two Parse calls leaves the
+// loadPages reads base.tmpl + every templates/partials/*.tmpl +
+// every templates/pages/*.tmpl and returns a map keyed by page
+// basename ("home.tmpl" → composed template). Each entry parses
+// base.tmpl + the partials + that page in one ParseFS call so
+// html/template's contextual escaper analyzes the combined tree
+// once. Splitting it into multiple Parse calls leaves the
 // title-template escaper in an inconsistent state when later pages
 // reference different value paths in {{define "title"}}.
+//
+// Partials are the shared component library from web-ui.SHARED.1
+// (workspace card, spec row, run row, audit row, ACID badge, draft
+// indicator, scope picker). Every page sees them all so callers
+// don't have to enumerate which partials they need.
 func loadPages() (map[string]*template.Template, error) {
 	pages, err := fs.Glob(templateFS, "templates/pages/*.tmpl")
 	if err != nil {
 		return nil, fmt.Errorf("web: glob pages: %w", err)
 	}
+	partials, err := fs.Glob(templateFS, "templates/partials/*.tmpl")
+	if err != nil {
+		return nil, fmt.Errorf("web: glob partials: %w", err)
+	}
+	parseTargets := append([]string{"templates/base.tmpl"}, partials...)
 	out := make(map[string]*template.Template, len(pages))
 	for _, p := range pages {
 		name := filepath.Base(p)
@@ -172,7 +184,7 @@ func loadPages() (map[string]*template.Template, error) {
 				}
 				return []string{s[:idx]}
 			},
-		}).ParseFS(templateFS, "templates/base.tmpl", p)
+		}).ParseFS(templateFS, append(parseTargets, p)...)
 		if err != nil {
 			return nil, fmt.Errorf("web: parse %s: %w", p, err)
 		}
@@ -194,6 +206,22 @@ type pageData struct {
 	BindAddr   string
 	Version    string
 	NavSection string
+	// SearchScope drives the topbar scope picker. Empty Selected
+	// means "current workspace". Remotes is the list of registered
+	// remotes the user can dispatch a cross-workspace search to.
+	SearchScope ScopePickerData
+}
+
+// ScopeOption is one entry in the topbar scope picker.
+type ScopeOption struct {
+	Value string
+	Label string
+}
+
+// ScopePickerData is the partial-friendly shape for scope_picker.
+type ScopePickerData struct {
+	Selected string
+	Remotes  []ScopeOption
 }
 
 func (s *Server) basePageData() pageData {
@@ -202,7 +230,47 @@ func (s *Server) basePageData() pageData {
 		Workspace: ws,
 		BindAddr:  s.opts.BindAddr,
 		Version:   s.opts.Version,
+		SearchScope: ScopePickerData{
+			Remotes: loadScopeRemotes(),
+		},
 	}
+}
+
+// newPageDataFromOpts constructs the same pageData that basePageData
+// produces but only takes Options — for the read-heavy pages whose
+// data loaders construct their own pageData rather than going through
+// the Server receiver. The scope picker's Remotes list is populated
+// best-effort; an unreadable registry yields an empty picker (current
+// workspace only) instead of a 500.
+func newPageDataFromOpts(opts Options) pageData {
+	ws, _ := loadWorkspaceSummary(opts.WorkspaceRoot)
+	return pageData{
+		Workspace: ws,
+		BindAddr:  opts.BindAddr,
+		Version:   opts.Version,
+		SearchScope: ScopePickerData{
+			Remotes: loadScopeRemotes(),
+		},
+	}
+}
+
+// loadScopeRemotes returns the registered remotes as scope options,
+// best-effort. The picker is purely a UI affordance; failures here
+// fall through to "no remote choices" rather than failing the page.
+func loadScopeRemotes() []ScopeOption {
+	regPath, err := remotes.DefaultPath()
+	if err != nil || regPath == "" {
+		return nil
+	}
+	reg, err := remotes.Load(regPath)
+	if err != nil {
+		return nil
+	}
+	out := make([]ScopeOption, 0, 4)
+	for _, r := range reg.List() {
+		out = append(out, ScopeOption{Value: "remote:" + r.Name, Label: r.Name})
+	}
+	return out
 }
 
 // render executes base+page against data. Returns a 500 on

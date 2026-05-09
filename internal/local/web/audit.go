@@ -39,7 +39,7 @@ func loadAuditRows(opts Options, limit int) (auditData, error) {
 		limit = auditDefaultLimit
 	}
 
-	base := pageData{BindAddr: opts.BindAddr, Version: opts.Version}
+	base := newPageDataFromOpts(opts)
 	ws, _ := loadWorkspaceSummary(opts.WorkspaceRoot)
 	base.Workspace = ws
 

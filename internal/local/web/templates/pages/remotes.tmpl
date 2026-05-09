@@ -18,7 +18,7 @@
           <tr>
             <th data-sort-type="string" data-sort-default="asc">name</th>
             <th data-sort-type="string">url</th>
-            <th data-sort-type="number" class="col-numeric">drafts</th>
+            <th data-sort-type="string">drafts</th>
             <th data-sort-type="string">fingerprint</th>
             <th data-sort-type="date">added</th>
             <th data-sort-type="date">last seen</th>
@@ -29,7 +29,7 @@
           <tr>
             <td><code>{{.Name}}</code></td>
             <td><code>{{.URL}}</code></td>
-            <td class="col-numeric">{{.Drafts}}</td>
+            <td>{{template "draft_indicator" .IndicatorView}}</td>
             <td>{{if .Fingerprint}}<code>{{.Fingerprint}}</code>{{else}}<span class="dim">—</span>{{end}}</td>
             <td>{{if .AddedAt}}<time>{{.AddedAt}}</time>{{else}}<span class="dim">—</span>{{end}}</td>
             <td>{{if .LastSeen}}<time>{{.LastSeen}}</time>{{else}}<span class="dim">—</span>{{end}}</td>

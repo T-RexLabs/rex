@@ -1,0 +1,27 @@
+{{/* draft_indicator — per-remote drafts + rebase-needed badge
+(web-ui.SHARED.1, web-ui.DRAFT-VIZ.1, sync.DRAFT.2).
+
+Expects a single value implementing the DraftIndicator shape:
+
+  Name           string  // remote name; required
+  Drafts         int     // 0 means "in sync"
+  NeedsRebase    bool    // sync.DRAFT.2 flag
+  LastConflict   string  // server head observed on last conflict (optional)
+
+Renders as one inline pill. When Drafts == 0 and !NeedsRebase the
+pill shows the "synced" state; otherwise the count is the focus
+and the rebase flag adds a separate pill so colour is not the only
+signal (web-ui.ACCESS.2). */}}
+
+{{define "draft_indicator"}}
+<span class="draft-indicator" data-remote="{{.Name}}">
+  {{- if .NeedsRebase -}}
+    <span class="pill pill-rebase" title="needs rebase before push (sync.DRAFT.2)">rebase</span>
+  {{- end -}}
+  {{- if gt .Drafts 0 -}}
+    <span class="pill pill-drafts" title="local events past the per-remote watermark">{{.Drafts}} draft{{if ne .Drafts 1}}s{{end}}</span>
+  {{- else if not .NeedsRebase -}}
+    <span class="pill pill-synced" title="local events match the remote's HEAD">synced</span>
+  {{- end -}}
+</span>
+{{end}}

@@ -1,0 +1,22 @@
+{{/* acid_badge — click-to-copy ACID anchor (web-ui.SHARED.1, web-ui.LOCAL.4).
+
+The dot argument is the literal ACID string (e.g.
+"sync.GIT.3" or "spec-format.RECIPE.6.2"). The badge sets data-acid
+to the same value so the clipboard handler in static/clipboard.js
+picks it up regardless of whitespace handling.
+
+Variant control: pass an "Sm" key in a map for the smaller pill
+shape used inside dense tables / requirement bodies. The shared
+struct shape is documented as web.AcidBadge in handlers; templates
+remain field-tolerant for callers that pass a raw string. */}}
+
+{{define "acid_badge"}}
+{{- if eq (printf "%T" .) "string" -}}
+<a class="acid" data-acid="{{.}}" href="#" title="copy acid">{{.}}</a>
+{{- else -}}
+<a class="acid{{if .Small}} acid-sm{{end}}{{if .Class}} {{.Class}}{{end}}"
+   data-acid="{{.ACID}}"
+   href="{{if .Href}}{{.Href}}{{else}}#{{end}}"
+   title="copy acid">{{.ACID}}</a>
+{{- end -}}
+{{end}}
