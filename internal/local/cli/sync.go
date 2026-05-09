@@ -261,12 +261,15 @@ func runSyncFn(cmd *cobra.Command, _ []string) error {
 }
 
 // formatSyncError dresses the typed *ConflictError so the CLI says
-// something useful when the rebase engine has not yet landed.
+// something useful while the full rebase engine is in flight. The
+// rebase-needed flag has already been persisted on the per-remote
+// watermark (sync.DRAFT.2), so the user can safely close the terminal
+// and pick the rebase up later via `rex status`.
 func formatSyncError(err error) error {
 	var ce *syncclient.ConflictError
 	if errors.As(err, &ce) {
 		return fmt.Errorf(
-			"diverged from remote (server head=%s; %d events to rebase). Rebase support not yet implemented (sync.GIT.*)",
+			"diverged from remote (server head=%s; %d events to rebase); flagged the watermark — run `rex pull` to fetch the diverging tail, then `rex push`. Full automatic rebase lands with sync.GIT.*",
 			ce.ServerHead, len(ce.DivergingTail))
 	}
 	return err

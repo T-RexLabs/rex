@@ -317,6 +317,13 @@ type RunArgs struct {
 // pushes them, and on success advances the watermark and saves it.
 // Returns a zero-Accepted PushResult when there is nothing to push,
 // so callers can branch on Accepted == 0 without special-casing.
+//
+// On a *ConflictError the watermark is updated in place: NeedsRebase
+// flips to true and LastConflictHead is stamped with the server head
+// the conflict reported. The watermark file is saved so the rebase-
+// needed signal is durable across CLI invocations (sync.DRAFT.2). The
+// underlying *ConflictError is returned unchanged so callers can keep
+// branching on errors.As as before.
 func (c *Client) PushOnly(ctx context.Context, args RunArgs) (PushResult, error) {
 	wm, err := LoadWatermark(args.WorkspaceRoot, args.Remote)
 	if err != nil {
@@ -331,10 +338,21 @@ func (c *Client) PushOnly(ctx context.Context, args RunArgs) (PushResult, error)
 	}
 	push, err := c.Push(ctx, wm.LastAckedEventID, tail)
 	if err != nil {
+		var conflict *ConflictError
+		if errors.As(err, &conflict) {
+			wm.NeedsRebase = true
+			wm.LastConflictHead = conflict.ServerHead
+			// Best-effort persist: a save failure here does
+			// not change the original error semantics — the
+			// caller still sees the typed *ConflictError.
+			_ = SaveWatermark(args.WorkspaceRoot, wm)
+		}
 		return PushResult{}, err
 	}
 	wm.LastAckedEventID = push.HeadID
 	wm.AckedAt = time.Now().UTC()
+	wm.NeedsRebase = false
+	wm.LastConflictHead = ""
 	if err := SaveWatermark(args.WorkspaceRoot, wm); err != nil {
 		return push, err
 	}
@@ -368,6 +386,12 @@ func (c *Client) PullOnly(ctx context.Context, args RunArgs) (int, error) {
 	if newHead != "" {
 		wm.LastAckedEventID = newHead
 		wm.AckedAt = time.Now().UTC()
+		// A successful pull means we have observed everything
+		// up to the server's head as of the request, so the
+		// rebase-needed flag clears (sync.DRAFT.2). If the user
+		// pulled without a prior conflict, this is a no-op.
+		wm.NeedsRebase = false
+		wm.LastConflictHead = ""
 		if err := SaveWatermark(args.WorkspaceRoot, wm); err != nil {
 			return pulled, err
 		}

@@ -91,8 +91,23 @@ tasks:
 
   - id: draft-state-ux
     description: "Implement the draft-vs-committed split — drafts are local-only events not pushed; the CLI and UI surface this distinctly"
-    state: todo
+    state: done
+    note: "DRAFT.1's data model (per-remote watermark files at .rex/drafts/<remote>.toml + draft = events past LastAckedEventID) shipped earlier in internal/local/sync/watermark.go + log_io.go. This task adds DRAFT.2's rebase-needed flag: Watermark gains NeedsRebase + LastConflictHead, set durably on push 409 and cleared on the next successful push or pull. `rex status` surfaces a REBASE column plus a per-remote hint line and threads the flag through --json output. DRAFT.3's 'drafts kept after rebase' is satisfied at the data-model level (the watermark independence preserves them) for the UX surface, but the deeper correctness of HLC-interleaved drafts surviving an automatic pull-on-conflict requires a watermark redesign (per-remote acked-id set rather than a single id) and lands with the rebase-engine task. DRAFT.4 (pre-rebase preservation for git-merged content) is also rebase-engine territory."
     references: [DRAFT.1, DRAFT.2, DRAFT.3]
+    proof:
+      - kind: code
+        path: internal/local/sync/watermark.go
+      - kind: code
+        path: internal/local/sync/client.go
+      - kind: code
+        path: internal/local/cli/status.go
+      - kind: code
+        path: internal/local/cli/sync.go
+      - kind: test
+        path: internal/local/sync/draft_state_test.go
+      - kind: test
+        path: internal/local/cli/status_test.go
+        name: TestStatusFlagsRebaseNeeded
 
   - id: bootstrap-flow
     description: "Implement `rex remote add <name> <url>` and the per-workspace clone flow"

@@ -19,6 +19,13 @@ const DraftsDirName = "drafts"
 // records the highest event id from events.log that the named remote
 // has acknowledged plus when that acknowledgement happened. Events
 // past LastAckedEventID are drafts for that remote (sync.DRAFT.1).
+//
+// The NeedsRebase / LastConflictHead pair captures sync.DRAFT.2's
+// "rebase-needed flag": when a push attempt returns 409 with a
+// diverging tail, the watermark records the server's head so the next
+// `rex status` (and any other read-only surface) can flag the remote
+// as needing a rebase without re-issuing a network call. The flag
+// clears on the next successful push or pull.
 type Watermark struct {
 	// Remote is the name of the remote this watermark belongs to.
 	// Persisted alongside the rest of the file so a watermark
@@ -31,6 +38,16 @@ type Watermark struct {
 	// AckedAt is when the local node last successfully pushed to
 	// this remote. Persisted as RFC3339.
 	AckedAt time.Time `toml:"acked_at"`
+	// NeedsRebase is true when the most recent push attempt against
+	// this remote returned 409. Cleared on the next successful push
+	// or pull. Drives sync.DRAFT.2's status display.
+	NeedsRebase bool `toml:"needs_rebase,omitempty"`
+	// LastConflictHead carries the server head reported on the most
+	// recent push conflict. Empty when the watermark has never
+	// observed a conflict, or after the conflict has been resolved.
+	// Surfaces in `rex status` so the user knows what the remote
+	// thinks the head is without re-issuing a /sync/state call.
+	LastConflictHead string `toml:"last_conflict_head,omitempty"`
 }
 
 // WatermarkPath returns the canonical file path for a watermark.

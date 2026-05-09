@@ -49,6 +49,12 @@ type remoteStatus struct {
 	LastAckedEventID string    `json:"last_acked_event_id"`
 	AckedAt          time.Time `json:"acked_at"`
 	Drafts           int       `json:"drafts"`
+	// NeedsRebase reflects sync.DRAFT.2's rebase-needed flag —
+	// true after a push 409 until the next successful push or pull.
+	NeedsRebase bool `json:"needs_rebase,omitempty"`
+	// LastConflictHead is the server head observed on the most
+	// recent push conflict; empty when no conflict is outstanding.
+	LastConflictHead string `json:"last_conflict_head,omitempty"`
 }
 
 func runStatus(out interface{ Write([]byte) (int, error) }, root string, jsonOut bool) error {
@@ -76,6 +82,8 @@ func runStatus(out interface{ Write([]byte) (int, error) }, root string, jsonOut
 			LastAckedEventID: w.LastAckedEventID,
 			AckedAt:          w.AckedAt,
 			Drafts:           count,
+			NeedsRebase:      w.NeedsRebase,
+			LastConflictHead: w.LastConflictHead,
 		})
 	}
 	totalDrafts, err := syncclient.CountEventsAfter(logPath, "")
@@ -110,7 +118,8 @@ func runStatus(out interface{ Write([]byte) (int, error) }, root string, jsonOut
 	}
 	fmt.Fprintln(out, "remotes:")
 	tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "  REMOTE\tDRAFTS\tLAST_ACKED\tLAST_SYNC")
+	fmt.Fprintln(tw, "  REMOTE\tDRAFTS\tREBASE\tLAST_ACKED\tLAST_SYNC")
+	var rebaseHints []remoteStatus
 	for _, r := range remotes {
 		acked := "—"
 		if !r.AckedAt.IsZero() {
@@ -120,7 +129,24 @@ func runStatus(out interface{ Write([]byte) (int, error) }, root string, jsonOut
 		if head == "" {
 			head = "—"
 		}
-		fmt.Fprintf(tw, "  %s\t%d\t%s\t%s\n", r.Name, r.Drafts, head, acked)
+		rebase := "-"
+		if r.NeedsRebase {
+			rebase = "yes"
+			rebaseHints = append(rebaseHints, r)
+		}
+		fmt.Fprintf(tw, "  %s\t%d\t%s\t%s\t%s\n", r.Name, r.Drafts, rebase, head, acked)
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	for _, r := range rebaseHints {
+		hint := r.LastConflictHead
+		if hint == "" {
+			hint = "(unknown)"
+		}
+		fmt.Fprintf(out,
+			"  remote %q needs rebase (server head=%s); run `rex pull --remote %s` then `rex push --remote %s` (sync.DRAFT.2)\n",
+			r.Name, hint, r.Name, r.Name)
+	}
+	return nil
 }
