@@ -1,0 +1,509 @@
+# Proposed amendment — split `central-ui-routes` into PR-sized
+# sub-tasks, pin the package layout, browser auth, and URL shape, and
+# mark surfaces for v1.5-deferred features as placeholder-only.
+#
+# Status: accepted
+# Date:   2026-05-15
+# Folded: 2026-05-15 — web-ui.CENTRAL.1 + CENTRAL.4 text replaced;
+#         CENTRAL-AUTH (req 1-5) and CENTRAL-LAYOUT (req 1-3)
+#         components added; `central-ui-routes` task replaced with
+#         six sequenced sub-tasks (web-package-split,
+#         central-web-shell, central-browser-auth,
+#         central-read-side-pages, central-org-admin-pages,
+#         central-placeholder-surfaces). web-ui.metadata.updated_at
+#         bumped to 2026-05-15.
+#
+# Surfaced by:
+#   The `central-ui-routes` task in web-ui.yaml currently bundles five
+#   distinct deliverables behind one task id:
+#
+#     1. Stand up a web UI surface in `cmd/rex-central` at all (today
+#        the binary serves only the API: /sync/*, /auth/*, /admin/*,
+#        /health, /ready, /metrics — no HTML).
+#     2. Reuse the local UI's read-side pages (workspaces, specs,
+#        runs, audit, remotes, search, amendments, settings) inside
+#        the central binary; the local web package is hard-bound to a
+#        single workspace path (`internal/local/web/server.go:29`),
+#        so this requires either a refactor or a parallel
+#        implementation.
+#     3. Add the org-administration pages: `/orgs/<id>`,
+#        `/orgs/<id>/members`, `/orgs/<id>/roles`.
+#     4. Add a placeholder `/orgs/<id>/idp` page (CENTRAL.1) — the
+#        underlying SSO/IdP bridging is itself deferred per
+#        central-node.IDP-CENTRAL.1-note.
+#     5. Add a placeholder `/orgs/<id>/encryption-keys` page
+#        (CENTRAL.4) — the underlying per-tenant transcript
+#        encryption is **explicitly deferred to v1.5** per
+#        storage.encryption-opt-in's note ("Deferred to v1.5… and
+#        web-ui.CENTRAL.4 placeholder").
+#
+#   This violates the "one task per PR" sizing intent in CLAUDE.md.
+#   Worse, several open design questions sit underneath the bundle
+#   and have no resolution in the current spec text:
+#
+#     a. **Package layout.** The web code lives at
+#        `internal/local/web/`. Per overview.SYS.1 ("Differences live
+#        behind build tags or a thin shell, never in core logic"),
+#        the shared subset must move to a package importable by both
+#        `cmd/rex` and `cmd/rex-central`. Current import path is
+#        wrong for a shared use.
+#
+#     b. **Browser authentication.** The local UI is loopback-only
+#        and trusts the OS user (web-ui.LOCAL.2). The central UI is
+#        internet-facing behind TLS (central-node.SEC.1) — there is
+#        no equivalent local-machine trust. The wire protocol
+#        currently uses ed25519-signed requests + bearer tokens
+#        (sync.SEC.1, identity-and-trust.TOKEN.*); browsers cannot
+#        sign per-request. Need a session model (cookie holding a
+#        bearer token issued via a redeem step that proves
+#        possession of the keypair). This is unspecified anywhere
+#        in the contract.
+#
+#     c. **URL shape for workspace-scoped routes in central.** The
+#        local route set is workspace-implicit (web-ui.LOCAL.1.1:
+#        single-workspace binding). On central, every page that
+#        lists per-workspace data needs an explicit workspace
+#        identifier. CENTRAL.1 says "Everything in the local UI
+#        route set, plus an Organization section" but does not say
+#        whether a /specs route on central means
+#        `/orgs/<id>/workspaces/<wsid>/specs`,
+#        `/workspaces/<wsid>/specs`, or something else.
+#
+#     d. **Org/member/role REST surface.** The central server has
+#        Go-level org/membership functions (orgs.go's ListOrgs,
+#        ListMemberships, RoleFor, EnsureDefaultMembership) but no
+#        HTTP API for them and no admin-mutating equivalents
+#        (create org, invite member, change role, remove member).
+#        CENTRAL.3 requires invite issuance, role changes, and
+#        removal — the API to back them does not exist yet.
+#
+#     e. **IdP and encryption-keys placeholders.** CENTRAL.1 lists
+#        `/orgs/<id>/idp` as "(placeholder pre-IdP-shipping)" but
+#        CENTRAL.4 (encryption keys) does not carry the same
+#        marker, even though the underlying feature is deferred.
+#        Both should be marked as shell-only surfaces in v1.
+#
+#   This amendment establishes the **scope-split + design pins** so
+#   the implementation can ship as a sequence of PR-sized tasks
+#   without back-fitting decisions later.
+
+target: web-ui
+state: accepted
+amendment_for: web-ui
+amendment_date: 2026-05-15
+amendment_kind: clarifying
+
+summary: |
+  Split the monolithic `central-ui-routes` task into six sequenced
+  sub-tasks; pin the package layout (move shared web code to
+  `internal/web/` with a thin shell per binary), the browser
+  authentication model (cookie-bound bearer token issued via
+  challenge/redeem against the existing keypair), and the URL shape
+  for workspace-scoped routes on central
+  (`/orgs/<org-id>/workspaces/<ws-id>/...`). Also explicitly mark
+  the IdP and encryption-keys pages as shell-only placeholders for
+  v1, since the features they front are deferred to post-v1 / v1.5.
+
+migration_impact: |
+  Additive: no existing requirement is removed; CENTRAL.1's URL list
+  is replaced with a more precise one and CENTRAL.4's text grows a
+  shell-only marker that already applies in spirit. The single
+  `central-ui-routes` task is replaced with six sub-tasks; nothing
+  has been built against it yet, so there is no implementation churn.
+
+  Adds two new components (CENTRAL-AUTH for browser session model,
+  CENTRAL-LAYOUT for package layout); both are net-new and do not
+  conflict with anything existing.
+
+# -----------------------------------------------------------------
+# Decision A — package layout.
+#
+# Today: `internal/local/web/` (server.go, handlers.go, etc.) is
+# imported only by `cmd/rex`. Templates and static assets are
+# embedded via go:embed directives that are part of the package.
+#
+# Move the shared subset to `internal/web/`:
+#
+#   internal/web/                  (shared core: templates, partials,
+#                                   static assets, render helpers,
+#                                   reusable handlers for read-side
+#                                   pages — specs, runs, audit, search)
+#   internal/local/web/            (thin shell: workspace binding,
+#                                   amendments, remotes, settings,
+#                                   single-workspace routes)
+#   internal/central/web/          (thin shell: multi-org/multi-workspace
+#                                   routing, /orgs/* handlers, session
+#                                   management, central-only banner)
+#
+# Reusable handlers from the shared package take a `WorkspaceFinder`
+# interface (resolves a workspace id to its on-disk root or to the
+# Postgres-backed central content store). Local shell binds a
+# single-workspace finder; central shell binds an org-scoped finder.
+# This keeps the read-side pages identical (web-ui.SHARED.2) without
+# duplicating template parsing or partial rendering.
+# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------
+# Decision B — browser authentication.
+#
+# Wire protocol: every API request is signed by the caller's ed25519
+# keypair, and bearer tokens are minted via /auth/challenge +
+# /auth/verify (sync.SEC.1, identity-and-trust.TOKEN.*). Browsers
+# cannot sign per-request without a JS layer holding the private key,
+# which is a non-starter (web-ui.PERF.3 caps JS at 50 KB and
+# overview.SEC bans web-stored private keys in spirit).
+#
+# v1 central UI session flow:
+#
+#   1. The browser hits /login, which renders a one-time challenge
+#      string and a "redeem this with your keypair" instruction.
+#   2. The user runs `rex remote login <central-url> --challenge <s>`
+#      from a terminal that has the private key. The CLI signs the
+#      challenge, posts it to /auth/verify, and receives a bearer
+#      token. The CLI then either:
+#        a) prints the token + a one-click URL the user pastes into
+#           the browser (fallback for headless/SSH), or
+#        b) opens the browser to /auth/redeem?token=<...> directly
+#           (default for local desktop).
+#   3. /auth/redeem sets an HttpOnly, Secure, SameSite=Strict cookie
+#      (`rex_session`) holding the token and redirects to the
+#      original target URL. The cookie carries the same TTL as the
+#      bearer token (identity-and-trust.TOKEN.*).
+#   4. Logout clears the cookie + calls /auth/revoke against the
+#      central node.
+#
+# Every web request goes through the existing auth middleware: it
+# reads `rex_session` from the cookie OR `Authorization: Bearer ...`
+# from a header (for API consumers), and resolves the fingerprint +
+# org via the same path the API uses today.
+#
+# This keeps zero secrets in browser-accessible storage and reuses
+# the existing token machinery without changes.
+# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------
+# Decision C — URL shape on central.
+#
+# Central is multi-org + multi-workspace. Every read-side page that
+# the local UI serves at a workspace-implicit path takes an
+# `/orgs/<org-id>/workspaces/<ws-id>/` prefix on central:
+#
+#   /orgs/<org-id>                                    org overview
+#   /orgs/<org-id>/members                            members list/admin
+#   /orgs/<org-id>/roles                              role list/admin
+#   /orgs/<org-id>/idp                                placeholder
+#   /orgs/<org-id>/encryption-keys                    placeholder
+#   /orgs/<org-id>/workspaces                         workspace index
+#   /orgs/<org-id>/workspaces/<ws-id>                 workspace overview
+#   /orgs/<org-id>/workspaces/<ws-id>/specs           specs list
+#   /orgs/<org-id>/workspaces/<ws-id>/specs/<id>      spec detail
+#   /orgs/<org-id>/workspaces/<ws-id>/runs            runs list
+#   /orgs/<org-id>/workspaces/<ws-id>/runs/<id>       run detail (live)
+#   /orgs/<org-id>/workspaces/<ws-id>/audit           audit log
+#   /orgs/<org-id>/workspaces/<ws-id>/amendments      amendments index
+#   /orgs/<org-id>/workspaces/<ws-id>/amendments/<s>  amendment detail
+#   /search                                           org-scoped search
+#                                                    (org from session)
+#
+# The bare "/" on central redirects to /orgs/<id> for single-org
+# users and to an org picker for multi-org users (matches the
+# tenant-routing behaviour at the API layer per central-node.TENANT.2).
+#
+# Note: the "/workspaces/<id>/..." prefix that LOCAL.1.1 reserves for
+# the post-v1 multi-workspace daemon is the *same* prefix used here,
+# scoped under /orgs/<org-id>/. This keeps the local-future and
+# central-current URL shape consistent — the local daemon, when it
+# arrives, can serve `/workspaces/<ws-id>/specs` directly and
+# central serves `/orgs/<org-id>/workspaces/<ws-id>/specs`.
+# -----------------------------------------------------------------
+
+changes:
+
+  - id: replace-central1-with-precise-routes
+    title: Replace CENTRAL.1 enumerated route list with the org-scoped shape
+    affects: [web-ui]
+    rationale: |
+      The current CENTRAL.1 says "Everything in the local UI route
+      set, plus an Organization section" without saying how local
+      workspace-implicit routes acquire an org/workspace prefix on
+      central. Decision C above pins the shape; this edit folds the
+      pinned URL list into the requirement text.
+    edits:
+      - target: CENTRAL
+        kind: replace-requirement-text
+        requirement_id: "1"
+        replaced_meaning: false
+        rationale_for_no_meaning_change: |
+          The new text enumerates the same surfaces (everything from
+          the local set + the org section) but pins their URL shape.
+          The org section's pages are unchanged; the workspace-scoped
+          pages gain the /orgs/<org-id>/workspaces/<ws-id>/ prefix
+          that the local set does not need (LOCAL.1.1).
+        current_text: |
+          Everything in the local UI route set, plus an Organization
+          section: `/orgs/<id>` (overview), `/orgs/<id>/members`,
+          `/orgs/<id>/roles`, `/orgs/<id>/idp` (placeholder
+          pre-IdP-shipping), `/orgs/<id>/encryption-keys`
+        new_text: |
+          Routes on central are org-scoped. The org section is:
+          `/orgs/<org-id>` (overview), `/orgs/<org-id>/members`,
+          `/orgs/<org-id>/roles`, `/orgs/<org-id>/idp` (shell-only
+          placeholder pre-IdP-shipping; see IDP-CENTRAL.1-note),
+          `/orgs/<org-id>/encryption-keys` (shell-only placeholder
+          pre-encryption-shipping; see CENTRAL.4 and
+          storage.encryption-opt-in). The workspace-scoped subset
+          mirrors the local UI under
+          `/orgs/<org-id>/workspaces/<ws-id>/...`: `/specs`,
+          `/specs/<spec-id>`, `/amendments`, `/amendments/<stem>`,
+          `/runs`, `/runs/<run-id>` (live), `/audit`, `/remotes`,
+          `/settings`, plus `/orgs/<org-id>/workspaces` for the
+          per-org workspace index. `/search` is org-scoped via the
+          session (the picker can scope further per SEARCH.1). `/`
+          redirects to `/orgs/<id>` for single-org users and to an
+          org picker for multi-org users (matches central-node.
+          TENANT.2 — never picks for the user).
+
+  - id: mark-encryption-keys-shell-only
+    title: Mark CENTRAL.4 as a shell-only placeholder for v1
+    affects: [web-ui]
+    rationale: |
+      storage.encryption-opt-in is "Deferred to v1.5" with an
+      explicit cross-reference to web-ui.CENTRAL.4 as a
+      placeholder. CENTRAL.4 should carry the same shell-only
+      marker that CENTRAL.1 already gives to /idp.
+    edits:
+      - target: CENTRAL
+        kind: replace-requirement-text
+        requirement_id: "4"
+        replaced_meaning: false
+        rationale_for_no_meaning_change: |
+          The page is still the eventual surface for the encryption
+          feature; the edit only marks v1's scope (a stub page
+          explaining the feature is deferred and where to track it).
+        current_text: |
+          Encryption keys view is the surface for opt-in per-tenant
+          transcript encryption (storage.yaml ENC.2)
+        new_text: |
+          Encryption keys view is the surface for opt-in per-tenant
+          transcript encryption (storage.yaml ENC.2). v1 ships a
+          shell-only placeholder page that explains the feature is
+          deferred to v1.5 (per storage.encryption-opt-in) and
+          links to the upstream tracking issue/spec; the page must
+          not expose any key-management controls before the
+          encryption-keys data model exists.
+
+  - id: add-central-auth-component
+    title: Add a CENTRAL-AUTH component pinning the browser session model
+    affects: [web-ui]
+    rationale: |
+      The local UI's loopback-only trust (LOCAL.2) does not carry
+      to central. CENTRAL needs an explicit browser-auth contract
+      so the implementation does not improvise (or worse, default
+      to password auth, which overview.SEC.4 forbids).
+    edits:
+      - target: CENTRAL-AUTH
+        kind: add-component
+        component_name: Central UI browser authentication
+        requirements:
+          "1": |
+            Browser sessions on central are bound by an HttpOnly,
+            Secure, SameSite=Strict cookie (`rex_session`) holding
+            a bearer token minted via the existing
+            `/auth/challenge` + `/auth/verify` flow
+            (identity-and-trust.TOKEN.*). The cookie's TTL matches
+            the token's TTL.
+          "2": |
+            Login flow: `/login` renders a one-time challenge string
+            and instructs the user to redeem it via
+            `rex remote login <central-url> --challenge <s>` from a
+            terminal holding the private key. The CLI either opens
+            the browser to `/auth/redeem?token=<...>` (desktop
+            default) or prints a paste-in URL (headless/SSH
+            fallback). `/auth/redeem` sets the cookie and
+            redirects to the original target URL.
+          "3": |
+            Web requests authenticate via either the `rex_session`
+            cookie OR an `Authorization: Bearer …` header
+            (API consumer parity). The cookie path goes through
+            the same auth middleware as the API path; no separate
+            web-only credential surface exists.
+          "4": |
+            Logout clears the cookie and calls `/auth/revoke`
+            against the central node. Token revocation is
+            authoritative — a stolen cookie cannot outlive the
+            revocation.
+          "5": |
+            The central UI never embeds, stores, or transmits the
+            user's private key in browser-accessible form. The CLI
+            holds the key and signs the challenge; the browser only
+            ever sees the resulting bearer token wrapped in an
+            HttpOnly cookie.
+
+  - id: add-central-layout-component
+    title: Add a CENTRAL-LAYOUT component pinning the package layout
+    affects: [web-ui]
+    rationale: |
+      The web code lives at `internal/local/web/` today, imported
+      only by `cmd/rex`. Both binaries need to render the
+      read-side pages; per overview.SYS.1 the shared subset must
+      live in a shared package with thin shells per binary.
+    edits:
+      - target: CENTRAL-LAYOUT
+        kind: add-component
+        component_name: Central + local web package layout
+        requirements:
+          "1": |
+            Shared web code (templates, partials, static assets,
+            render helpers, reusable handlers for read-side pages
+            — specs, runs, audit, search, amendments) lives at
+            `internal/web/`. Both `cmd/rex` and `cmd/rex-central`
+            import it via thin shell packages
+            (`internal/local/web/` for the local binding,
+            `internal/central/web/` for the central binding).
+          "2": |
+            Shared handlers take a `WorkspaceResolver` interface
+            that maps a workspace id to its content (file paths
+            for the local shell, Postgres-backed projections for
+            the central shell). Templates render identically in
+            both UIs (SHARED.2); the resolver is the only
+            injection point that differs.
+          "3": |
+            Single-workspace routes on the local shell continue to
+            omit the workspace-id segment per LOCAL.1.1. The
+            shared handlers do not assume an implicit workspace;
+            local routes resolve the implicit binding before
+            delegating to the shared handler.
+
+  - id: replace-central-ui-routes-task
+    title: Replace `central-ui-routes` task with six sequenced sub-tasks
+    affects: [web-ui]
+    rationale: |
+      One PR per task (CLAUDE.md). The current single task bundles
+      five distinct deliverables and assumes scaffolding that does
+      not exist yet (no central web binary, no shared package
+      layout, no browser session, no admin REST API). Splitting
+      makes each piece reviewable on its own and exposes the
+      implementation order: scaffolding → read-side reuse →
+      org-admin pages → placeholders.
+    edits:
+      - target: TASKS
+        kind: replace-task
+        task_id: central-ui-routes
+        new_tasks:
+          - id: web-package-split
+            description: |
+              Move shared web code from `internal/local/web/` to
+              `internal/web/`; add a `WorkspaceResolver` interface;
+              keep `internal/local/web/` as the local binary's thin
+              shell. No behaviour change for the local UI.
+            references: [CENTRAL-LAYOUT.1, CENTRAL-LAYOUT.2,
+                         CENTRAL-LAYOUT.3, SHARED.2]
+            state: todo
+          - id: central-web-shell
+            description: |
+              Stand up `internal/central/web/` and wire it into
+              `cmd/rex-central serve` behind a `--web` flag (off by
+              default until the read-side pages land). Empty surface
+              with a single `/health` ping page proving the wiring.
+            references: [CENTRAL-LAYOUT.1, STACK.1, STACK.2]
+            state: todo
+          - id: central-browser-auth
+            description: |
+              Implement the browser session: `/login`,
+              `/auth/redeem`, the `rex_session` cookie, the
+              cookie-or-bearer middleware, and logout. Add the
+              `rex remote login --challenge <s>` CLI subcommand
+              that signs the challenge.
+            references: [CENTRAL-AUTH.1, CENTRAL-AUTH.2,
+                         CENTRAL-AUTH.3, CENTRAL-AUTH.4,
+                         CENTRAL-AUTH.5]
+            state: todo
+          - id: central-read-side-pages
+            description: |
+              Mount the read-side shared handlers under the
+              `/orgs/<org-id>/workspaces/<ws-id>/` prefix on
+              central; bind a Postgres-backed `WorkspaceResolver`.
+              Covers specs, runs, audit, search, amendments,
+              remotes, settings (read paths only).
+            references: [CENTRAL.1, SHARED.2]
+            state: todo
+          - id: central-org-admin-pages
+            description: |
+              Implement the org-administration pages: `/orgs/<id>`
+              (overview), `/orgs/<id>/members` (invite, role
+              change, removal), `/orgs/<id>/roles` (role catalog
+              view + edit). Every mutation runs through RBAC and
+              writes audit entries (CENTRAL.3). Requires the
+              org/member/role REST API to land first or alongside
+              (tracked under central-node.RBAC-SVR.1).
+            references: [CENTRAL.1, CENTRAL.3]
+            state: todo
+          - id: central-placeholder-surfaces
+            description: |
+              Ship shell-only `/orgs/<id>/idp` and
+              `/orgs/<id>/encryption-keys` pages that explain the
+              feature is deferred and link to the tracking
+              spec/issue. No mutation controls. Add the
+              "CENTRAL ONLY" banner per CENTRAL.2.
+            references: [CENTRAL.1, CENTRAL.2, CENTRAL.4]
+            state: todo
+
+verification:
+  - existing_implementation: internal/local/web/server.go
+    notes: |
+      The `Options.WorkspaceRoot` field and single-workspace
+      assumption are the immediate blocker to reuse on central; the
+      `web-package-split` task addresses this by extracting the
+      shared subset behind a `WorkspaceResolver` interface.
+
+  - existing_implementation: internal/central/server/server.go
+    notes: |
+      Currently registers only API handlers
+      (`/sync/*`, `/auth/*`, `/admin/*`, `/health`, `/ready`,
+      `/metrics`). The `central-web-shell` task adds the web
+      handler tree under a flag-gated mount.
+
+  - existing_implementation: internal/central/server/orgs.go
+    notes: |
+      Holds the read-side org/member/role functions
+      (`ListOrgs`, `ListMemberships`, `RoleFor`,
+      `EnsureDefaultMembership`). The mutating side
+      (create org, invite member, change role, remove member)
+      does not exist yet; `central-org-admin-pages` depends on
+      that REST surface landing first.
+
+  - existing_implementation: internal/central/server/auth.go
+    notes: |
+      Holds the `/auth/challenge` + `/auth/verify` + `/auth/refresh`
+      + `/auth/revoke` machinery the browser session reuses. The
+      `central-browser-auth` task adds `/login`, `/auth/redeem`,
+      and the cookie-bound middleware on top.
+
+extra:
+  authors: [claude]
+  scope:
+    in:
+      - splitting `central-ui-routes` into six sequenced sub-tasks
+      - pinning package layout (Decision A)
+      - pinning browser auth (Decision B)
+      - pinning URL shape (Decision C)
+      - marking IdP and encryption-keys pages as shell-only
+    out:
+      - implementing the org/member/role mutating REST API
+        (tracked under central-node.RBAC-SVR.1; the
+        `central-org-admin-pages` task depends on it but does not
+        ship it)
+      - the SSO/IdP bridging itself (deferred per
+        central-node.IDP-CENTRAL.1-note)
+      - per-tenant transcript encryption (deferred to v1.5 per
+        storage.encryption-opt-in)
+      - any local UI changes — this amendment touches central UI
+        scope and the shared package layout; LOCAL.* is unchanged
+        in meaning
+  follow_up: |
+    On signoff, fold the changes into web-ui.yaml at the named
+    requirement / component / task locations, bump
+    metadata.updated_at to 2026-05-15, then move this proposal file
+    to `specs/_proposed/_accepted/`. The first sub-task to pick up
+    is `web-package-split` — it's a pure refactor with no behaviour
+    change and unblocks every other sub-task.
