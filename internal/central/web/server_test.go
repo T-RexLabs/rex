@@ -1,12 +1,32 @@
 package web
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/asabla/rex/internal/core/sync/proto"
 )
+
+// stubAuth is a deterministic Auth used in /login tests so coverage
+// doesn't depend on the real central server's auth state.
+type stubAuth struct {
+	pkg proto.LoginChallengePackage
+	err error
+}
+
+func (a *stubAuth) IssueLoginChallenge(hostname string) (proto.LoginChallengePackage, error) {
+	if a.err != nil {
+		return proto.LoginChallengePackage{}, a.err
+	}
+	p := a.pkg
+	p.Hostname = hostname
+	return p, nil
+}
 
 // TestNewParsesSharedRenderer confirms the central shell's
 // constructor reaches the shared internal/web package and parses
@@ -72,6 +92,112 @@ func TestHealthPingProvesWiring(t *testing.T) {
 	}
 	if ct := staticResp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/css") {
 		t.Errorf("static content-type=%q (want text/css)", ct)
+	}
+}
+
+// TestLoginRendersChallengePackage exercises the /login handler:
+// when Auth is wired, the page embeds the encoded package and the
+// CLI command snippet, and Redirect comes from the ?redirect query.
+func TestLoginRendersChallengePackage(t *testing.T) {
+	t.Parallel()
+	exp := time.Now().UTC().Add(time.Minute).Round(time.Second)
+	auth := &stubAuth{pkg: proto.LoginChallengePackage{
+		Version:     proto.LoginChallengePackageVersion,
+		ChallengeID: "ch-test",
+		Nonce:       "deadbeef",
+		ExpiresAt:   exp,
+	}}
+	s, err := New(Options{Version: "1.2.3", Auth: auth})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/login?redirect=/orgs/abc")
+	if err != nil {
+		t.Fatalf("GET /login: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	html := string(body)
+	if !strings.Contains(html, "rex remote login") {
+		t.Errorf("missing CLI command snippet; body=%s", html)
+	}
+	if !strings.Contains(html, "--challenge") {
+		t.Errorf("missing --challenge marker; body=%s", html)
+	}
+	if !strings.Contains(html, "/orgs/abc") {
+		t.Errorf("redirect not surfaced; body=%s", html)
+	}
+	// The rendered command must contain a decodable challenge
+	// package whose Redirect matches the query — confirms the
+	// handler stamps the redirect through to the CLI.
+	start := strings.Index(html, `--challenge &quot;`)
+	if start < 0 {
+		t.Fatalf("could not locate challenge token in body=%s", html)
+	}
+	start += len(`--challenge &quot;`)
+	end := strings.Index(html[start:], `&quot;`)
+	if end < 0 {
+		t.Fatalf("could not locate end of challenge token")
+	}
+	wire := html[start : start+end]
+	pkg, err := proto.DecodeLoginChallengePackage(wire)
+	if err != nil {
+		t.Fatalf("decode rendered package: %v (wire=%q)", err, wire)
+	}
+	if pkg.Redirect != "/orgs/abc" {
+		t.Errorf("redirect not encoded: got %q want /orgs/abc", pkg.Redirect)
+	}
+	if pkg.ChallengeID != "ch-test" {
+		t.Errorf("challenge id mismatch: got %q", pkg.ChallengeID)
+	}
+}
+
+// TestLoginWithoutAuthReturns503 documents the misconfigured-
+// deployment path: --web is on but no Auth was supplied. We surface
+// 503 so an operator notices, rather than rendering a half-working
+// /login that issues invalid challenges.
+func TestLoginWithoutAuthReturns503(t *testing.T) {
+	t.Parallel()
+	s, err := New(Options{})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/login")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status: %d (want 503)", resp.StatusCode)
+	}
+}
+
+// TestLoginPropagatesAuthError covers the surfaceable-error branch:
+// an Auth that fails to issue should return 500, not a silent 200
+// with a broken package.
+func TestLoginPropagatesAuthError(t *testing.T) {
+	t.Parallel()
+	s, err := New(Options{Auth: &stubAuth{err: errors.New("rate limited")}})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/login")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status: %d (want 500)", resp.StatusCode)
 	}
 }
 

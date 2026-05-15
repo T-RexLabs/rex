@@ -36,6 +36,7 @@ via --remote <name> instead of typing --url every time.`,
 	cmd.AddCommand(newRemoteRemoveCmd())
 	cmd.AddCommand(newRemoteTestCmd())
 	cmd.AddCommand(newRemoteBootstrapCmd())
+	cmd.AddCommand(newRemoteLoginCmd())
 	return cmd
 }
 

@@ -6,8 +6,22 @@ import (
 	"io/fs"
 	"net/http"
 
+	"github.com/asabla/rex/internal/core/sync/proto"
 	internalweb "github.com/asabla/rex/internal/web"
 )
+
+// Auth is the subset of central-node auth surface the web shell
+// needs to power /login (web-ui.CENTRAL-AUTH.2). cmd/rex-central
+// satisfies it by passing the *server.Server through; tests inject
+// a stub.
+type Auth interface {
+	// IssueLoginChallenge mints a fresh challenge for browser
+	// login. The returned package carries the challenge id, the
+	// signing-input nonce, the canonical hostname, and the absolute
+	// expiry. The web handler stamps Redirect on top before
+	// rendering.
+	IssueLoginChallenge(hostname string) (proto.LoginChallengePackage, error)
+}
 
 // Options configure New.
 type Options struct {
@@ -15,6 +29,12 @@ type Options struct {
 	// hitting /_web/health can confirm they're talking to the
 	// expected binary. Empty defaults to "dev".
 	Version string
+	// Auth supplies the challenge-issuing surface /login uses.
+	// Optional: when nil, /login responds 503; the rest of the
+	// shell still works (useful for the read-side-only deployment
+	// path that lands with central-read-side-pages before auth is
+	// fully wired in dev).
+	Auth Auth
 }
 
 // Server is the central node's web UI handler. It owns a small
@@ -58,6 +78,66 @@ func (s *Server) registerRoutes() {
 	staticSub, _ := fs.Sub(internalweb.StaticFS, "static")
 	s.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
 	s.mux.HandleFunc("GET /_web/health", s.handleHealthPing)
+	s.mux.HandleFunc("GET /login", s.handleLogin)
+}
+
+// handleLogin renders the browser-side of the login flow
+// (web-ui.CENTRAL-AUTH.2): the user lands here, gets a one-time
+// challenge string, and is instructed to redeem it via
+// `rex remote login`. The path the user originally wanted is
+// preserved via ?redirect=<path> on the URL and rolled into the
+// challenge package so /auth/redeem lands them there after the
+// cookie is set.
+//
+// 503 when Options.Auth is nil — that's the misconfigured
+// deployment ("--web is on but the server didn't pass an Auth")
+// rather than a server-side error.
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if s.opts.Auth == nil {
+		http.Error(w, "central web: login not configured (Auth missing)", http.StatusServiceUnavailable)
+		return
+	}
+	redirect := r.URL.Query().Get("redirect")
+	if redirect == "" {
+		redirect = "/"
+	}
+	pkg, err := s.opts.Auth.IssueLoginChallenge(r.Host)
+	if err != nil {
+		http.Error(w, "central web: issue challenge: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	pkg.Redirect = redirect
+	wire, err := proto.EncodeLoginChallengePackage(pkg)
+	if err != nil {
+		http.Error(w, "central web: encode package: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	body := `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>rex-central — sign in</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="login">
+    <h1>Sign in to rex-central</h1>
+    <p>This browser is not authenticated. To sign in, open a terminal on
+       a machine that holds your keypair and run:</p>
+    <pre class="login-cmd"><code>rex remote login &lt;remote-name&gt; --challenge &quot;` + html.EscapeString(wire) + `&quot;</code></pre>
+    <p class="login-meta">The challenge expires at <time>` + html.EscapeString(pkg.ExpiresAt.Format("2006-01-02 15:04:05 MST")) + `</time>.
+       After signing, your terminal will either open this browser at
+       <code>/auth/redeem</code> (desktop default) or print the URL
+       for you to paste (headless/SSH fallback).</p>
+    <p class="login-meta">You'll land on <code>` + html.EscapeString(redirect) + `</code> after sign-in.</p>
+  </main>
+</body>
+</html>
+`
+	_, _ = fmt.Fprint(w, body)
 }
 
 // handleHealthPing is the wiring-proof page. It serves a static

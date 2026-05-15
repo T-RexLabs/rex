@@ -187,7 +187,10 @@ lost on restart.
 			// internal/web package is reachable from the central
 			// binary.
 			if webEnabled {
-				webShell, err := centralweb.New(centralweb.Options{Version: version})
+				webShell, err := centralweb.New(centralweb.Options{
+					Version: version,
+					Auth:    s, // *server.Server implements the Auth interface via IssueLoginChallenge
+				})
 				if err != nil {
 					return fmt.Errorf("build web shell: %w", err)
 				}

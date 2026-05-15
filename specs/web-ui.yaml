@@ -98,8 +98,24 @@ tasks:
 
   - id: central-browser-auth
     description: "Implement the browser session: /login, /auth/redeem, the rex_session cookie, the cookie-or-bearer middleware, and logout. Add the rex remote login --challenge <s> CLI subcommand that signs the challenge"
-    state: todo
+    state: done
+    note: "Browser session is bound by an HttpOnly + Secure + SameSite=Strict rex_session cookie carrying the existing identity-and-trust.TOKEN.* access token (CENTRAL-AUTH.1, .5). New surfaces on the central API server: /auth/redeem (GET; validates token, sets cookie, 303s to ?redirect=<path>) and /auth/logout (POST; revokes token + clears cookie); requireToken now reads the rex_session cookie when no Authorization header is present so cookie-bound and bearer-bound requests share the same auth path (CENTRAL-AUTH.3, .4). The web shell's /login handler issues a challenge via Auth.IssueLoginChallenge, stamps the post-login redirect from ?redirect=, and renders an inline HTML page that embeds a base64 LoginChallengePackage (proto.LoginChallengePackage holding {challenge_id, nonce, hostname, expires_at, redirect}). The new CLI subcommand `rex remote login <name> [--challenge <s>] [--redirect <p>] [--print-url]` decodes that package, signs the canonical input with the local keypair, POSTs /auth/verify, and assembles `<central>/auth/redeem?token=<...>&redirect=<...>` which it opens in the browser by default (xdg-open / open / rundll32) or prints under --print-url (CENTRAL-AUTH.2). When --challenge is omitted the CLI does its own /auth/challenge handshake and lands at \"/\". Open-redirect hardened on both sides — /auth/redeem rejects anything that doesn't pass isSafeRedirect, and the CLI rejects external --redirect overrides locally before any HTTP call. Browser never holds the private key; the CLI signs and the browser only sees the resulting cookie."
     references: [CENTRAL-AUTH.1, CENTRAL-AUTH.2, CENTRAL-AUTH.3, CENTRAL-AUTH.4, CENTRAL-AUTH.5]
+    proof:
+      - kind: code
+        path: internal/central/server/session.go
+      - kind: code
+        path: internal/central/web/server.go
+      - kind: code
+        path: internal/local/cli/remote_login.go
+      - kind: code
+        path: internal/core/sync/proto/login.go
+      - kind: test
+        path: internal/central/server/session_test.go
+      - kind: test
+        path: internal/central/web/server_test.go
+      - kind: test
+        path: internal/local/cli/remote_login_test.go
 
   - id: central-read-side-pages
     description: "Mount the read-side shared handlers under the /orgs/<org-id>/workspaces/<ws-id>/ prefix on central; bind a Postgres-backed WorkspaceResolver. Covers specs, runs, audit, search, amendments, remotes, settings (read paths only)"

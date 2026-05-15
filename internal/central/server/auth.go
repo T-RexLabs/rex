@@ -765,19 +765,19 @@ func (s *Server) handleAuthRevoke(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, proto.AuthRevokeResponse{Count: 1})
 }
 
-// requireToken extracts and validates a Bearer token from the
-// Authorization header. Returns the token's bound fingerprint or
-// an error describing why authorization failed. The caller writes
-// the HTTP error response based on this error.
+// requireToken extracts and validates a bearer token presented on
+// the request. It accepts either the Authorization header (API
+// consumers) or the rex_session cookie (browser consumers) per
+// web-ui.CENTRAL-AUTH.3; the cookie path goes through the same
+// resolver as the header so audit + revocation are uniform.
+// Returns the token's bound fingerprint or an error describing why
+// authorization failed. The caller writes the HTTP error response
+// based on this error.
 func (s *Server) requireToken(r *http.Request) (identity.Fingerprint, error) {
-	header := r.Header.Get("Authorization")
-	if header == "" {
-		return identity.Fingerprint{}, errors.New("missing Authorization header")
+	value, ok := tokenFromRequest(r)
+	if !ok {
+		return identity.Fingerprint{}, errors.New("missing Authorization header or rex_session cookie")
 	}
-	if !strings.HasPrefix(header, bearerPrefix) {
-		return identity.Fingerprint{}, errors.New("authorization must be Bearer")
-	}
-	value := strings.TrimPrefix(header, bearerPrefix)
 	tok, err := s.auth.resolveAccessToken(value)
 	if err != nil {
 		return identity.Fingerprint{}, err

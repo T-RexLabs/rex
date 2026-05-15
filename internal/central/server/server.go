@@ -151,6 +151,8 @@ func New(opts Options) (*Server, error) {
 	s.mux.HandleFunc(authVerifyPath, s.handleAuthVerify)
 	s.mux.HandleFunc(authRefreshPath, s.handleAuthRefresh)
 	s.mux.HandleFunc(authRevokePath, s.handleAuthRevoke)
+	s.mux.HandleFunc(authRedeemPath, s.handleAuthRedeem)
+	s.mux.HandleFunc(authLogoutPath, s.handleAuthLogout)
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/ready", s.handleReady)
 	s.mux.HandleFunc("/metrics", s.handleMetrics)
