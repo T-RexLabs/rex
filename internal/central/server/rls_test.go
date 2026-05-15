@@ -20,12 +20,21 @@ func TestRLSPoliciesAreEnabled(t *testing.T) {
 	t.Parallel()
 	s, _ := freshPostgresStore(t)
 	ctx := context.Background()
+	schema := schemaForTest(t)
 
+	// pg_class is global; without filtering by namespace, parallel
+	// tests' per-schema events/workspaces tables collide here —
+	// QueryRow returns whichever pg_class row Postgres picks first,
+	// which can be a sibling schema that's mid-migration (RLS not
+	// yet enabled at step 4). Scope to this test's schema.
 	for _, table := range []string{"events", "workspaces"} {
 		var enabled bool
 		if err := s.pool.QueryRow(ctx,
-			`SELECT relrowsecurity FROM pg_class WHERE relname = $1`,
-			table,
+			`SELECT c.relrowsecurity
+			   FROM pg_class c
+			   JOIN pg_namespace n ON n.oid = c.relnamespace
+			  WHERE c.relname = $1 AND n.nspname = $2`,
+			table, schema,
 		).Scan(&enabled); err != nil {
 			t.Fatalf("check rls on %s: %v", table, err)
 		}
@@ -38,8 +47,9 @@ func TestRLSPoliciesAreEnabled(t *testing.T) {
 	for _, table := range []string{"events", "workspaces"} {
 		var n int
 		if err := s.pool.QueryRow(ctx,
-			`SELECT count(*) FROM pg_policies WHERE tablename = $1`,
-			table,
+			`SELECT count(*) FROM pg_policies
+			  WHERE tablename = $1 AND schemaname = $2`,
+			table, schema,
 		).Scan(&n); err != nil {
 			t.Fatalf("check policies on %s: %v", table, err)
 		}
