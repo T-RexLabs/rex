@@ -21,6 +21,7 @@ import (
 	"github.com/asabla/rex/internal/central/backup"
 	"github.com/asabla/rex/internal/central/config"
 	"github.com/asabla/rex/internal/central/server"
+	centralweb "github.com/asabla/rex/internal/central/web"
 	"github.com/asabla/rex/internal/cmdhelp"
 )
 
@@ -75,6 +76,7 @@ func newServeCmd() *cobra.Command {
 		dbDSN           string
 		logLevel        string
 		logFormat       string
+		webEnabled      bool
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -177,6 +179,24 @@ lost on restart.
 			if err != nil {
 				return fmt.Errorf("build server: %w", err)
 			}
+
+			// Mount the web shell as a fallback handler when --web
+			// is set (web-ui.CENTRAL-LAYOUT.1). Off by default
+			// until central-read-side-pages lands real surfaces;
+			// constructing centralweb.New here proves the shared
+			// internal/web package is reachable from the central
+			// binary.
+			if webEnabled {
+				webShell, err := centralweb.New(centralweb.Options{Version: version})
+				if err != nil {
+					return fmt.Errorf("build web shell: %w", err)
+				}
+				s.MountWeb(webShell.Handler())
+				logger.Info("central web shell mounted",
+					"op", "startup",
+					"flag", "--web",
+				)
+			}
 			httpSrv := &http.Server{
 				Addr:              cfg.Server.Addr,
 				Handler:           s.Handler(),
@@ -252,6 +272,7 @@ lost on restart.
 	cmd.Flags().StringVar(&dbDSN, "db", "", "Postgres DSN (overrides config + REX_CENTRAL_DB_DSN); empty uses in-memory store")
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "log level: debug | info | warn | error (overrides config + REX_CENTRAL_LOG_LEVEL)")
 	cmd.Flags().StringVar(&logFormat, "log-format", "json", "log format: json | text (overrides config + REX_CENTRAL_LOG_FORMAT)")
+	cmd.Flags().BoolVar(&webEnabled, "web", false, "enable the central web UI shell (off by default until read-side pages land; serves /_web/health + /static/ when on)")
 	return cmd
 }
 

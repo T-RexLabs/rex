@@ -174,6 +174,23 @@ func (s *Server) Metrics() *Metrics { return s.metrics }
 // Handler returns the HTTP handler the server registered.
 func (s *Server) Handler() http.Handler { return s.mux }
 
+// MountWeb registers h as the fallback handler on the server's mux,
+// rooted at "/". API routes (the specific patterns registered in
+// New) win against the "/" catchall via http.ServeMux's
+// longest-match rule, so this is safe to call after construction:
+// h only sees requests whose paths don't match any API route.
+//
+// Called by cmd/rex-central when --web is enabled. Idempotency is
+// not guaranteed — calling twice will panic with
+// "multiple registrations for /", matching ServeMux semantics.
+// MountWeb is what wires the central web shell
+// (internal/central/web) into the same listener the API uses, so
+// browsers and `rex remote …` clients share one TLS endpoint
+// (web-ui.CENTRAL-LAYOUT.1).
+func (s *Server) MountWeb(h http.Handler) {
+	s.mux.Handle("/", h)
+}
+
 // Actor returns the central node's actor string. Useful when the
 // caller (say, a test) wants to verify (HLC, actor) ordering with
 // no second guess on what the server's actor looks like.

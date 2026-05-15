@@ -36,6 +36,51 @@ func clientRec(id string) eventlog.Record {
 	}
 }
 
+// TestMountWebFallbackDoesNotShadowAPI confirms the key safety
+// property of MountWeb: when a web handler is mounted at "/" on the
+// central mux, the specific API routes (/sync/state,
+// /health, /metrics, etc.) still win via http.ServeMux's
+// longest-match rule. Without this invariant the web shell could
+// silently swallow API requests once --web is on.
+func TestMountWebFallbackDoesNotShadowAPI(t *testing.T) {
+	t.Parallel()
+
+	srv, err := New(Options{})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// Sentinel HTML handler that would be very obvious if it
+	// accidentally received the API request.
+	srv.MountWeb(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, "<html>WEB SHELL</html>")
+	}))
+	hs := httptest.NewServer(srv.Handler())
+	defer hs.Close()
+
+	// API path → API handler (JSON response).
+	resp, err := http.Get(hs.URL + "/sync/state")
+	if err != nil {
+		t.Fatalf("GET /sync/state: %v", err)
+	}
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("api path leaked to web: content-type=%q body=%s", ct, body)
+	}
+
+	// Unknown path → web fallback.
+	resp2, err := http.Get(hs.URL + "/does-not-exist")
+	if err != nil {
+		t.Fatalf("GET /does-not-exist: %v", err)
+	}
+	defer resp2.Body.Close()
+	body, _ := io.ReadAll(resp2.Body)
+	if !strings.Contains(string(body), "WEB SHELL") {
+		t.Fatalf("fallback path did not hit web shell: body=%s", body)
+	}
+}
+
 func TestServerStateExposesIdentity(t *testing.T) {
 	t.Parallel()
 

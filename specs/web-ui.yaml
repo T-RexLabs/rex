@@ -81,8 +81,20 @@ tasks:
 
   - id: central-web-shell
     description: "Stand up internal/central/web/ and wire it into cmd/rex-central serve behind a --web flag (off by default until the read-side pages land). Empty surface with a single /health ping page proving the wiring"
-    state: todo
+    state: done
+    note: "internal/central/web is a tiny shell: New() builds an internal/web.Renderer (proves the shared package is reachable from the central binary), mounts /static/ from internal/web.StaticFS, and serves an HTML wiring-proof page at /_web/health. cmd/rex-central serve grew a --web flag (default off); when set, the shell is constructed and installed on the central server's mux via the new Server.MountWeb(h http.Handler). MountWeb registers h at \"/\" — http.ServeMux's longest-match rule keeps the existing API routes (/sync/*, /auth/*, /admin/*, /health, /ready, /metrics) authoritative, so the web fallback never silently swallows API requests (covered by TestMountWebFallbackDoesNotShadowAPI). The wiring-proof endpoint is intentionally /_web/health rather than /health so the JSON liveness probe stays the central-node.HEALTH.1 surface; the placeholder URL is replaced by the real route set in central-read-side-pages."
     references: [CENTRAL-LAYOUT.1, STACK.1, STACK.2]
+    proof:
+      - kind: code
+        path: internal/central/web/server.go
+      - kind: code
+        path: cmd/rex-central/main.go
+      - kind: code
+        path: internal/central/server/server.go
+      - kind: test
+        path: internal/central/web/server_test.go
+      - kind: test
+        path: internal/central/server/server_test.go
 
   - id: central-browser-auth
     description: "Implement the browser session: /login, /auth/redeem, the rex_session cookie, the cookie-or-bearer middleware, and logout. Add the rex remote login --challenge <s> CLI subcommand that signs the challenge"
