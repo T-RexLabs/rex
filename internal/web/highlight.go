@@ -36,13 +36,13 @@ type Highlighter struct {
 	styleDark  *chroma.Style
 }
 
-// newHighlighter constructs the package-wide Highlighter. The
+// NewHighlighter constructs the package-wide Highlighter. The
 // formatter omits inline style attributes so colors come from
 // app.css class rules — that lets the dark/light palette swap
 // follow prefers-color-scheme. The light style is `github` (high
 // contrast, calm); the dark style is `github-dark` (same palette
 // family, designed for dark backgrounds).
-func newHighlighter() *Highlighter {
+func NewHighlighter() *Highlighter {
 	return &Highlighter{
 		formatter: chromahtml.New(
 			chromahtml.WithClasses(true),

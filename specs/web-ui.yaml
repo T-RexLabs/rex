@@ -41,7 +41,7 @@ tasks:
     references: [SHARED.1, SHARED.2]
     proof:
       - kind: code
-        path: internal/local/web/templates/partials/
+        path: internal/web/templates/partials/
       - kind: code
         path: internal/local/web/server.go
       - kind: code
@@ -60,12 +60,24 @@ tasks:
       - kind: code
         path: internal/local/web/handlers.go
       - kind: code
-        path: internal/local/web/templates/
+        path: internal/web/templates/
 
   - id: web-package-split
     description: "Move shared web code from internal/local/web/ to internal/web/; add a WorkspaceResolver interface; keep internal/local/web/ as the local binary's thin shell. No behaviour change for the local UI"
-    state: todo
+    state: done
+    note: "Templates, static assets, render machinery, the FuncMap, the Highlighter, and the WorkspaceResolver interface live at internal/web/ (CENTRAL-LAYOUT.1). internal/local/web/ keeps its handlers and workspace-bound state (CENTRAL-LAYOUT.3); Server now holds an *internalweb.Renderer + *internalweb.Highlighter and provides a single-workspace localResolver implementing internalweb.WorkspaceResolver (CENTRAL-LAYOUT.2). Render delegation goes through Server.render → Renderer.Render so every existing handler call site stays unchanged. No template body, FuncMap entry, or page contract changed; the partials test now drives the shared renderer directly via NewRenderer()/Page() (SHARED.2 invariant preserved)."
     references: [CENTRAL-LAYOUT.1, CENTRAL-LAYOUT.2, CENTRAL-LAYOUT.3, SHARED.2]
+    proof:
+      - kind: code
+        path: internal/web/
+      - kind: code
+        path: internal/web/resolver.go
+      - kind: code
+        path: internal/web/renderer.go
+      - kind: code
+        path: internal/local/web/server.go
+      - kind: test
+        path: internal/local/web/partials_test.go
 
   - id: central-web-shell
     description: "Stand up internal/central/web/ and wire it into cmd/rex-central serve behind a --web flag (off by default until the read-side pages land). Empty surface with a single /health ping page proving the wiring"
@@ -100,7 +112,7 @@ tasks:
       - kind: code
         path: internal/local/web/frame_view.go
       - kind: code
-        path: internal/local/web/static/htmx-ext-sse.js
+        path: internal/web/static/htmx-ext-sse.js
 
   - id: search-ui
     description: "Implement the search UI with the scope picker (current workspace / all local / specific remote) and saved searches"
@@ -111,7 +123,7 @@ tasks:
       - kind: code
         path: internal/local/web/search.go
       - kind: code
-        path: internal/local/web/templates/pages/search.tmpl
+        path: internal/web/templates/pages/search.tmpl
       - kind: test
         path: internal/local/web/search_ui_test.go
 

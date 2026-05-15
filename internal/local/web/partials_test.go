@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	internalweb "github.com/asabla/rex/internal/web"
 )
 
 // TestSharedPartialsLoaded confirms loadPages parsed every partial
@@ -14,16 +16,16 @@ import (
 func TestSharedPartialsLoaded(t *testing.T) {
 	t.Parallel()
 
-	pages, err := loadPages()
+	r, err := internalweb.NewRenderer()
 	if err != nil {
-		t.Fatalf("loadPages: %v", err)
+		t.Fatalf("NewRenderer: %v", err)
 	}
 	want := []string{
 		"acid_badge", "draft_indicator", "scope_picker",
 		"spec_row", "run_row", "audit_row", "workspace_card",
 	}
 	// Pick any page; partials live in its template tree.
-	tmpl := pages["home.tmpl"]
+	tmpl := r.Page("home.tmpl")
 	if tmpl == nil {
 		t.Fatal("home.tmpl missing from loaded pages")
 	}
@@ -72,11 +74,11 @@ func TestScopePickerRendersOnEveryReadPage(t *testing.T) {
 func TestDraftIndicatorBranches(t *testing.T) {
 	t.Parallel()
 
-	pages, err := loadPages()
+	r, err := internalweb.NewRenderer()
 	if err != nil {
-		t.Fatalf("loadPages: %v", err)
+		t.Fatalf("NewRenderer: %v", err)
 	}
-	tmpl := pages["home.tmpl"].Lookup("draft_indicator")
+	tmpl := r.Page("home.tmpl").Lookup("draft_indicator")
 	if tmpl == nil {
 		t.Fatal("draft_indicator partial missing")
 	}
@@ -132,11 +134,11 @@ func TestDraftIndicatorBranches(t *testing.T) {
 func TestAcidBadgePartialRendersStringInput(t *testing.T) {
 	t.Parallel()
 
-	pages, err := loadPages()
+	r, err := internalweb.NewRenderer()
 	if err != nil {
-		t.Fatalf("loadPages: %v", err)
+		t.Fatalf("NewRenderer: %v", err)
 	}
-	tmpl := pages["home.tmpl"].Lookup("acid_badge")
+	tmpl := r.Page("home.tmpl").Lookup("acid_badge")
 	if tmpl == nil {
 		t.Fatal("acid_badge partial missing")
 	}

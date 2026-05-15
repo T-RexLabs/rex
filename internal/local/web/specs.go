@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/asabla/rex/internal/core/specfmt"
+	internalweb "github.com/asabla/rex/internal/web"
 )
 
 // specRow is one row in the /specs list page.
@@ -192,7 +193,7 @@ func loadSpecsList(opts Options) (specsListData, error) {
 // hl is the chroma highlighter; when non-nil, RawYAML is also
 // rendered to YAMLPretty so the source tab can show the
 // highlighted view alongside (or instead of) the plain text.
-func loadSpecDetail(opts Options, id, tab string, hl *Highlighter) (specDetailData, bool, error) {
+func loadSpecDetail(opts Options, id, tab string, hl *internalweb.Highlighter) (specDetailData, bool, error) {
 	if !specfmt.IsKebab(id) {
 		return specDetailData{}, false, nil
 	}

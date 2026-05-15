@@ -2,24 +2,14 @@ package web
 
 import (
 	"context"
-	"embed"
 	"errors"
-	"fmt"
-	"html/template"
 	"io/fs"
 	"net/http"
-	"path/filepath"
-	"strings"
 
 	"github.com/asabla/rex/internal/core/runner/adapter"
 	"github.com/asabla/rex/internal/local/remotes"
+	internalweb "github.com/asabla/rex/internal/web"
 )
-
-//go:embed templates/*.tmpl templates/pages/*.tmpl templates/partials/*.tmpl
-var templateFS embed.FS
-
-//go:embed static/*
-var staticFS embed.FS
 
 // Options configure New.
 type Options struct {
@@ -44,7 +34,10 @@ type Options struct {
 }
 
 // Server is the local web UI handler. Routes register on its mux;
-// templates and static assets come from the embed.FS.
+// shared templates / static assets / render machinery come from
+// internal/web (web-ui.CENTRAL-LAYOUT.1); workspace-bound state
+// (handlers, file paths, harness cache) lives here in the local
+// shell.
 type Server struct {
 	opts         Options
 	ctx          context.Context
@@ -52,12 +45,13 @@ type Server struct {
 	ownedRuns    *ownedRuns
 	interactions *runInteractionHub
 	mux          *http.ServeMux
-	pages        map[string]*template.Template
-	highlighter  *Highlighter
+	renderer     *internalweb.Renderer
+	highlighter  *internalweb.Highlighter
+	resolver     internalweb.WorkspaceResolver
 }
 
-// New constructs a Server, parses templates from the embed.FS, and
-// registers routes.
+// New constructs a Server, parses templates from the shared
+// internal/web package, and registers routes.
 func New(opts Options) (*Server, error) {
 	warmHarnesses := opts.Context != nil
 	if opts.WorkspaceRoot == "" {
@@ -73,7 +67,7 @@ func New(opts Options) (*Server, error) {
 		opts.Context = context.Background()
 	}
 
-	pages, err := loadPages()
+	renderer, err := internalweb.NewRenderer()
 	if err != nil {
 		return nil, err
 	}
@@ -85,11 +79,28 @@ func New(opts Options) (*Server, error) {
 		ownedRuns:    &ownedRuns{},
 		interactions: newRunInteractionHub(),
 		mux:          http.NewServeMux(),
-		pages:        pages,
-		highlighter:  newHighlighter(),
+		renderer:     renderer,
+		highlighter:  internalweb.NewHighlighter(),
+		resolver:     localResolver{root: opts.WorkspaceRoot},
 	}
 	s.registerRoutes()
 	return s, nil
+}
+
+// localResolver is the local shell's single-workspace WorkspaceResolver.
+// It ignores the requested workspaceID and always returns the workspace
+// rooted at the bound path (web-ui.LOCAL.1.1, CENTRAL-LAYOUT.3). The
+// workspace's ID is read lazily from .rex/workspace.yaml; failures
+// return the empty-id workspace so the binding still works for
+// fresh-init workspaces.
+type localResolver struct{ root string }
+
+func (l localResolver) Resolve(string) (internalweb.Workspace, error) {
+	ws := internalweb.Workspace{Root: l.root}
+	if summary, err := loadWorkspaceSummary(l.root); err == nil && summary != nil {
+		ws.ID = summary.ID
+	}
+	return ws, nil
 }
 
 // Handler returns the root http.Handler.
@@ -105,7 +116,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func (s *Server) registerRoutes() {
-	staticSub, _ := fs.Sub(staticFS, "static")
+	staticSub, _ := fs.Sub(internalweb.StaticFS, "static")
 	s.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
 	s.mux.HandleFunc("GET /static/chroma.css", s.handleChromaCSS)
 	s.mux.HandleFunc("GET /{$}", s.handleHome)
@@ -136,66 +147,6 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /settings", s.handleSettings)
 	s.mux.HandleFunc("GET /sync", s.handleSyncPage)
 	s.mux.HandleFunc("POST /sync", s.handleSyncRun)
-}
-
-// loadPages reads base.tmpl + every templates/partials/*.tmpl +
-// every templates/pages/*.tmpl and returns a map keyed by page
-// basename ("home.tmpl" → composed template). Each entry parses
-// base.tmpl + the partials + that page in one ParseFS call so
-// html/template's contextual escaper analyzes the combined tree
-// once. Splitting it into multiple Parse calls leaves the
-// title-template escaper in an inconsistent state when later pages
-// reference different value paths in {{define "title"}}.
-//
-// Partials are the shared component library from web-ui.SHARED.1
-// (workspace card, spec row, run row, audit row, ACID badge, draft
-// indicator, scope picker). Every page sees them all so callers
-// don't have to enumerate which partials they need.
-func loadPages() (map[string]*template.Template, error) {
-	pages, err := fs.Glob(templateFS, "templates/pages/*.tmpl")
-	if err != nil {
-		return nil, fmt.Errorf("web: glob pages: %w", err)
-	}
-	partials, err := fs.Glob(templateFS, "templates/partials/*.tmpl")
-	if err != nil {
-		return nil, fmt.Errorf("web: glob partials: %w", err)
-	}
-	parseTargets := append([]string{"templates/base.tmpl"}, partials...)
-	out := make(map[string]*template.Template, len(pages))
-	for _, p := range pages {
-		name := filepath.Base(p)
-		t, err := template.New(name).Funcs(template.FuncMap{
-			"joinCSV": func(xs []string) string { return strings.Join(xs, ",") },
-			// splitTaskRef cracks `<spec-id>.<task-id>` into its
-			// two parts so the template can build a /specs/<id>
-			// link with a #<task-id> anchor. Returns the original
-			// string in slot 0 if it doesn't match the expected
-			// shape so the caller can fall back to a plain code
-			// span.
-			"splitTaskRef": func(s string) []string {
-				idx := strings.Index(s, ".")
-				if idx < 0 {
-					return []string{s}
-				}
-				return []string{s[:idx], s[idx+1:]}
-			},
-			// splitACID returns the spec id portion of an ACID
-			// (everything before the first dot). Used to link a
-			// run's spec_refs back to /specs/<spec-id>.
-			"splitACID": func(s string) []string {
-				idx := strings.Index(s, ".")
-				if idx < 0 {
-					return nil
-				}
-				return []string{s[:idx]}
-			},
-		}).ParseFS(templateFS, append(parseTargets, p)...)
-		if err != nil {
-			return nil, fmt.Errorf("web: parse %s: %w", p, err)
-		}
-		out[name] = t
-	}
-	return out, nil
 }
 
 // pageData is what every page receives via the base template's
@@ -278,21 +229,10 @@ func loadScopeRemotes() []ScopeOption {
 	return out
 }
 
-// render executes base+page against data. Returns a 500 on
-// template errors so the user sees something rather than a blank
-// response.
+// render is a thin wrapper over the shared renderer's Render.
+// Callers go through it so existing handler code continues to call
+// s.render(...) without churn; the actual template execution lives
+// in internal/web.
 func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, data any) {
-	tmpl, ok := s.pages[page]
-	if !ok {
-		http.Error(w, "web: unknown page "+page, http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tmpl.ExecuteTemplate(w, "base", data); err != nil {
-		// Best-effort: the response may already be partially
-		// written, so we can't reliably switch status codes
-		// here. The error is logged at the cmd/rex layer via
-		// the http.Server's ErrorLog.
-		_, _ = fmt.Fprintf(w, "\n<!-- web: render error: %s -->\n", strings.ReplaceAll(err.Error(), "-->", "—>"))
-	}
+	s.renderer.Render(w, r, page, data)
 }

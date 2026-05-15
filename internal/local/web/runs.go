@@ -15,6 +15,7 @@ import (
 	"github.com/asabla/rex/internal/core/event"
 	"github.com/asabla/rex/internal/core/runner"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
+	internalweb "github.com/asabla/rex/internal/web"
 )
 
 // Polling cadence for the SSE handler's file-tail loop. ~100ms is
@@ -101,7 +102,7 @@ type permissionView struct {
 // newRunEventRow builds a runEventRow with chroma-highlighted JSON
 // when hl is non-nil, falling back to the escaped raw bytes
 // otherwise (e.g. unit tests that don't construct a Server).
-func newRunEventRow(rec eventlog.Record, hl *Highlighter) runEventRow {
+func newRunEventRow(rec eventlog.Record, hl *internalweb.Highlighter) runEventRow {
 	row := runEventRow{
 		ID:        rec.ID,
 		Timestamp: time.Unix(0, rec.Timestamp.Wall).UTC().Format(time.RFC3339Nano),
@@ -110,7 +111,7 @@ func newRunEventRow(rec eventlog.Record, hl *Highlighter) runEventRow {
 	if hl != nil {
 		row.Payload = hl.HighlightJSON(rec.Payload)
 	} else {
-		row.Payload = template.HTML(html.EscapeString(PrettyJSON(rec.Payload)))
+		row.Payload = template.HTML(html.EscapeString(internalweb.PrettyJSON(rec.Payload)))
 	}
 	return row
 }
@@ -268,7 +269,7 @@ type runDetailData struct {
 // decoded payload references runID. Found is false when the run
 // id matches no events at all. hl is used to pre-render each
 // payload as syntax-highlighted JSON.
-func loadRunDetail(opts Options, runID string, hl *Highlighter) (runDetailData, bool, error) {
+func loadRunDetail(opts Options, runID string, hl *internalweb.Highlighter) (runDetailData, bool, error) {
 	base := newPageDataFromOpts(opts)
 	ws, _ := loadWorkspaceSummary(opts.WorkspaceRoot)
 	base.Workspace = ws
@@ -450,7 +451,7 @@ func loadRunDetail(opts Options, runID string, hl *Highlighter) (runDetailData, 
 				if hl != nil {
 					perm.Args = hl.HighlightJSON(req.Args)
 				} else {
-					perm.Args = template.HTML(html.EscapeString(PrettyJSON(req.Args)))
+					perm.Args = template.HTML(html.EscapeString(internalweb.PrettyJSON(req.Args)))
 				}
 			}
 			if r, ok := resolutions[req.RequestID]; ok {

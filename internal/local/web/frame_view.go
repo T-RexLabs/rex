@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/asabla/rex/internal/core/runner"
+	internalweb "github.com/asabla/rex/internal/web"
 )
 
 // categorizeFrame inspects an ACP frame and returns the typed view
@@ -20,7 +21,7 @@ import (
 // shape the upstream ACP version uses. Unknown update types still
 // produce a "meta" view with the method name so something legible
 // always renders.
-func categorizeFrame(ev runner.HarnessFrameEvent, hl *Highlighter) *frameView {
+func categorizeFrame(ev runner.HarnessFrameEvent, hl *internalweb.Highlighter) *frameView {
 	if len(ev.Frame) == 0 {
 		return nil
 	}
@@ -120,7 +121,7 @@ type updatePayload struct {
 // decodeUpdate parses a session/update params payload into a frameView.
 // All field heuristics live here so the rest of the pipeline can stay
 // untyped about which ACP dialect produced the frame.
-func decodeUpdate(params json.RawMessage, hl *Highlighter) *frameView {
+func decodeUpdate(params json.RawMessage, hl *internalweb.Highlighter) *frameView {
 	var p struct {
 		Update updatePayload `json:"update"`
 	}
@@ -181,7 +182,7 @@ func decodeUpdate(params json.RawMessage, hl *Highlighter) *frameView {
 // the loose updatePayload. The result frame normalises status into
 // {pending, running, ok, error} so the template doesn't have to
 // branch on every per-harness wording.
-func buildToolFrame(kind string, u updatePayload, hl *Highlighter) *frameView {
+func buildToolFrame(kind string, u updatePayload, hl *internalweb.Highlighter) *frameView {
 	name, args := extractTool(u)
 	subtitle := extractToolSubtitle(name, u)
 	output := extractContentText(u.Content)
@@ -585,12 +586,12 @@ func renderCompactMetaHTML(row runEventRow, fv *frameView) string {
 // jsonHTML renders a json.RawMessage either as chroma-highlighted
 // HTML (when hl is non-nil) or as plain escaped text. Empty input
 // returns an empty template.HTML so the template can {{if}} on it.
-func jsonHTML(body json.RawMessage, hl *Highlighter) template.HTML {
+func jsonHTML(body json.RawMessage, hl *internalweb.Highlighter) template.HTML {
 	if len(body) == 0 {
 		return ""
 	}
 	if hl != nil {
 		return hl.HighlightJSON(body)
 	}
-	return template.HTML(html.EscapeString(PrettyJSON(body)))
+	return template.HTML(html.EscapeString(internalweb.PrettyJSON(body)))
 }
