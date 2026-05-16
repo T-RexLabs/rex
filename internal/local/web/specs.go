@@ -3,7 +3,6 @@ package web
 import (
 	"errors"
 	"fmt"
-	"html/template"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,116 +13,19 @@ import (
 	internalweb "github.com/asabla/rex/internal/web"
 )
 
-// specRow is one row in the /specs list page.
-type specRow struct {
-	ID             string
-	Name           string
-	State          string
-	TaskCount      int
-	ComponentCount int
-}
-
 // specsListData backs the specs_list.tmpl page.
 type specsListData struct {
 	pageData
-	Specs []specRow
+	Specs []internalweb.SpecRow
 }
 
-// specView is the flattened, template-friendly projection of a
-// parsed spec. Templates reach for top-level fields like .Spec.ID
-// rather than .Spec.Metadata.ID, which the parsed Document
-// doesn't expose directly.
-//
-// DescriptionParas is the description split into prose paragraphs
-// so the template can render <p> tags without preserving the
-// YAML literal-block line breaks. Authors using description: |
-// usually wrap source lines around column 70-80; that's a YAML
-// readability convention, not an instruction to break the prose
-// at those columns. We collapse single newlines to spaces and
-// preserve blank lines as paragraph breaks.
-type specView struct {
-	ID               string
-	Name             string
-	State            string
-	CreatedAt        string
-	UpdatedAt        string
-	Description      string
-	DescriptionParas []string
-	Tasks            []taskView
-	Components       map[string]specfmt.Component
-	ComponentOrder   []string
-	Constraints      map[string]specfmt.Constraint
-	ConstraintOrder  []string
-}
-
-// taskView wraps a spec task for rendering. Recipe-presence and
-// recipe-kind are pulled out so the template can decide whether to
-// surface a "Run this task" affordance without reaching into the
-// nested recipe object.
-type taskView struct {
-	specfmt.Task
-	HasRecipe  bool
-	RecipeKind string
-}
-
-func newSpecView(doc *specfmt.Document) *specView {
-	if doc == nil {
-		return nil
-	}
-	tasks := make([]taskView, len(doc.Tasks))
-	for i, t := range doc.Tasks {
-		tv := taskView{Task: t}
-		if t.Run != nil {
-			tv.HasRecipe = true
-			tv.RecipeKind = string(t.Run.Kind)
-		}
-		tasks[i] = tv
-	}
-	return &specView{
-		ID:               doc.Metadata.ID,
-		Name:             doc.Metadata.Name,
-		State:            doc.Metadata.State,
-		CreatedAt:        doc.Metadata.CreatedAt,
-		UpdatedAt:        doc.Metadata.UpdatedAt,
-		Description:      doc.Description,
-		DescriptionParas: splitParagraphs(doc.Description),
-		Tasks:            tasks,
-		Components:       doc.Components,
-		ComponentOrder:   doc.ComponentOrder(),
-		Constraints:      doc.Constraints,
-		ConstraintOrder:  doc.ConstraintOrder(),
-	}
-}
-
-// splitParagraphs converts a YAML literal-block description into
-// prose paragraphs. Splits on blank lines (\n\n+); within each
-// paragraph, collapses runs of whitespace (newlines + spaces +
-// tabs) to a single space. Empty input yields nil. Authors who
-// want hard line breaks within a paragraph still get them when
-// they use double newlines explicitly.
-func splitParagraphs(s string) []string {
-	if s == "" {
-		return nil
-	}
-	parts := strings.Split(s, "\n\n")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		fields := strings.Fields(p)
-		if len(fields) == 0 {
-			continue
-		}
-		out = append(out, strings.Join(fields, " "))
-	}
-	return out
-}
-
-// specDetailData backs the spec_detail.tmpl page.
+// specDetailData backs the spec_detail.tmpl page. Composes the
+// shared SpecContent (core spec data) with local-only extras
+// (amendments, runs-by-task, harness dropdown options).
 type specDetailData struct {
 	pageData
-	Spec       *specView
-	RawYAML    string
-	YAMLPretty template.HTML // chroma-highlighted view of RawYAML
-	ActiveTab  string
+	internalweb.SpecContent
+	ActiveTab string
 	// RunsByTask maps task ids to runs launched from that task,
 	// most-recent-first. Empty when the events.log has no
 	// matching runs. Phase-C surface; the template uses it to
@@ -151,20 +53,22 @@ type specDetailData struct {
 	Amendments []amendmentRow
 }
 
-func loadSpecsList(opts Options) (specsListData, error) {
-	base := newPageDataFromOpts(opts)
-	ws, _ := loadWorkspaceSummary(opts.WorkspaceRoot)
-	base.Workspace = ws
+// localSpecProjection satisfies internalweb.SpecProjection by
+// reading from <root>/.rex/specs/. It's the local shell's
+// concrete implementation of the projection interface the shared
+// /specs handlers query (web-ui.CENTRAL-LAYOUT.2).
+type localSpecProjection struct{ root string }
 
-	d := specsListData{pageData: base}
-	dir := filepath.Join(opts.WorkspaceRoot, ".rex", "specs")
+func (l localSpecProjection) ListSpecs() ([]internalweb.SpecRow, error) {
+	dir := filepath.Join(l.root, ".rex", "specs")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return d, nil
+			return nil, nil
 		}
-		return d, err
+		return nil, err
 	}
+	out := make([]internalweb.SpecRow, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
 			continue
@@ -175,7 +79,7 @@ func loadSpecsList(opts Options) (specsListData, error) {
 			// surface where the user fixes them.
 			continue
 		}
-		d.Specs = append(d.Specs, specRow{
+		out = append(out, internalweb.SpecRow{
 			ID:             doc.Metadata.ID,
 			Name:           doc.Metadata.Name,
 			State:          doc.Metadata.State,
@@ -183,31 +87,50 @@ func loadSpecsList(opts Options) (specsListData, error) {
 			ComponentCount: len(doc.Components),
 		})
 	}
-	sort.Slice(d.Specs, func(i, j int) bool { return d.Specs[i].ID < d.Specs[j].ID })
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
+func (l localSpecProjection) OpenSpec(id string) (*specfmt.Document, string, bool, error) {
+	path := filepath.Join(l.root, ".rex", "specs", id+".yaml")
+	doc, err := specfmt.ParseFile(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, "", false, nil
+		}
+		return nil, "", false, fmt.Errorf("parse spec %q: %w", id, err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, "", false, err
+	}
+	return doc, string(raw), true, nil
+}
+
+func loadSpecsList(opts Options) (specsListData, error) {
+	base := newPageDataFromOpts(opts)
+	ws, _ := loadWorkspaceSummary(opts.WorkspaceRoot)
+	base.Workspace = ws
+
+	d := specsListData{pageData: base}
+	rows, err := localSpecProjection{root: opts.WorkspaceRoot}.ListSpecs()
+	if err != nil {
+		return d, err
+	}
+	d.Specs = rows
 	return d, nil
 }
 
-// loadSpecDetail looks up the spec by its kebab id, parses it, and
-// reads the raw YAML so the source tab can render verbatim.
+// loadSpecDetail looks up the spec via the shared loader, then
+// composes local-only extras (amendments + runs-by-task) on top.
 //
 // hl is the chroma highlighter; when non-nil, RawYAML is also
 // rendered to YAMLPretty so the source tab can show the
 // highlighted view alongside (or instead of) the plain text.
 func loadSpecDetail(opts Options, id, tab string, hl *internalweb.Highlighter) (specDetailData, bool, error) {
-	if !specfmt.IsKebab(id) {
-		return specDetailData{}, false, nil
-	}
-	path := filepath.Join(opts.WorkspaceRoot, ".rex", "specs", id+".yaml")
-	doc, err := specfmt.ParseFile(path)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return specDetailData{}, false, nil
-		}
-		return specDetailData{}, false, fmt.Errorf("parse spec %q: %w", id, err)
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return specDetailData{}, false, err
+	content, found, err := internalweb.LoadSpecContent(localSpecProjection{root: opts.WorkspaceRoot}, id, hl)
+	if err != nil || !found {
+		return specDetailData{}, found, err
 	}
 
 	if tab == "" {
@@ -224,23 +147,19 @@ func loadSpecDetail(opts Options, id, tab string, hl *internalweb.Highlighter) (
 	base.Workspace = ws
 
 	d := specDetailData{
-		pageData:  base,
-		Spec:      newSpecView(doc),
-		RawYAML:   string(raw),
-		ActiveTab: tab,
-	}
-	if hl != nil {
-		d.YAMLPretty = hl.HighlightYAML(string(raw))
+		pageData:    base,
+		SpecContent: content,
+		ActiveTab:   tab,
 	}
 	// Best-effort: list amendments targeting this spec. A missing
 	// _proposed/ directory yields nil rather than an error
 	// (web-ui.LOCAL.4.1).
-	d.Amendments = loadAmendmentsForSpec(opts.WorkspaceRoot, doc.Metadata.ID)
+	d.Amendments = loadAmendmentsForSpec(opts.WorkspaceRoot, content.Spec.ID)
 
 	// Best-effort run lookup. Failures here (missing events.log
 	// on a fresh workspace, parse error mid-log) shouldn't
 	// 500 the spec page — we just skip the affordance.
-	if byTask, untasked, err := loadRunsByTaskID(opts.WorkspaceRoot, doc.Metadata.ID); err == nil {
+	if byTask, untasked, err := loadRunsByTaskID(opts.WorkspaceRoot, content.Spec.ID); err == nil {
 		d.RunsByTask = byTask
 		d.UntaskedRuns = untasked
 		// AllRuns is the merged + sorted union for the runs tab.

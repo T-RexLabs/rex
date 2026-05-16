@@ -29,12 +29,22 @@ type Options struct {
 	// hitting /_web/health can confirm they're talking to the
 	// expected binary. Empty defaults to "dev".
 	Version string
+	// BindAddr is the central binary's listen address; surfaces in
+	// the footer the shared base.tmpl renders. Empty falls back to
+	// "(unspecified)" so the page still renders.
+	BindAddr string
 	// Auth supplies the challenge-issuing surface /login uses.
 	// Optional: when nil, /login responds 503; the rest of the
 	// shell still works (useful for the read-side-only deployment
 	// path that lands with central-read-side-pages before auth is
 	// fully wired in dev).
 	Auth Auth
+	// Resolver maps a workspace id (from the
+	// /orgs/<org-id>/workspaces/<ws-id>/... URL) to its content
+	// projection. Optional: when nil, every workspace-scoped read
+	// route responds 503. The v1 central wireup binds a
+	// GitStore-backed resolver; tests inject stubs.
+	Resolver internalweb.WorkspaceResolver
 }
 
 // Server is the central node's web UI handler. It owns a small
@@ -42,9 +52,10 @@ type Options struct {
 // on the mux. Construction is the wiring test — if internal/web is
 // importable and parses cleanly, New succeeds.
 type Server struct {
-	opts     Options
-	renderer *internalweb.Renderer
-	mux      *http.ServeMux
+	opts        Options
+	renderer    *internalweb.Renderer
+	highlighter *internalweb.Highlighter
+	mux         *http.ServeMux
 }
 
 // New constructs a Server, parses the shared template tree, and
@@ -55,11 +66,19 @@ func New(opts Options) (*Server, error) {
 	if opts.Version == "" {
 		opts.Version = "dev"
 	}
+	if opts.BindAddr == "" {
+		opts.BindAddr = "(unspecified)"
+	}
 	r, err := internalweb.NewRenderer()
 	if err != nil {
 		return nil, fmt.Errorf("central web: build renderer: %w", err)
 	}
-	s := &Server{opts: opts, renderer: r, mux: http.NewServeMux()}
+	s := &Server{
+		opts:        opts,
+		renderer:    r,
+		highlighter: internalweb.NewHighlighter(),
+		mux:         http.NewServeMux(),
+	}
 	s.registerRoutes()
 	return s, nil
 }
@@ -77,8 +96,21 @@ func (s *Server) HasPage(name string) bool { return s.renderer.HasPage(name) }
 func (s *Server) registerRoutes() {
 	staticSub, _ := fs.Sub(internalweb.StaticFS, "static")
 	s.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
+	s.mux.HandleFunc("GET /static/chroma.css", s.handleChromaCSS)
 	s.mux.HandleFunc("GET /_web/health", s.handleHealthPing)
 	s.mux.HandleFunc("GET /login", s.handleLogin)
+	s.mux.HandleFunc("GET /orgs/{org}/workspaces/{ws}/specs", s.handleSpecsList)
+	s.mux.HandleFunc("GET /orgs/{org}/workspaces/{ws}/specs/{id}", s.handleSpecDetail)
+}
+
+// handleChromaCSS serves the chroma stylesheet generated at
+// startup. Mirrored from the local shell so spec_detail.tmpl's
+// source tab styles the highlighted YAML the same way on both
+// shells (web-ui.SHARED.2).
+func (s *Server) handleChromaCSS(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write([]byte(s.highlighter.HighlightCSS()))
 }
 
 // handleLogin renders the browser-side of the login flow

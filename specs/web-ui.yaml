@@ -119,8 +119,22 @@ tasks:
 
   - id: central-resolver-bootstrap
     description: "Pin the WorkspaceResolver projection pattern by lifting /specs and /specs/<spec-id> into internal/web/ behind a SpecProjection interface. Local shell satisfies it by reading <Root>/.rex/specs/; central shell satisfies it by reading from the GitStore. Mount /orgs/<org-id>/workspaces/<ws-id>/specs and /orgs/<org-id>/workspaces/<ws-id>/specs/<spec-id> on the central web shell"
-    state: todo
+    state: done
+    note: "SpecProjection + SpecRow + SpecView + SpecContent + LoadSpecContent live at internal/web/specs.go. internalweb.Workspace gained a Specs field; ScopePickerData lifted from internal/local/web/ to internal/web/ (re-exported as type aliases in the local package so existing handler code stays unchanged). Local shell now hosts localSpecProjection (reads <Root>/.rex/specs/) and composes the shared SpecContent with its local-only amendments + runs-by-task extras. Central shell hosts centralSpecProjection (reads `specs/*.yaml` from a GitEntityReader, skipping `specs/_proposed/...`) and a centralWorkspaceResolver bound by NewGitStoreResolver from cmd/rex-central. Routes `/orgs/{org}/workspaces/{ws}/specs` + `/orgs/{org}/workspaces/{ws}/specs/{id}` mount on the central web shell; /static/chroma.css joins the static surface so spec_detail.tmpl's source tab styles consistently across shells (SHARED.2). v1 limitation surfaced in code + tests: the central GitStore is currently single-workspace (no workspace_id column), so centralWorkspaceResolver returns the same projection for every workspaceID until the multi-workspace GitStore refactor lands; the URL shape is forward-compatible. central-side spec extras (Amendments, RunsByTask, UntaskedRuns, AllRuns, RunCount, Harnesses) are present-as-empty placeholders on centralSpecDetailData so the shared spec_detail.tmpl renders without errors; each gets a real projection in its own follow-up sub-task."
     references: [CENTRAL.1, CENTRAL-LAYOUT.2, SHARED.2]
+    proof:
+      - kind: code
+        path: internal/web/specs.go
+      - kind: code
+        path: internal/web/resolver.go
+      - kind: code
+        path: internal/central/web/specs.go
+      - kind: code
+        path: internal/local/web/specs.go
+      - kind: code
+        path: cmd/rex-central/main.go
+      - kind: test
+        path: internal/central/web/specs_test.go
 
   - id: central-read-side-runs-audit
     description: "Lift /runs (list), /runs/<run-id> (terminal-state only — no live SSE; that's central-live-run-watching), and /audit handlers into internal/web/ behind a RunsProjection + AuditProjection. Central implementations read from the central event store (Postgres). The live-tail UI degrades to a banner on /runs/<run-id> for non-terminal runs"

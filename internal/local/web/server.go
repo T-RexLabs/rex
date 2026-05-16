@@ -165,20 +165,17 @@ type pageData struct {
 	// SearchScope drives the topbar scope picker. Empty Selected
 	// means "current workspace". Remotes is the list of registered
 	// remotes the user can dispatch a cross-workspace search to.
-	SearchScope ScopePickerData
+	SearchScope internalweb.ScopePickerData
 }
 
-// ScopeOption is one entry in the topbar scope picker.
-type ScopeOption struct {
-	Value string
-	Label string
-}
-
-// ScopePickerData is the partial-friendly shape for scope_picker.
-type ScopePickerData struct {
-	Selected string
-	Remotes  []ScopeOption
-}
+// ScopeOption / ScopePickerData live in internal/web (the
+// scope_picker partial is shared across both shells). Re-exported
+// here as type aliases so existing local handler code can stay on
+// the old names without churn.
+type (
+	ScopeOption     = internalweb.ScopeOption
+	ScopePickerData = internalweb.ScopePickerData
+)
 
 func (s *Server) basePageData() pageData {
 	ws, _ := loadWorkspaceSummary(s.opts.WorkspaceRoot)

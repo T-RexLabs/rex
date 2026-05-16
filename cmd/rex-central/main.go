@@ -188,8 +188,17 @@ lost on restart.
 			// binary.
 			if webEnabled {
 				webShell, err := centralweb.New(centralweb.Options{
-					Version: version,
-					Auth:    s, // *server.Server implements the Auth interface via IssueLoginChallenge
+					Version:  version,
+					BindAddr: cfg.Server.Addr,
+					Auth:     s, // *server.Server implements the Auth interface via IssueLoginChallenge
+					// The central GitStore satisfies the
+					// centralweb.GitEntityReader subset (Get + List);
+					// the workspace resolver maps a ws-id to the
+					// store-backed projection. v1 limitation: the
+					// GitStore is single-workspace, so the resolver
+					// returns the same projection regardless of ws-id
+					// until the multi-workspace refactor lands.
+					Resolver: centralweb.NewGitStoreResolver(s.GitStore()),
 				})
 				if err != nil {
 					return fmt.Errorf("build web shell: %w", err)

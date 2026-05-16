@@ -21,14 +21,40 @@ type WorkspaceResolver interface {
 	Resolve(workspaceID string) (Workspace, error)
 }
 
-// Workspace is the resolver's view of one workspace. Root is set
-// for file-backed workspaces (the local shell); central-shell
-// resolvers leave Root empty and surface content via projection
-// methods added in later cuts.
+// ScopeOption is one entry in the topbar scope picker partial.
+type ScopeOption struct {
+	Value string
+	Label string
+}
+
+// ScopePickerData is the partial-friendly shape for the
+// scope_picker template. Both shells construct one of these for
+// their page envelope so the shared partial renders identically
+// (web-ui.SHARED.2).
+type ScopePickerData struct {
+	Selected string
+	Remotes  []ScopeOption
+}
+
+// Workspace is the resolver's view of one workspace. Local
+// resolvers populate Root + projection fields with file-backed
+// implementations; central resolvers leave Root empty and bind
+// projection fields against the Postgres / GitStore-backed
+// readers.
+//
+// Projection fields grow per lifted handler (web-ui.CENTRAL-LAYOUT.2,
+// Decision A in the 2026-05-16 amendment). The local shell and
+// central shell may each leave a projection nil for surfaces they
+// don't yet serve — handlers should guard against nil to keep the
+// shared handler set forward-compatible during the lift sequence.
 type Workspace struct {
 	// ID is the workspace's canonical id from workspace.yaml.
 	ID string
 	// Root is the absolute filesystem path to the workspace
 	// directory. Empty for projection-backed workspaces (central).
 	Root string
+	// Specs serves the shared /specs and /specs/<id> handlers.
+	// nil when the shell hasn't bound a spec projection (e.g. a
+	// fresh deployment with no workspace.yaml yet).
+	Specs SpecProjection
 }
