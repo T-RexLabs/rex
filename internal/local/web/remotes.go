@@ -2,67 +2,54 @@ package web
 
 import (
 	"path/filepath"
+	"sort"
 
 	"github.com/asabla/rex/internal/local/remotes"
 	syncclient "github.com/asabla/rex/internal/local/sync"
+	internalweb "github.com/asabla/rex/internal/web"
 )
 
-// remoteDetailRow extends remoteRow (used on the home page) with
-// fields the dedicated /remotes page surfaces.
-type remoteDetailRow struct {
-	Name             string
-	URL              string
-	Fingerprint      string
-	AddedAt          string
-	LastSeen         string
-	Drafts           int
-	NeedsRebase      bool
-	LastConflictHead string
-}
-
-// IndicatorView returns the partial-friendly view of r.
-func (r remoteDetailRow) IndicatorView() DraftIndicator {
-	return DraftIndicator{
-		Name: r.Name, Drafts: r.Drafts,
-		NeedsRebase: r.NeedsRebase, LastConflictHead: r.LastConflictHead,
-	}
-}
+// remoteDetailRow aliases the shared row type for legacy refs
+// inside this package.
+type remoteDetailRow = internalweb.RemoteRow
 
 // remotesData backs remotes.tmpl.
 type remotesData struct {
 	pageData
 	Rows []remoteDetailRow
+	// Source labels the underlying registry the rows came from.
+	// Local sets "~/.config/rex/remotes.toml"; central sets
+	// "the workspace's synced .rex/remotes.toml".
+	Source string
+	// AddCmd is the inline hint command the empty-state surfaces.
+	// Local shows `rex remote add ...`; central leaves it empty
+	// because remote management on central is local-only in v1.
+	AddCmd string
 }
 
-// loadRemotesData reads the per-user remotes registry plus the
-// per-remote watermarks. Read-only: the web UI doesn't yet support
-// remote add/remove/test (those stay CLI for v1).
-func loadRemotesData(opts Options) (remotesData, error) {
-	base := newPageDataFromOpts(opts)
-	ws, _ := loadWorkspaceSummary(opts.WorkspaceRoot)
-	base.Workspace = ws
+// localRemotesProjection satisfies internalweb.RemotesProjection
+// by reading the per-machine remotes registry + per-remote sync
+// watermarks the local node has accumulated.
+type localRemotesProjection struct{ root string }
 
-	d := remotesData{pageData: base}
-
+func (l localRemotesProjection) ListRemotes() ([]internalweb.RemoteRow, error) {
 	regPath, err := remotes.DefaultPath()
 	if err != nil {
-		return d, nil
+		return nil, nil
 	}
 	reg, err := remotes.Load(regPath)
 	if err != nil {
-		return d, err
+		return nil, err
 	}
-
-	wms, _ := syncclient.ListWatermarks(opts.WorkspaceRoot)
+	wms, _ := syncclient.ListWatermarks(l.root)
 	wmByName := make(map[string]syncclient.Watermark, len(wms))
 	for _, w := range wms {
 		wmByName[w.Remote] = w
 	}
-
-	logPath := filepath.Join(opts.WorkspaceRoot, ".rex", "events.log")
-
+	logPath := filepath.Join(l.root, ".rex", "events.log")
+	rows := make([]internalweb.RemoteRow, 0, len(reg.List()))
 	for _, r := range reg.List() {
-		row := remoteDetailRow{
+		row := internalweb.RemoteRow{
 			Name:        r.Name,
 			URL:         r.URL,
 			Fingerprint: r.Fingerprint,
@@ -79,7 +66,27 @@ func loadRemotesData(opts Options) (remotesData, error) {
 			row.NeedsRebase = wm.NeedsRebase
 			row.LastConflictHead = wm.LastConflictHead
 		}
-		d.Rows = append(d.Rows, row)
+		rows = append(rows, row)
 	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
+	return rows, nil
+}
+
+// loadRemotesData composes the local /remotes page envelope.
+func loadRemotesData(opts Options) (remotesData, error) {
+	base := newPageDataFromOpts(opts)
+	ws, _ := loadWorkspaceSummary(opts.WorkspaceRoot)
+	base.Workspace = ws
+
+	d := remotesData{
+		pageData: base,
+		Source:   "~/.config/rex/remotes.toml",
+		AddCmd:   "rex remote add <name> <url>",
+	}
+	rows, err := localRemotesProjection{root: opts.WorkspaceRoot}.ListRemotes()
+	if err != nil {
+		return d, err
+	}
+	d.Rows = rows
 	return d, nil
 }

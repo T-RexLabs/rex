@@ -51,12 +51,10 @@ func loadWorkspaceSummary(root string) (*workspaceSummary, error) {
 // internalweb.RunRow directly.
 type runRow = internalweb.RunRow
 
-// remoteRow is one entry in the remotes table on the home page.
-//
-// Carries the sync.DRAFT.2 rebase-needed signal so the shared
-// draft_indicator partial can render the per-remote pill without a
-// second lookup. The same fields drive the indicator on /remotes
-// (remoteDetailRow embeds the equivalent state).
+// remoteRow is one entry in the recent-remotes table on the home
+// page. Stays local-bound — it carries a LastSync timestamp that
+// the dedicated /remotes table doesn't surface — and provides an
+// IndicatorView so it can ride the shared draft_indicator partial.
 type remoteRow struct {
 	Name             string
 	Drafts           int
@@ -65,15 +63,10 @@ type remoteRow struct {
 	LastConflictHead string
 }
 
-// DraftIndicator is the shape the draft_indicator partial expects.
-// remoteRow / remoteDetailRow both expose IndicatorView() to return
-// it, so any callsite can pipe a row directly into the partial.
-type DraftIndicator struct {
-	Name             string
-	Drafts           int
-	NeedsRebase      bool
-	LastConflictHead string
-}
+// DraftIndicator aliases the shared partial-shape type for legacy
+// callers in this package; the canonical declaration lives in
+// internal/web.
+type DraftIndicator = internalweb.DraftIndicator
 
 // IndicatorView returns the partial-friendly view of r.
 func (r remoteRow) IndicatorView() DraftIndicator {

@@ -161,6 +161,7 @@ func (r centralWorkspaceResolver) Resolve(workspaceID string) (internalweb.Works
 	}
 	if r.git != nil {
 		ws.Amendments = newCentralAmendmentsProjection(ctx, r.git)
+		ws.Remotes = newCentralRemotesProjection(ctx, r.git)
 	}
 	// ws.Search stays nil in v1; the central search handler
 	// renders the notice when the projection is unbound.

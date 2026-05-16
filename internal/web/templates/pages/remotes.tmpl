@@ -4,9 +4,8 @@
 <header class="page-header">
   <h1>remotes</h1>
   <div class="meta">
-    <span>registered in <code>~/.config/rex/remotes.toml</code></span>
-    <span>·</span>
-    <span>add via <code>rex remote add &lt;name&gt; &lt;url&gt;</code></span>
+    {{if .Source}}<span>registered in <code>{{.Source}}</code></span>{{end}}
+    {{if .AddCmd}}<span>·</span><span>add via <code>{{.AddCmd}}</code></span>{{end}}
   </div>
 </header>
 
@@ -39,7 +38,11 @@
       </table>
     </div>
   {{else}}
-    <p class="muted small">no remotes registered — <code>rex remote add &lt;name&gt; &lt;url&gt;</code></p>
+    {{if .AddCmd}}
+      <p class="muted small">no remotes registered — <code>{{.AddCmd}}</code></p>
+    {{else}}
+      <p class="muted small">no remotes registered for this workspace</p>
+    {{end}}
   {{end}}
 </section>
 {{end}}

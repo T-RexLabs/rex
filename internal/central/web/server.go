@@ -119,6 +119,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /orgs/{org}/workspaces/{ws}/amendments", s.handleAmendmentsList)
 	s.mux.HandleFunc("GET /orgs/{org}/workspaces/{ws}/amendments/{stem}", s.handleAmendmentDetail)
 	s.mux.HandleFunc("GET /orgs/{org}/workspaces/{ws}/search", s.handleSearch)
+	s.mux.HandleFunc("GET /orgs/{org}/workspaces/{ws}/remotes", s.handleRemotes)
+	s.mux.HandleFunc("GET /orgs/{org}/workspaces/{ws}/settings", s.handleSettings)
 }
 
 // handleChromaCSS serves the chroma stylesheet generated at

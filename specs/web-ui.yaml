@@ -184,8 +184,24 @@ tasks:
 
   - id: central-read-side-remotes-settings
     description: "Lift /remotes and /settings into internal/web/ as read-only on central per the 2026-05-16 amendment. Local shell continues to surface per-machine config (identity, log levels, hook search paths); the shared handler hides those sections when the resolver reports no per-machine context"
-    state: todo
+    state: done
+    note: "internal/web/remotes.go owns RemoteRow + DraftIndicator + RemotesProjection plus IndicatorView(). internalweb.Workspace gained Remotes. remotes package grew ParseBytes (filesystem-agnostic TOML parse) so the central side projects from raw GitStore bytes without writing a temp file. Local shell now hosts localRemotesProjection (reads ~/.config/rex/remotes.toml + per-remote watermarks); the existing local /remotes handler behaviour is preserved. remotes.tmpl grew two data-driven affordances — .Source labels the registry origin and .AddCmd gates the 'add via …' hint — so the same template renders correctly on both shells. The local DraftIndicator type is now an alias of internalweb.DraftIndicator. Central shell hosts centralRemotesProjection (reads `remotes.toml` from the GitStore) and mounts /orgs/{org}/workspaces/{ws}/remotes (shared remotes.tmpl); per Decision C the page is read-only, so AddCmd is empty and the local-only sections (drafts watermark, last seen) render as em-dashes from the zero values. /settings on central uses a new central-only settings_central.tmpl rather than the shared local one — the local settings page bundles identity + hooks + log levels + remotes registry surfaces that have no central equivalent. Central renders just the workspace.yaml fields (id, name, state, created_at) + the raw synced YAML; identity / hooks / log-level sections are simply absent. The settings handler resolves the workspace via the resolver and reads workspace.yaml through a workspaceYAMLSource helper that lives on centralWorkspaceResolver. v1 single-workspace limitation continues — until the multi-workspace GitStore lands, the central reads the one workspace.yaml the store holds regardless of the URL ws-id."
     references: [CENTRAL.1, CENTRAL-LAYOUT.2, SHARED.2]
+    proof:
+      - kind: code
+        path: internal/web/remotes.go
+      - kind: code
+        path: internal/web/templates/pages/settings_central.tmpl
+      - kind: code
+        path: internal/local/remotes/registry.go
+      - kind: code
+        path: internal/central/web/remotes.go
+      - kind: code
+        path: internal/central/web/settings.go
+      - kind: code
+        path: internal/local/web/remotes.go
+      - kind: test
+        path: internal/central/web/remotes_settings_test.go
 
   - id: central-workspaces-index
     description: "Implement /orgs/<org-id>/workspaces — the per-org workspace index page that lists every workspace the central knows about for the org, with a click-through to the workspace overview. Uses the existing workspaces table + tenant routing"

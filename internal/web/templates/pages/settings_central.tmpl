@@ -1,0 +1,58 @@
+{{define "title"}}rex-central — workspace settings{{end}}
+
+{{define "content"}}
+<header class="page-header">
+  <h1>workspace settings</h1>
+  <div class="meta">
+    <span>read-only — central renders the synced workspace.yaml.
+      Per-machine config (identity, log levels, hooks) is local-only.</span>
+  </div>
+</header>
+
+<section class="section">
+  <div class="section-head">
+    <h2>workspace</h2>
+    <span class="section-meta">source: <code>.rex/workspace.yaml</code> (synced via /sync/git)</span>
+  </div>
+  {{if .Workspace}}
+    <div class="card">
+      <dl class="kv">
+        <dt>id</dt>
+        <dd><code>{{.Workspace.ID}}</code></dd>
+        {{if .WorkspaceName}}
+          <dt>name</dt>
+          <dd>{{.WorkspaceName}}</dd>
+        {{end}}
+        {{if .WorkspaceState}}
+          <dt>state</dt>
+          <dd><span class="pill pill-{{.WorkspaceState}}"><i class="dot"></i>{{.WorkspaceState}}</span></dd>
+        {{end}}
+        {{if .WorkspaceCreatedAt}}
+          <dt>created</dt>
+          <dd><time>{{.WorkspaceCreatedAt}}</time></dd>
+        {{end}}
+      </dl>
+    </div>
+  {{else}}
+    <p class="muted small">no workspace.yaml synced for this workspace yet</p>
+  {{end}}
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <h2>raw workspace.yaml</h2>
+    <span class="section-meta">latest synced revision</span>
+  </div>
+  {{if .WorkspaceYAMLPretty}}
+    <div class="card">
+      <pre class="source"><code>{{.WorkspaceYAMLPretty}}</code></pre>
+    </div>
+  {{else if .WorkspaceYAMLRaw}}
+    <div class="card">
+      <pre class="source"><code>{{.WorkspaceYAMLRaw}}</code></pre>
+    </div>
+  {{else}}
+    <p class="muted small">no workspace.yaml synced</p>
+  {{end}}
+</section>
+{{end}}

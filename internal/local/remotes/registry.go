@@ -62,9 +62,24 @@ func Load(path string) (*Registry, error) {
 		}
 		return nil, fmt.Errorf("remotes: read %s: %w", path, err)
 	}
+	reg, err := ParseBytes(body)
+	if err != nil {
+		return nil, fmt.Errorf("remotes: parse %s: %w", path, err)
+	}
+	return reg, nil
+}
+
+// ParseBytes is the filesystem-agnostic parse path: callers with
+// raw bytes (e.g. the central web shell projecting from the
+// GitStore) feed them straight in without writing to a temp file.
+// Returns an empty registry + nil when body is empty.
+func ParseBytes(body []byte) (*Registry, error) {
+	if len(body) == 0 {
+		return &Registry{Remotes: map[string]Remote{}}, nil
+	}
 	var raw map[string]Remote
 	if err := toml.Unmarshal(body, &raw); err != nil {
-		return nil, fmt.Errorf("remotes: parse %s: %w", path, err)
+		return nil, err
 	}
 	out := &Registry{Remotes: make(map[string]Remote, len(raw))}
 	for name, r := range raw {

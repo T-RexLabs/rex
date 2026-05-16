@@ -76,4 +76,9 @@ type Workspace struct {
 	// instead of running queries (the central shell's v1 path
 	// until Postgres FTS lands per central-node.DB.4).
 	Search SearchProjection
+	// Remotes serves the shared /remotes handler. Local
+	// resolvers bind the per-machine registry; central resolvers
+	// bind the workspace's synced `.rex/remotes.toml` from the
+	// GitStore (read-only on central per amendment Decision C).
+	Remotes RemotesProjection
 }
