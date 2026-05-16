@@ -138,8 +138,26 @@ tasks:
 
   - id: central-read-side-runs-audit
     description: "Lift /runs (list), /runs/<run-id> (terminal-state only — no live SSE; that's central-live-run-watching), and /audit handlers into internal/web/ behind a RunsProjection + AuditProjection. Central implementations read from the central event store (Postgres). The live-tail UI degrades to a banner on /runs/<run-id> for non-terminal runs"
-    state: todo
+    state: done
+    note: "internal/web/runs.go owns the shared types (RunRow, RunDetail, RunEventBasic) + interfaces (RunsListProjection, RunDetailProjection) + pure fold helpers (FoldRecordsToRunRows, FoldRecordsToRunDetail, MatchesSpecFilter, isTerminalStatus). internal/web/audit.go owns AuditRow + AuditProjection + FilterRecordsToAuditRows + AuditDefaultLimit. internalweb.Workspace gained Runs / RunDetail / Audit fields. Local shell now goes through the shared fold via readEventsLog → FoldRecordsToRunRows / FilterRecordsToAuditRows; the rich frame-view + permission + SSE flow stays local-only on the existing /runs/<id> handler. runs_list.tmpl + audit.tmpl gained tiny shell-aware branches (CanStartRuns gate; Source label) so the same partials render correctly on central without the local-only affordances. Central shell mounts /orgs/{org}/workspaces/{ws}/runs (shared runs_list.tmpl), /orgs/{org}/workspaces/{ws}/runs/{id} (new central-only runs_central_detail.tmpl that renders the terminal-state header + raw event timeline; non-terminal runs surface a 'live tail not available on central in v1' banner per Decision B), and /orgs/{org}/workspaces/{ws}/audit (shared audit.tmpl). NewGitStoreResolver grew to take both a GitEntityReader and an EventReader; cmd/rex-central binds them from server.GitStore() + server.Store(). The renderer's FuncMap gained `pretty` for the central event timeline. v1 single-workspace limitation continues per central-resolver-bootstrap — the resolver ignores workspaceID until the multi-workspace store refactor lands."
     references: [CENTRAL.1, CENTRAL-LAYOUT.2, SHARED.2]
+    proof:
+      - kind: code
+        path: internal/web/runs.go
+      - kind: code
+        path: internal/web/audit.go
+      - kind: code
+        path: internal/web/templates/pages/runs_central_detail.tmpl
+      - kind: code
+        path: internal/central/web/runs.go
+      - kind: code
+        path: internal/central/web/audit.go
+      - kind: code
+        path: internal/local/web/audit.go
+      - kind: code
+        path: cmd/rex-central/main.go
+      - kind: test
+        path: internal/central/web/runs_audit_test.go
 
   - id: central-read-side-search-amendments
     description: "Lift /search and /amendments + /amendments/<stem> into internal/web/ behind SearchProjection and AmendmentsProjection. Central search hits the Postgres FTS index (central-node.DB.4); amendments project from the GitStore"

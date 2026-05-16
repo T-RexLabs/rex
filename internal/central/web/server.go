@@ -47,6 +47,18 @@ type Options struct {
 	Resolver internalweb.WorkspaceResolver
 }
 
+// NewGitStoreResolver builds an internalweb.WorkspaceResolver
+// backed by the central GitStore (specs) and Event store (runs +
+// audit). v1 single-workspace limitation per
+// centralWorkspaceResolver — the resolver returns the same
+// projections regardless of workspaceID until the multi-workspace
+// store refactor lands. Either argument may be nil; the
+// corresponding projection on the returned Workspace will then
+// be nil and handlers respond 503 for that surface.
+func NewGitStoreResolver(git GitEntityReader, events EventReader) internalweb.WorkspaceResolver {
+	return centralWorkspaceResolver{git: git, events: events}
+}
+
 // Server is the central node's web UI handler. It owns a small
 // http.ServeMux and a shared *internalweb.Renderer; routes register
 // on the mux. Construction is the wiring test — if internal/web is
@@ -101,6 +113,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /login", s.handleLogin)
 	s.mux.HandleFunc("GET /orgs/{org}/workspaces/{ws}/specs", s.handleSpecsList)
 	s.mux.HandleFunc("GET /orgs/{org}/workspaces/{ws}/specs/{id}", s.handleSpecDetail)
+	s.mux.HandleFunc("GET /orgs/{org}/workspaces/{ws}/runs", s.handleRunsList)
+	s.mux.HandleFunc("GET /orgs/{org}/workspaces/{ws}/runs/{id}", s.handleRunDetail)
+	s.mux.HandleFunc("GET /orgs/{org}/workspaces/{ws}/audit", s.handleAudit)
 }
 
 // handleChromaCSS serves the chroma stylesheet generated at

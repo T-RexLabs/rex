@@ -1,0 +1,75 @@
+{{define "title"}}rex — run {{.Detail.Name}}{{end}}
+
+{{define "content"}}
+<header class="page-header">
+  <h1>run · <code>{{.Detail.RunID}}</code></h1>
+  <div class="meta">
+    <span>{{.Detail.Kind}}</span>
+    <span>·</span>
+    <span>status: <code>{{.Detail.Status}}</code></span>
+    {{if .Detail.StartedAt}}
+      <span>·</span>
+      <span>started {{.Detail.StartedAt}}</span>
+    {{end}}
+    {{if .Detail.EndedAt}}
+      <span>·</span>
+      <span>ended {{.Detail.EndedAt}}</span>
+    {{end}}
+    {{if .Detail.Duration}}
+      <span>·</span>
+      <span>duration {{.Detail.Duration}}</span>
+    {{end}}
+  </div>
+  {{if or .Detail.SpecRefs .Detail.FromTask}}
+    <div class="meta">
+      {{if .Detail.FromTask}}
+        <span>from task: <code>{{.Detail.FromTask}}</code></span>
+      {{end}}
+      {{if .Detail.SpecRefs}}
+        {{if .Detail.FromTask}}<span>·</span>{{end}}
+        <span>spec refs:
+          {{range $i, $ref := .Detail.SpecRefs}}{{if $i}}, {{end}}<code>{{$ref}}</code>{{end}}
+        </span>
+      {{end}}
+    </div>
+  {{end}}
+</header>
+
+{{if not .Detail.Terminal}}
+  <section class="section">
+    <div class="callout">
+      <p><strong>live tail not available on central in v1.</strong>
+         This run has not yet reported a terminal status. The
+         live-stream surface (SSE + permission prompts) lands with
+         <code>central-live-run-watching</code>; in the meantime,
+         reload the page to see new events as they sync from the
+         local node.</p>
+    </div>
+  </section>
+{{end}}
+
+<section class="section">
+  <h2>events</h2>
+  {{if .Detail.Events}}
+    <div class="card">
+      <ol class="event-timeline">
+        {{range .Detail.Events}}
+          <li class="event">
+            <div class="event-head">
+              <code class="event-type">{{.Type}}</code>
+              <span class="muted small">{{.Timestamp}}</span>
+              <span class="muted small">·</span>
+              <code class="muted small">{{.ID}}</code>
+            </div>
+            {{with $pretty := pretty .Payload}}
+              <pre class="event-payload"><code>{{$pretty}}</code></pre>
+            {{end}}
+          </li>
+        {{end}}
+      </ol>
+    </div>
+  {{else}}
+    <p class="muted small">no events for this run yet</p>
+  {{end}}
+</section>
+{{end}}

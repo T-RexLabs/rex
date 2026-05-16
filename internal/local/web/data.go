@@ -7,15 +7,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/asabla/rex/internal/core/event"
-	"github.com/asabla/rex/internal/core/runner"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
 	syncclient "github.com/asabla/rex/internal/local/sync"
+	internalweb "github.com/asabla/rex/internal/web"
 )
 
 // workspaceSummary is the minimal view of workspace.yaml the base
@@ -47,22 +45,11 @@ func loadWorkspaceSummary(root string) (*workspaceSummary, error) {
 	return &ws, nil
 }
 
-// runRow is one entry in the recent-runs table on the home page.
-type runRow struct {
-	RunID      string
-	Name       string
-	Kind       string
-	Status     runner.RunStatus
-	StartedAt  string
-	EndedAt    string
-	Duration   string
-	NodeEvents int
-	// SpecRefs and FromTask are recorded on the run.started event
-	// when the run was launched from a spec recipe (execution.RUN.1.1).
-	// Surfaced so the runs list can filter and badge.
-	SpecRefs []string
-	FromTask string
-}
+// runRow is the local shell's alias for the shared RunRow type
+// (web-ui.SHARED.1 run_row partial). Lifting it kept the local
+// handler code on its existing identifier; new code should prefer
+// internalweb.RunRow directly.
+type runRow = internalweb.RunRow
 
 // remoteRow is one entry in the remotes table on the home page.
 //
@@ -166,11 +153,25 @@ func countEvents(root string) int {
 	return n
 }
 
-// loadRunRows folds events.log into per-run summaries (run_id,
-// status, started_at, node_event_count) using the shared
-// runner.RunSummary helper.
+// loadRunRows reads events.log into a slice and delegates the
+// fold to internalweb.FoldRecordsToRunRows so the local and
+// central shells share the projection logic. A missing log
+// returns an empty slice rather than an error.
 func loadRunRows(root string) ([]runRow, error) {
-	r, err := eventlog.OpenReader(filepath.Join(root, ".rex", "events.log"))
+	records, err := readEventsLog(filepath.Join(root, ".rex", "events.log"))
+	if err != nil {
+		return nil, err
+	}
+	return internalweb.FoldRecordsToRunRows(records)
+}
+
+// readEventsLog slurps the local events.log into a slice of
+// records. A missing log returns (nil, nil); other I/O failures
+// bubble out. Used by every local projection that needs to feed
+// the shared fold helpers in internalweb — keeping the slurp in
+// one place avoids subtle io-layer drift across handlers.
+func readEventsLog(path string) ([]eventlog.Record, error) {
+	r, err := eventlog.OpenReader(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
@@ -178,12 +179,7 @@ func loadRunRows(root string) ([]runRow, error) {
 		return nil, err
 	}
 	defer r.Close()
-
-	reg := event.NewRegistry()
-	runner.RegisterEvents(reg)
-
-	by := map[string]*runner.RunSummary{}
-	kinds := map[string]string{} // run_id → "shell" | "harness"
+	var out []eventlog.Record
 	for {
 		rec, err := r.Next()
 		if errors.Is(err, io.EOF) {
@@ -192,58 +188,8 @@ func loadRunRows(root string) ([]runRow, error) {
 		if err != nil {
 			return nil, err
 		}
-		decoded, err := reg.Decode(event.Envelope{
-			Type: rec.Type, Version: rec.Version, Payload: rec.Payload,
-		})
-		if errors.Is(err, event.ErrSkipUnknownType) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		// Any harness.frame event for a run is sufficient evidence
-		// that the run is harness-driven; shell runs never produce
-		// frames. We fold this lookup into the same scan so we
-		// don't read events.log twice.
-		if hf, ok := decoded.(runner.HarnessFrameEvent); ok {
-			kinds[hf.RunID] = "harness"
-			continue
-		}
-		var probe runner.RunSummary
-		if !probe.FoldEvent(decoded) {
-			continue
-		}
-		s, ok := by[probe.RunID]
-		if !ok {
-			s = &runner.RunSummary{}
-			by[probe.RunID] = s
-		}
-		s.FoldEvent(decoded)
+		out = append(out, rec)
 	}
-
-	out := make([]runRow, 0, len(by))
-	for _, s := range by {
-		kind := kinds[s.RunID]
-		if kind == "" {
-			kind = "shell"
-		}
-		row := runRow{
-			RunID:      s.RunID,
-			Name:       runner.FriendlyName(s.RunID),
-			Kind:       kind,
-			Status:     s.EffectiveStatus(),
-			StartedAt:  s.StartedAt.UTC().Format(time.RFC3339),
-			NodeEvents: s.NodeEvents,
-			SpecRefs:   append([]string(nil), s.SpecRefs...),
-			FromTask:   s.FromTask,
-		}
-		if !s.EndedAt.IsZero() {
-			row.EndedAt = s.EndedAt.UTC().Format(time.RFC3339)
-			row.Duration = s.EndedAt.Sub(s.StartedAt).Truncate(time.Millisecond).String()
-		}
-		out = append(out, row)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt > out[j].StartedAt })
 	return out, nil
 }
 

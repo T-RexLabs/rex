@@ -119,8 +119,16 @@ func newRunEventRow(rec eventlog.Record, hl *internalweb.Highlighter) runEventRo
 // runsListData backs runs_list.tmpl.
 type runsListData struct {
 	pageData
-	Runs       []runRow
+	Runs []runRow
+	// SpecFilter is the ?spec=<token> query echo for the
+	// "filtered by" banner.
 	SpecFilter string
+	// CanStartRuns gates the "start a run" toolbar action. True
+	// on the local shell (which can launch runs via the
+	// in-process executor); the central UI omits it because
+	// central-side execution is deferred to v1.5
+	// (overview.SCOPE.1).
+	CanStartRuns bool
 }
 
 // loadRunsListFiltered narrows the runs list to those whose
@@ -150,7 +158,12 @@ func loadRunsListFiltered(opts Options, specFilter string) (runsListData, error)
 		}
 		runs = filtered
 	}
-	return runsListData{pageData: base, Runs: runs, SpecFilter: specFilter}, nil
+	return runsListData{
+		pageData:     base,
+		Runs:         runs,
+		SpecFilter:   specFilter,
+		CanStartRuns: true,
+	}, nil
 }
 
 // matchesSpecFilter returns true when r is launched against the

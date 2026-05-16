@@ -57,4 +57,15 @@ type Workspace struct {
 	// nil when the shell hasn't bound a spec projection (e.g. a
 	// fresh deployment with no workspace.yaml yet).
 	Specs SpecProjection
+	// Runs serves the shared /runs list handler. nil leaves the
+	// page empty (handlers guard).
+	Runs RunsListProjection
+	// RunDetail serves the shared /runs/<id> terminal-state
+	// handler. Local shells leave this nil because they have a
+	// rich local-only detail flow (frame view + permission UI +
+	// SSE); central shells bind it for terminal-state rendering.
+	RunDetail RunDetailProjection
+	// Audit serves the shared /audit handler. nil leaves the
+	// page empty.
+	Audit AuditProjection
 }

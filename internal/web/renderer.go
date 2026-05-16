@@ -112,5 +112,10 @@ func funcMap() template.FuncMap {
 			}
 			return []string{s[:idx]}
 		},
+		// pretty indents a JSON payload for display. Used by the
+		// central run-detail template's raw event timeline.
+		// Invalid JSON falls through to the original bytes as a
+		// best-effort so the page still renders.
+		"pretty": func(b []byte) string { return PrettyJSON(b) },
 	}
 }

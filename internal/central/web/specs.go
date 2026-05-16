@@ -135,32 +135,31 @@ func isSpecPath(path string) bool {
 
 // centralWorkspaceResolver is the central shell's
 // WorkspaceResolver: it ignores the workspaceID input in v1
-// (single-workspace GitStore limitation) and always returns the
-// one workspace backed by the bound GitStore. When the
-// multi-workspace GitStore refactor lands, this resolver grows
+// (single-workspace store limitation) and always returns the
+// one workspace backed by the bound GitStore + EventReader. When
+// the multi-workspace refactor lands, this resolver grows
 // per-workspace dispatch without changing the handler call sites.
 type centralWorkspaceResolver struct {
-	store GitEntityReader
-}
-
-// NewGitStoreResolver builds an internalweb.WorkspaceResolver
-// backed by a GitEntityReader (typically the central node's
-// GitStore). v1 single-workspace limitation per
-// centralWorkspaceResolver's doc. Exported so cmd/rex-central can
-// wire the resolver without depending on the private constructor.
-func NewGitStoreResolver(store GitEntityReader) internalweb.WorkspaceResolver {
-	return newCentralWorkspaceResolver(store)
+	git    GitEntityReader
+	events EventReader
 }
 
 func newCentralWorkspaceResolver(store GitEntityReader) centralWorkspaceResolver {
-	return centralWorkspaceResolver{store: store}
+	return centralWorkspaceResolver{git: store}
 }
 
 func (r centralWorkspaceResolver) Resolve(workspaceID string) (internalweb.Workspace, error) {
-	return internalweb.Workspace{
-		ID:    workspaceID,
-		Specs: newCentralSpecProjection(context.Background(), r.store),
-	}, nil
+	ws := internalweb.Workspace{ID: workspaceID}
+	ctx := context.Background()
+	if r.git != nil {
+		ws.Specs = newCentralSpecProjection(ctx, r.git)
+	}
+	if r.events != nil {
+		ws.Runs = newCentralRunsListProjection(ctx, r.events)
+		ws.RunDetail = newCentralRunDetailProjection(ctx, r.events)
+		ws.Audit = newCentralAuditProjection(ctx, r.events)
+	}
+	return ws, nil
 }
 
 // centralPageData mirrors the field shape the shared templates

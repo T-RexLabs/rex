@@ -4,7 +4,7 @@
 <header class="page-header">
   <h1>audit log</h1>
   <div class="meta">
-    <span>last {{.Limit}} audit-class entries from <code>.rex/events.log</code></span>
+    <span>last {{.Limit}} audit-class entries{{if .Source}} from <code>{{.Source}}</code>{{end}}</span>
   </div>
 </header>
 

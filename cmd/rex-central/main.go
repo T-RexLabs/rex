@@ -193,12 +193,13 @@ lost on restart.
 					Auth:     s, // *server.Server implements the Auth interface via IssueLoginChallenge
 					// The central GitStore satisfies the
 					// centralweb.GitEntityReader subset (Get + List);
-					// the workspace resolver maps a ws-id to the
-					// store-backed projection. v1 limitation: the
-					// GitStore is single-workspace, so the resolver
-					// returns the same projection regardless of ws-id
-					// until the multi-workspace refactor lands.
-					Resolver: centralweb.NewGitStoreResolver(s.GitStore()),
+					// the event Store satisfies centralweb.EventReader
+					// (Since). The workspace resolver maps a ws-id to
+					// projections backed by both. v1 limitation: both
+					// stores are single-workspace today, so the
+					// resolver returns the same projections regardless
+					// of ws-id until the multi-workspace refactor lands.
+					Resolver: centralweb.NewGitStoreResolver(s.GitStore(), s.Store()),
 				})
 				if err != nil {
 					return fmt.Errorf("build web shell: %w", err)

@@ -15,9 +15,11 @@
 </header>
 
 <section class="section">
-  <div class="toolbar">
-    <a class="btn btn-primary" href="/runs/new">start a run</a>
-  </div>
+  {{if .CanStartRuns}}
+    <div class="toolbar">
+      <a class="btn btn-primary" href="/runs/new">start a run</a>
+    </div>
+  {{end}}
 
   {{if .Runs}}
     <div class="card">
@@ -41,7 +43,11 @@
       </table>
     </div>
   {{else}}
-    <p class="muted small">no runs yet — <a href="/runs/new">start one</a></p>
+    {{if .CanStartRuns}}
+      <p class="muted small">no runs yet — <a href="/runs/new">start one</a></p>
+    {{else}}
+      <p class="muted small">no runs yet</p>
+    {{end}}
   {{end}}
 </section>
 {{end}}

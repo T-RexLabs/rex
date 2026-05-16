@@ -1,85 +1,47 @@
 package web
 
 import (
-	"errors"
-	"io"
-	"io/fs"
 	"path/filepath"
-	"time"
 
-	"github.com/asabla/rex/internal/core/audit"
-	"github.com/asabla/rex/internal/core/storage/eventlog"
+	internalweb "github.com/asabla/rex/internal/web"
 )
 
-// auditRow is one row in the /audit table. Mirrors what the CLI's
-// log tail prints.
-type auditRow struct {
-	ID          string
-	Timestamp   string
-	Type        string
-	Actor       string
-	WorkspaceID string
-}
+// auditRow is the local shell's alias for the shared AuditRow.
+type auditRow = internalweb.AuditRow
 
 // auditData backs audit.tmpl.
 type auditData struct {
 	pageData
-	Rows  []auditRow
+	Rows []auditRow
+	// Limit is the max row count the page asked for; surfaced
+	// in the meta line.
 	Limit int
+	// Source labels the underlying event source in the meta
+	// line. Local sets it to ".rex/events.log"; central sets it
+	// to "the central event store". Empty hides the source
+	// hint entirely (tests that exercise the projection
+	// directly don't bother to set it).
+	Source string
 }
 
-const auditDefaultLimit = 50
+const auditDefaultLimit = internalweb.AuditDefaultLimit
 
-// loadAuditRows scans events.log and returns the last `limit`
-// audit-class events. Mirrors readAndFilter in cli/log.go but stays
-// inside this package — the two surfaces are allowed to evolve at
-// their own pace.
+// loadAuditRows delegates the audit-event filter to the shared
+// helper in internalweb so local and central produce identical
+// row shapes (web-ui.SHARED.2).
 func loadAuditRows(opts Options, limit int) (auditData, error) {
 	if limit <= 0 {
 		limit = auditDefaultLimit
 	}
-
 	base := newPageDataFromOpts(opts)
 	ws, _ := loadWorkspaceSummary(opts.WorkspaceRoot)
 	base.Workspace = ws
 
-	d := auditData{pageData: base, Limit: limit}
-
-	logPath := filepath.Join(opts.WorkspaceRoot, ".rex", "events.log")
-	r, err := eventlog.OpenReader(logPath)
+	d := auditData{pageData: base, Limit: limit, Source: ".rex/events.log"}
+	records, err := readEventsLog(filepath.Join(opts.WorkspaceRoot, ".rex", "events.log"))
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return d, nil
-		}
 		return d, err
 	}
-	defer r.Close()
-
-	ring := make([]auditRow, 0, limit)
-	for {
-		rec, err := r.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return d, err
-		}
-		if !audit.IsAuditEvent(rec.Type) {
-			continue
-		}
-		row := auditRow{
-			ID:          rec.ID,
-			Timestamp:   time.Unix(0, rec.Timestamp.Wall).UTC().Format(time.RFC3339),
-			Type:        rec.Type,
-			Actor:       rec.Actor,
-			WorkspaceID: rec.WorkspaceID,
-		}
-		if len(ring) < limit {
-			ring = append(ring, row)
-		} else {
-			ring = append(ring[1:], row)
-		}
-	}
-	d.Rows = ring
+	d.Rows = internalweb.FilterRecordsToAuditRows(records, limit)
 	return d, nil
 }
