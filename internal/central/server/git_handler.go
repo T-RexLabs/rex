@@ -52,6 +52,10 @@ func (s *Server) handleGitPush(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, proto.ErrCodeBadRequest, "missing entity")
 		return
 	}
+	if req.WorkspaceID == "" {
+		writeError(w, http.StatusBadRequest, proto.ErrCodeBadRequest, "missing workspace_id")
+		return
+	}
 
 	// CAT.5 enforcement: reject any path that is not git_merged.
 	// The synccat registry is the single source of truth for which
@@ -74,7 +78,7 @@ func (s *Server) handleGitPush(w http.ResponseWriter, r *http.Request) {
 	// Signature verification (sync.SEC.1). Skipped only when the
 	// keystore is empty (dev mode).
 	if !s.keystore.Empty() {
-		canonical, err := proto.GitSigningBytes(req.Entity, req.BaseRevision, req.Content)
+		canonical, err := proto.GitSigningBytes(req.WorkspaceID, req.Entity, req.BaseRevision, req.Content)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, proto.ErrCodeBadRequest, "canonical signing input: "+err.Error())
 			return
@@ -103,11 +107,12 @@ func (s *Server) handleGitPush(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt: time.Now().UTC(),
 	}
 
-	if err := s.gitStore.Put(r.Context(), rec, req.BaseRevision); err != nil {
+	if err := s.gitStore.Put(r.Context(), req.WorkspaceID, rec, req.BaseRevision); err != nil {
 		var conflict *GitRevisionConflictError
 		if errors.As(err, &conflict) {
 			s.log.Info("git push conflict",
 				"op", "git_push",
+				"workspace", req.WorkspaceID,
 				"entity", req.Entity,
 				"client_base", req.BaseRevision,
 				"server_revision", conflict.ServerCurrent.Revision,
@@ -128,6 +133,7 @@ func (s *Server) handleGitPush(w http.ResponseWriter, r *http.Request) {
 
 	s.log.Info("git push accepted",
 		"op", "git_push",
+		"workspace", req.WorkspaceID,
 		"entity", req.Entity,
 		"revision", rec.Revision,
 		"base", req.BaseRevision,
@@ -152,6 +158,11 @@ func (s *Server) handleGitPull(w http.ResponseWriter, r *http.Request) {
 		puller = fp
 	}
 
+	workspaceID := r.PathValue("ws")
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, proto.ErrCodeBadRequest, "missing workspace_id in path")
+		return
+	}
 	path := r.PathValue("entity")
 	if path == "" {
 		writeError(w, http.StatusBadRequest, proto.ErrCodeBadRequest, "missing entity path")
@@ -179,7 +190,7 @@ func (s *Server) handleGitPull(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rec, err := s.gitStore.Get(r.Context(), path)
+	rec, err := s.gitStore.Get(r.Context(), workspaceID, path)
 	if err != nil {
 		if errors.Is(err, ErrUnknownGitEntity) {
 			writeError(w, http.StatusNotFound, proto.ErrCodeGitUnknownEntity, err.Error())

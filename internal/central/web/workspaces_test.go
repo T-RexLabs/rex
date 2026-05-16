@@ -15,7 +15,7 @@ import (
 func TestCentralWorkspacesIndexRendersGitStoreWorkspace(t *testing.T) {
 	t.Parallel()
 	srv := newAmendmentsServer(t, map[string]string{
-		"workspace.yaml": workspaceYAML("ws-acme", "Acme Workspace", "active"),
+		"workspace.yaml": workspaceYAML("ws-1", "Acme Workspace", "active"),
 	})
 	resp, err := http.Get(srv.URL + "/orgs/acme/workspaces")
 	if err != nil {
@@ -28,13 +28,13 @@ func TestCentralWorkspacesIndexRendersGitStoreWorkspace(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	html := string(body)
-	if !strings.Contains(html, "ws-acme") {
+	if !strings.Contains(html, "ws-1") {
 		t.Errorf("workspace id missing: %s", html)
 	}
 	if !strings.Contains(html, "Acme Workspace") {
 		t.Errorf("workspace name missing: %s", html)
 	}
-	if !strings.Contains(html, `href="/orgs/acme/workspaces/ws-acme/specs"`) {
+	if !strings.Contains(html, `href="/orgs/acme/workspaces/ws-1/specs"`) {
 		t.Errorf("click-through link missing or wrong: %s", html)
 	}
 	// Org id appears in the header meta.

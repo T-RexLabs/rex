@@ -89,7 +89,10 @@ type centralWorkspaceYAMLSource struct {
 }
 
 func (c centralWorkspaceYAMLSource) workspaceYAML(ctx context.Context) (string, error) {
-	rec, err := c.store.Get(ctx, "workspace.yaml")
+	if c.wsID == "" {
+		return "", nil
+	}
+	rec, err := c.store.Get(ctx, c.wsID, "workspace.yaml")
 	if err != nil {
 		return "", err
 	}

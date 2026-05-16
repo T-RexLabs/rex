@@ -22,22 +22,23 @@ import (
 // no equivalent watermark store. Templates render the resulting
 // rows with em-dashes for the missing columns.
 type centralRemotesProjection struct {
-	store GitEntityReader
-	ctx   context.Context
+	store       GitEntityReader
+	workspaceID string
+	ctx         context.Context
 }
 
-func newCentralRemotesProjection(ctx context.Context, store GitEntityReader) centralRemotesProjection {
+func newCentralRemotesProjection(ctx context.Context, store GitEntityReader, workspaceID string) centralRemotesProjection {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return centralRemotesProjection{store: store, ctx: ctx}
+	return centralRemotesProjection{store: store, workspaceID: workspaceID, ctx: ctx}
 }
 
 func (p centralRemotesProjection) ListRemotes() ([]internalweb.RemoteRow, error) {
-	if p.store == nil {
+	if p.store == nil || p.workspaceID == "" {
 		return nil, nil
 	}
-	rec, err := p.store.Get(p.ctx, "remotes.toml")
+	rec, err := p.store.Get(p.ctx, p.workspaceID, "remotes.toml")
 	if err != nil {
 		// Workspace without a synced remotes.toml — render an
 		// empty list rather than 500.

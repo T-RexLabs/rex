@@ -36,15 +36,19 @@ func IsGitConflict(err error) bool {
 	return errors.As(err, &ge)
 }
 
-// GitPull fetches the current revision of entity from the central
-// node. Returns proto.GitEntity{} + a wrapped 404 error when the
-// entity has never been pushed (callers branch on errors.Is against
+// GitPull fetches the current revision of (workspaceID, entity)
+// from the central node. Returns proto.GitEntity{} + a wrapped
+// 404 error when the entity has never been pushed for the
+// workspace (callers branch on errors.Is against
 // ErrUnknownGitEntity).
-func (c *Client) GitPull(ctx context.Context, entity string) (proto.GitEntity, error) {
+func (c *Client) GitPull(ctx context.Context, workspaceID, entity string) (proto.GitEntity, error) {
+	if workspaceID == "" {
+		return proto.GitEntity{}, errors.New("sync: GitPull requires a non-empty workspace id")
+	}
 	if entity == "" {
 		return proto.GitEntity{}, errors.New("sync: GitPull requires a non-empty entity path")
 	}
-	url := c.baseURL + "/sync/git/" + escapeEntity(entity)
+	url := c.baseURL + "/sync/git/ws/" + url2PathEscape(workspaceID) + "/" + escapeEntity(entity)
 	resp, err := c.doAuthorized(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return proto.GitEntity{}, fmt.Errorf("sync: GET /sync/git: %w", err)
@@ -73,14 +77,20 @@ func (c *Client) GitPull(ctx context.Context, entity string) (proto.GitEntity, e
 // type-symmetry across the API.
 var ErrUnknownGitEntity = errors.New("sync: git entity not on remote")
 
-// GitPush sends a (entity, baseRevision, content, signature) tuple to
-// the central node. Returns the server-assigned revision on success,
-// *GitConflictError on 409, or a generic error otherwise.
+// GitPush sends a (workspaceID, entity, baseRevision, content,
+// signature) tuple to the central node. Returns the
+// server-assigned revision on success, *GitConflictError on 409,
+// or a generic error otherwise.
 //
 // The caller signs the canonical input via proto.GitSigningBytes
-// before passing the hex-encoded signature here.
-func (c *Client) GitPush(ctx context.Context, entity, baseRevision, content, signatureHex string) (proto.GitPushResponse, error) {
+// (which now binds workspaceID into the signature) before passing
+// the hex-encoded signature here.
+func (c *Client) GitPush(ctx context.Context, workspaceID, entity, baseRevision, content, signatureHex string) (proto.GitPushResponse, error) {
+	if workspaceID == "" {
+		return proto.GitPushResponse{}, errors.New("sync: GitPush requires a non-empty workspace id")
+	}
 	body, err := json.Marshal(proto.GitPushRequest{
+		WorkspaceID:  workspaceID,
 		Entity:       entity,
 		BaseRevision: baseRevision,
 		Content:      content,
@@ -127,6 +137,10 @@ func (c *Client) GitPush(ctx context.Context, entity, baseRevision, content, sig
 // _ verifies hex.EncodeToString is referenced — used by callers that
 // pass already-hex-encoded signatures, kept here for symmetry.
 var _ = hex.EncodeToString
+
+// url2PathEscape escapes a single path segment (no slashes). The
+// alias keeps the import-renaming optional at the call site.
+var url2PathEscape = url.PathEscape
 
 // escapeEntity URL-encodes each path segment but preserves the slashes
 // so /sync/git/specs/sync.yaml routes correctly through the Go 1.22

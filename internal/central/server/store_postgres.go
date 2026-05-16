@@ -319,6 +319,97 @@ func (s *PostgresStore) Since(ctx context.Context, cursor string) ([]eventlog.Re
 	return out, nil
 }
 
+// SinceForWorkspace returns events for the request's org that
+// belong to workspaceID, in insertion order. The cursor semantics
+// match Since: empty cursor returns the entire workspace history;
+// a non-empty cursor returns events strictly after it (and the
+// cursor must exist in the same org or ErrUnknownCursor fires).
+//
+// This is the WHERE-pushdown analog of doing Since(ctx, cursor)
+// then filtering rec.WorkspaceID in Go — the web shell's
+// runs/audit projections prefer this when available so multi-
+// workspace orgs don't ship every workspace's events over the wire
+// just to render one workspace's view.
+func (s *PostgresStore) SinceForWorkspace(ctx context.Context, workspaceID, cursor string) ([]eventlog.Record, error) {
+	if workspaceID == "" {
+		return nil, errors.New("server: SinceForWorkspace requires a non-empty workspace_id")
+	}
+	var out []eventlog.Record
+	err := s.withOrgScope(ctx, func(tx pgx.Tx) error {
+		orgID := OrgIDFromContext(ctx)
+		var (
+			rows pgx.Rows
+			qerr error
+		)
+		if cursor == "" {
+			rows, qerr = tx.Query(ctx, `
+				SELECT id, hlc_wall, hlc_logical,
+				       type, version, actor, workspace_id, payload, signature
+				FROM events
+				WHERE org_id = $1 AND workspace_id = $2
+				ORDER BY insertion_seq
+			`, orgID, workspaceID)
+		} else {
+			rows, qerr = tx.Query(ctx, `
+				WITH cur AS (SELECT insertion_seq FROM events WHERE id = $1 AND org_id = $2)
+				SELECT id, hlc_wall, hlc_logical,
+				       type, version, actor, workspace_id, payload, signature
+				FROM events
+				WHERE org_id = $2
+				  AND workspace_id = $3
+				  AND EXISTS (SELECT 1 FROM cur)
+				  AND insertion_seq > (SELECT insertion_seq FROM cur)
+				ORDER BY insertion_seq
+			`, cursor, orgID, workspaceID)
+		}
+		if qerr != nil {
+			return fmt.Errorf("server: since-for-workspace: %w", qerr)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var (
+				rec eventlog.Record
+				pay []byte
+			)
+			if err := rows.Scan(
+				&rec.ID,
+				&rec.Timestamp.Wall,
+				&rec.Timestamp.Logical,
+				&rec.Type,
+				&rec.Version,
+				&rec.Actor,
+				&rec.WorkspaceID,
+				&pay,
+				&rec.Signature,
+			); err != nil {
+				return fmt.Errorf("server: since-for-workspace scan: %w", err)
+			}
+			rec.Payload = json.RawMessage(pay)
+			out = append(out, rec)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("server: since-for-workspace iter: %w", err)
+		}
+		if cursor != "" && len(out) == 0 {
+			var exists bool
+			if err := tx.QueryRow(ctx,
+				`SELECT EXISTS(SELECT 1 FROM events WHERE id = $1 AND org_id = $2)`,
+				cursor, orgID,
+			).Scan(&exists); err != nil {
+				return fmt.Errorf("server: since-for-workspace cursor-exists: %w", err)
+			}
+			if !exists {
+				return fmt.Errorf("%w: %q", ErrUnknownCursor, cursor)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Len returns the row count for the request's org. An unscoped
 // ctx errors rather than counting all rows — same defense-in-
 // depth shape as Append/Since/Head.

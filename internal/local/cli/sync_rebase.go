@@ -55,14 +55,14 @@ func runSyncRebaseFn(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	wsID, _ := workspaceID(root)
 	res, err := c.RebaseEntity(cmd.Context(), syncclient.RunArgs{
-		WorkspaceRoot: root, Remote: remote,
+		WorkspaceRoot: root, WorkspaceID: wsID, Remote: remote,
 	}, entity)
 	if err != nil {
 		return err
 	}
 
-	wsID, _ := workspaceID(root)
 	switch res.Outcome {
 	case syncclient.RebaseClean:
 		_ = emitAuditEvent(cmd, root, audit.EventTypeSyncGitRebased, audit.SyncGitRebasedEvent{

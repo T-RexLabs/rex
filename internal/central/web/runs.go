@@ -19,29 +19,55 @@ type EventReader interface {
 	Since(ctx context.Context, cursor string) ([]eventlog.Record, error)
 }
 
-// centralRunsListProjection satisfies internalweb.RunsListProjection
-// by reading the central event store and folding records via the
-// shared helper (web-ui.CENTRAL-LAYOUT.2). v1 single-workspace
-// limitation per centralWorkspaceResolver — every workspace id
-// gets the same projection until the multi-workspace store
-// refactor lands.
-type centralRunsListProjection struct {
-	events EventReader
-	ctx    context.Context
+// WorkspaceScopedEventReader is the opt-in extension every
+// production Store satisfies (PostgresStore + MemoryStore both
+// ship it). When the bound store implements it, the runs / audit
+// projections push the workspace filter to the store; otherwise
+// they fall back to filtering the Since result in Go.
+type WorkspaceScopedEventReader interface {
+	SinceForWorkspace(ctx context.Context, workspaceID, cursor string) ([]eventlog.Record, error)
 }
 
-func newCentralRunsListProjection(ctx context.Context, events EventReader) centralRunsListProjection {
+// readWorkspaceEvents returns events.Since(cursor="") narrowed to
+// workspaceID — pushed down to the store when it supports
+// WorkspaceScopedEventReader, in-Go otherwise.
+func readWorkspaceEvents(ctx context.Context, events EventReader, workspaceID string) ([]eventlog.Record, error) {
+	if events == nil || workspaceID == "" {
+		return nil, nil
+	}
+	if scoped, ok := events.(WorkspaceScopedEventReader); ok {
+		return scoped.SinceForWorkspace(ctx, workspaceID, "")
+	}
+	records, err := events.Since(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	return filterRecordsByWorkspace(records, workspaceID), nil
+}
+
+// centralRunsListProjection satisfies internalweb.RunsListProjection
+// by reading the central event store and folding records that
+// belong to workspaceID via the shared helper
+// (web-ui.CENTRAL-LAYOUT.2).
+//
+// v1 filters in the projection (after Since returns everything
+// for the org). Postgres-side WHERE pushdown is the natural
+// follow-up once PostgresStore grows SinceForWorkspace.
+type centralRunsListProjection struct {
+	events      EventReader
+	workspaceID string
+	ctx         context.Context
+}
+
+func newCentralRunsListProjection(ctx context.Context, events EventReader, workspaceID string) centralRunsListProjection {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return centralRunsListProjection{events: events, ctx: ctx}
+	return centralRunsListProjection{events: events, workspaceID: workspaceID, ctx: ctx}
 }
 
 func (p centralRunsListProjection) ListRuns() ([]internalweb.RunRow, error) {
-	if p.events == nil {
-		return nil, nil
-	}
-	records, err := p.events.Since(p.ctx, "")
+	records, err := readWorkspaceEvents(p.ctx, p.events, p.workspaceID)
 	if err != nil {
 		return nil, fmt.Errorf("central runs: read events: %w", err)
 	}
@@ -50,31 +76,49 @@ func (p centralRunsListProjection) ListRuns() ([]internalweb.RunRow, error) {
 
 // centralRunDetailProjection satisfies
 // internalweb.RunDetailProjection by reading the central event
-// store and folding records that mention runID into the shared
-// terminal-state RunDetail. Live-tail + permission flow are out
-// of scope — the central run-detail template renders a banner
-// for non-terminal runs (Decision B in the 2026-05-16 amendment).
+// store and folding records that mention runID (within
+// workspaceID) into the shared terminal-state RunDetail.
+// Live-tail + permission flow are out of scope — the central
+// run-detail template renders a banner for non-terminal runs
+// (Decision B in the 2026-05-16 amendment).
 type centralRunDetailProjection struct {
-	events EventReader
-	ctx    context.Context
+	events      EventReader
+	workspaceID string
+	ctx         context.Context
 }
 
-func newCentralRunDetailProjection(ctx context.Context, events EventReader) centralRunDetailProjection {
+func newCentralRunDetailProjection(ctx context.Context, events EventReader, workspaceID string) centralRunDetailProjection {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return centralRunDetailProjection{events: events, ctx: ctx}
+	return centralRunDetailProjection{events: events, workspaceID: workspaceID, ctx: ctx}
 }
 
 func (p centralRunDetailProjection) GetRun(runID string) (internalweb.RunDetail, bool, error) {
-	if p.events == nil {
-		return internalweb.RunDetail{}, false, nil
-	}
-	records, err := p.events.Since(p.ctx, "")
+	records, err := readWorkspaceEvents(p.ctx, p.events, p.workspaceID)
 	if err != nil {
 		return internalweb.RunDetail{}, false, fmt.Errorf("central run detail: read events: %w", err)
 	}
 	return internalweb.FoldRecordsToRunDetail(records, runID)
+}
+
+// filterRecordsByWorkspace returns the subset of records whose
+// WorkspaceID matches workspaceID. v1 helper used by the central
+// runs + audit projections to narrow an org-wide event slice down
+// to one workspace's events. PostgresStore-side filtering lands
+// when SinceForWorkspace ships; until then the projection layer
+// does the cut in Go.
+func filterRecordsByWorkspace(records []eventlog.Record, workspaceID string) []eventlog.Record {
+	if workspaceID == "" {
+		return records
+	}
+	out := records[:0]
+	for _, r := range records {
+		if r.WorkspaceID == workspaceID {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // centralRunsListData backs runs_list.tmpl on the central shell.

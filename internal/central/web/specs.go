@@ -14,46 +14,44 @@ import (
 )
 
 // GitEntityReader is the subset of the central GitStore the
-// central spec projection needs. Defined here so the web shell
-// doesn't depend on internal/central/server directly — the
-// cmd-level wireup binds the central server's GitStore to this
-// interface. Mirrors the read-side methods of server.GitStore
-// (sync.API.4); the web side never writes.
+// central projections need. Defined here so the web shell does
+// not depend on internal/central/server directly — the cmd-level
+// wireup binds the central server's GitStore to this interface.
+// Mirrors the read-side methods of server.GitStore (sync.API.4);
+// the web side never writes.
+//
+// Every method is workspaceID-scoped: a central node holds
+// content for many workspaces, and reads against one workspace
+// never spill into another's tree.
 type GitEntityReader interface {
-	Get(ctx context.Context, path string) (proto.GitEntity, error)
-	List(ctx context.Context) ([]string, error)
+	Get(ctx context.Context, workspaceID, path string) (proto.GitEntity, error)
+	List(ctx context.Context, workspaceID string) ([]string, error)
 }
 
 // centralSpecProjection satisfies internalweb.SpecProjection
-// against a central GitEntityReader. Specs live at `specs/<id>.yaml`
-// in the store (sync.CAT.2); proposed amendments under
-// `specs/_proposed/...` are filtered out here so they don't
-// appear on the /specs page (they belong to the amendments
-// sub-task).
-//
-// v1 limitation: the central GitStore is currently single-workspace
-// (no workspace_id scoping). The resolver returns the same
-// projection for every workspace id until that refactor lands; the
-// /orgs/<org-id>/workspaces/<ws-id>/ URL shape is forward-compatible
-// but doesn't yet enforce isolation between workspaces on the
-// data-store side.
+// against a central GitEntityReader scoped to a single
+// workspace id. Specs live at `specs/<id>.yaml` in the store
+// (sync.CAT.2); proposed amendments under `specs/_proposed/...`
+// are filtered out here so they don't appear on the /specs page
+// (they belong to the amendments projection).
 type centralSpecProjection struct {
-	store GitEntityReader
-	ctx   context.Context
+	store       GitEntityReader
+	workspaceID string
+	ctx         context.Context
 }
 
-func newCentralSpecProjection(ctx context.Context, store GitEntityReader) centralSpecProjection {
+func newCentralSpecProjection(ctx context.Context, store GitEntityReader, workspaceID string) centralSpecProjection {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return centralSpecProjection{store: store, ctx: ctx}
+	return centralSpecProjection{store: store, workspaceID: workspaceID, ctx: ctx}
 }
 
 func (p centralSpecProjection) ListSpecs() ([]internalweb.SpecRow, error) {
-	if p.store == nil {
+	if p.store == nil || p.workspaceID == "" {
 		return nil, nil
 	}
-	paths, err := p.store.List(p.ctx)
+	paths, err := p.store.List(p.ctx, p.workspaceID)
 	if err != nil {
 		return nil, fmt.Errorf("central specs: list: %w", err)
 	}
@@ -62,7 +60,7 @@ func (p centralSpecProjection) ListSpecs() ([]internalweb.SpecRow, error) {
 		if !isSpecPath(path) {
 			continue
 		}
-		rec, err := p.store.Get(p.ctx, path)
+		rec, err := p.store.Get(p.ctx, p.workspaceID, path)
 		if err != nil {
 			// Single missing entity shouldn't 500 the list.
 			continue
@@ -84,23 +82,19 @@ func (p centralSpecProjection) ListSpecs() ([]internalweb.SpecRow, error) {
 }
 
 func (p centralSpecProjection) OpenSpec(id string) (*specfmt.Document, string, bool, error) {
-	if p.store == nil {
+	if p.store == nil || p.workspaceID == "" {
 		return nil, "", false, nil
 	}
-	rec, err := p.store.Get(p.ctx, "specs/"+id+".yaml")
+	rec, err := p.store.Get(p.ctx, p.workspaceID, "specs/"+id+".yaml")
 	if err != nil {
 		// The server package owns ErrUnknownGitEntity; rather than
 		// import-coupling, treat any Get error as "not present"
-		// for the central spec read path. The store surfaces
-		// transient errors via a wrapped error message a future
-		// projection layer can pattern-match if needed.
+		// for the central spec read path. Future surfaces can
+		// pattern-match on errUnknownEntity if they want to
+		// distinguish missing entities from transient failures.
 		if errors.Is(err, errUnknownEntity) {
 			return nil, "", false, nil
 		}
-		// Best-effort: missing entity ≈ not found for the web UI.
-		// Errors here are extremely rare (memory store has no
-		// fallible reads); we tolerate them as 404 to keep the
-		// page robust.
 		return nil, "", false, nil
 	}
 	doc, err := specfmt.Parse(strings.NewReader(rec.Content))
@@ -134,11 +128,11 @@ func isSpecPath(path string) bool {
 }
 
 // centralWorkspaceResolver is the central shell's
-// WorkspaceResolver: it ignores the workspaceID input in v1
-// (single-workspace store limitation) and always returns the
-// one workspace backed by the bound GitStore + EventReader. When
-// the multi-workspace refactor lands, this resolver grows
-// per-workspace dispatch without changing the handler call sites.
+// WorkspaceResolver: it dispatches each Resolve call to a
+// per-workspace bundle of projections, all scoped against the
+// supplied workspaceID. Empty workspaceID yields a Workspace
+// with nil projections (every handler then 503s for the
+// surfaces it can't serve).
 type centralWorkspaceResolver struct {
 	git    GitEntityReader
 	events EventReader
@@ -150,18 +144,19 @@ func newCentralWorkspaceResolver(store GitEntityReader) centralWorkspaceResolver
 
 func (r centralWorkspaceResolver) Resolve(workspaceID string) (internalweb.Workspace, error) {
 	ws := internalweb.Workspace{ID: workspaceID}
+	if workspaceID == "" {
+		return ws, nil
+	}
 	ctx := context.Background()
 	if r.git != nil {
-		ws.Specs = newCentralSpecProjection(ctx, r.git)
+		ws.Specs = newCentralSpecProjection(ctx, r.git, workspaceID)
+		ws.Amendments = newCentralAmendmentsProjection(ctx, r.git, workspaceID)
+		ws.Remotes = newCentralRemotesProjection(ctx, r.git, workspaceID)
 	}
 	if r.events != nil {
-		ws.Runs = newCentralRunsListProjection(ctx, r.events)
-		ws.RunDetail = newCentralRunDetailProjection(ctx, r.events)
-		ws.Audit = newCentralAuditProjection(ctx, r.events)
-	}
-	if r.git != nil {
-		ws.Amendments = newCentralAmendmentsProjection(ctx, r.git)
-		ws.Remotes = newCentralRemotesProjection(ctx, r.git)
+		ws.Runs = newCentralRunsListProjection(ctx, r.events, workspaceID)
+		ws.RunDetail = newCentralRunDetailProjection(ctx, r.events, workspaceID)
+		ws.Audit = newCentralAuditProjection(ctx, r.events, workspaceID)
 	}
 	// ws.Search stays nil in v1; the central search handler
 	// renders the notice when the projection is unbound.

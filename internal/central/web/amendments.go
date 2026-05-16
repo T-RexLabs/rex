@@ -13,32 +13,34 @@ import (
 
 // centralAmendmentsProjection satisfies
 // internalweb.AmendmentsProjection by walking the central
-// GitStore. Proposed amendments live at `specs/_proposed/<stem>.yaml`;
-// accepted ones at `specs/_proposed/_accepted/<stem>.yaml`. Both
-// directories ride through the existing /sync/git replication, so
-// the central sees the same content the local node pushed
+// GitStore scoped to one workspaceID. Proposed amendments live
+// at `specs/_proposed/<stem>.yaml`; accepted ones at
+// `specs/_proposed/_accepted/<stem>.yaml`. Both directories ride
+// through the existing /sync/git replication, so the central
+// sees the same content the local node pushed
 // (storage.WS.2.2.1).
 //
 // Read-only: accept / reject mutations are local-only in v1
 // because they involve identity signing and event-log writes
 // that don't apply on central.
 type centralAmendmentsProjection struct {
-	store GitEntityReader
-	ctx   context.Context
+	store       GitEntityReader
+	workspaceID string
+	ctx         context.Context
 }
 
-func newCentralAmendmentsProjection(ctx context.Context, store GitEntityReader) centralAmendmentsProjection {
+func newCentralAmendmentsProjection(ctx context.Context, store GitEntityReader, workspaceID string) centralAmendmentsProjection {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return centralAmendmentsProjection{store: store, ctx: ctx}
+	return centralAmendmentsProjection{store: store, workspaceID: workspaceID, ctx: ctx}
 }
 
 func (p centralAmendmentsProjection) ListAmendments(opts internalweb.AmendmentsListOptions) ([]internalweb.AmendmentRow, error) {
-	if p.store == nil {
+	if p.store == nil || p.workspaceID == "" {
 		return nil, nil
 	}
-	paths, err := p.store.List(p.ctx)
+	paths, err := p.store.List(p.ctx, p.workspaceID)
 	if err != nil {
 		return nil, fmt.Errorf("central amendments: list: %w", err)
 	}
@@ -52,7 +54,7 @@ func (p centralAmendmentsProjection) ListAmendments(opts internalweb.AmendmentsL
 			continue
 		}
 		stem := stemFromPath(path)
-		rec, err := p.store.Get(p.ctx, path)
+		rec, err := p.store.Get(p.ctx, p.workspaceID, path)
 		if err != nil {
 			continue
 		}
@@ -71,7 +73,7 @@ func (p centralAmendmentsProjection) ListAmendments(opts internalweb.AmendmentsL
 }
 
 func (p centralAmendmentsProjection) LoadAmendment(stem string, hl *internalweb.Highlighter) (internalweb.AmendmentDetail, bool, error) {
-	if p.store == nil {
+	if p.store == nil || p.workspaceID == "" {
 		return internalweb.AmendmentDetail{}, false, nil
 	}
 	// Two candidate paths — proposed first, then accepted.
@@ -83,7 +85,7 @@ func (p centralAmendmentsProjection) LoadAmendment(stem string, hl *internalweb.
 		{"specs/_proposed/_accepted/" + stem + ".yaml", specamend.StateAccepted},
 	}
 	for _, c := range candidates {
-		rec, err := p.store.Get(p.ctx, c.path)
+		rec, err := p.store.Get(p.ctx, p.workspaceID, c.path)
 		if err != nil {
 			continue
 		}

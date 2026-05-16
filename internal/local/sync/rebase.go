@@ -89,6 +89,9 @@ func (c *Client) RebaseEntity(ctx context.Context, args RunArgs, entity string) 
 	if args.WorkspaceRoot == "" || args.Remote == "" {
 		return RebaseResult{}, errors.New("sync: RebaseEntity requires WorkspaceRoot + Remote")
 	}
+	if args.WorkspaceID == "" {
+		return RebaseResult{}, errors.New("sync: RebaseEntity requires WorkspaceID for git-scoped pull/push")
+	}
 	if cat, ok := synccat.Categorize(entity); !ok || cat != synccat.CategoryGitMerged {
 		return RebaseResult{}, fmt.Errorf("sync: %q is not a git_merged entity (sync.CAT.5)", entity)
 	}
@@ -102,7 +105,7 @@ func (c *Client) RebaseEntity(ctx context.Context, args RunArgs, entity string) 
 
 	res := RebaseResult{Entity: entity, LocalRevision: localRev}
 
-	remote, err := c.GitPull(ctx, entity)
+	remote, err := c.GitPull(ctx, args.WorkspaceID, entity)
 	if err != nil {
 		if errors.Is(err, ErrUnknownGitEntity) {
 			res.Outcome = RebaseLocalOnly

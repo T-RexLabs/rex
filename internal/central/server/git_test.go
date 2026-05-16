@@ -18,18 +18,25 @@ import (
 	"github.com/asabla/rex/internal/core/sync/proto"
 )
 
-// signGitPush signs a (path, baseRevision, content) tuple under
-// priv and returns a populated GitPushRequest. Mirrors the local
-// sync client's signing path so tests stay representative of real
-// traffic.
-func signGitPush(t *testing.T, priv ed25519.PrivateKey, path, baseRev, content string) proto.GitPushRequest {
+// testWorkspaceID is the canonical workspace id every git test
+// runs against. The handlers + store are workspace-scoped, but
+// the suite exercises a single workspace by default — multi-
+// workspace isolation is covered in TestGitStoreScopesByWorkspace.
+const testWorkspaceID = "ws-1"
+
+// signGitPush signs a (workspaceID, path, baseRevision, content)
+// tuple under priv and returns a populated GitPushRequest.
+// Mirrors the local sync client's signing path so tests stay
+// representative of real traffic.
+func signGitPush(t *testing.T, priv ed25519.PrivateKey, wsID, path, baseRev, content string) proto.GitPushRequest {
 	t.Helper()
-	canonical, err := proto.GitSigningBytes(path, baseRev, content)
+	canonical, err := proto.GitSigningBytes(wsID, path, baseRev, content)
 	if err != nil {
 		t.Fatalf("GitSigningBytes: %v", err)
 	}
 	sig := ed25519.Sign(priv, canonical)
 	return proto.GitPushRequest{
+		WorkspaceID:  wsID,
 		Entity:       path,
 		BaseRevision: baseRev,
 		Content:      content,
@@ -57,9 +64,9 @@ func postGitPush(t *testing.T, hs *httptest.Server, req proto.GitPushRequest, op
 	return resp, body
 }
 
-func getGitPull(t *testing.T, hs *httptest.Server, path string, opts ...pushOpt) (*http.Response, []byte) {
+func getGitPull(t *testing.T, hs *httptest.Server, wsID, path string, opts ...pushOpt) (*http.Response, []byte) {
 	t.Helper()
-	httpReq, err := http.NewRequest(http.MethodGet, hs.URL+"/sync/git/"+path, nil)
+	httpReq, err := http.NewRequest(http.MethodGet, hs.URL+"/sync/git/ws/"+wsID+"/"+path, nil)
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}
@@ -85,6 +92,7 @@ func TestGitPushHappyPathDevMode(t *testing.T) {
 	srv, hs := newTestServer(t)
 	content := "spec_version: 1\nmetadata: { id: x }\n"
 	req := proto.GitPushRequest{
+		WorkspaceID:  testWorkspaceID,
 		Entity:       "specs/x.yaml",
 		BaseRevision: "",
 		Content:      content,
@@ -105,7 +113,7 @@ func TestGitPushHappyPathDevMode(t *testing.T) {
 	}
 
 	// GET it back.
-	resp, body = getGitPull(t, hs, "specs/x.yaml")
+	resp, body = getGitPull(t, hs, testWorkspaceID, "specs/x.yaml")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("pull status: %d body: %s", resp.StatusCode, body)
 	}
@@ -120,7 +128,7 @@ func TestGitPushHappyPathDevMode(t *testing.T) {
 		t.Fatalf("revision mismatch: pull=%q push=%q", pullRes.Entity.Revision, pushRes.Revision)
 	}
 	// Sanity: the store now lists the path.
-	paths, _ := srv.GitStore().List(context.Background())
+	paths, _ := srv.GitStore().List(context.Background(), testWorkspaceID)
 	if len(paths) != 1 || paths[0] != "specs/x.yaml" {
 		t.Fatalf("List: got %v want [specs/x.yaml]", paths)
 	}
@@ -130,7 +138,7 @@ func TestGitPullUnknownEntityIs404(t *testing.T) {
 	t.Parallel()
 
 	_, hs := newTestServer(t)
-	resp, body := getGitPull(t, hs, "specs/never-pushed.yaml")
+	resp, body := getGitPull(t, hs, testWorkspaceID, "specs/never-pushed.yaml")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status: %d body: %s", resp.StatusCode, body)
 	}
@@ -149,7 +157,7 @@ func TestGitPushConflictReturnsCurrent(t *testing.T) {
 
 	_, hs := newTestServer(t)
 	// First push lands.
-	first := proto.GitPushRequest{Entity: "workspace.yaml", Content: "name: alpha\n"}
+	first := proto.GitPushRequest{WorkspaceID: testWorkspaceID, Entity: "workspace.yaml", Content: "name: alpha\n"}
 	resp, body := postGitPush(t, hs, first)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("first push: %d %s", resp.StatusCode, body)
@@ -159,6 +167,7 @@ func TestGitPushConflictReturnsCurrent(t *testing.T) {
 
 	// Second push with a stale base_revision diverges.
 	conflict := proto.GitPushRequest{
+		WorkspaceID:  testWorkspaceID,
 		Entity:       "workspace.yaml",
 		BaseRevision: "deadbeef-stale",
 		Content:      "name: beta\n",
@@ -187,7 +196,7 @@ func TestGitPushIdempotentSameContent(t *testing.T) {
 
 	_, hs := newTestServer(t)
 	content := "name: alpha\n"
-	first := proto.GitPushRequest{Entity: "workspace.yaml", Content: content}
+	first := proto.GitPushRequest{WorkspaceID: testWorkspaceID, Entity: "workspace.yaml", Content: content}
 	resp, body := postGitPush(t, hs, first)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("first: %d %s", resp.StatusCode, body)
@@ -197,6 +206,7 @@ func TestGitPushIdempotentSameContent(t *testing.T) {
 
 	// Retry with the now-known revision as the base.
 	retry := proto.GitPushRequest{
+		WorkspaceID:  testWorkspaceID,
 		Entity:       "workspace.yaml",
 		BaseRevision: firstRes.Revision,
 		Content:      content,
@@ -227,7 +237,7 @@ func TestGitRejectsNonGitMergedPath(t *testing.T) {
 		"drafts/origin.toml",             // derived
 		"random.txt",                     // unregistered
 	} {
-		req := proto.GitPushRequest{Entity: p, Content: "x"}
+		req := proto.GitPushRequest{WorkspaceID: testWorkspaceID, Entity: p, Content: "x"}
 		resp, body := postGitPush(t, hs, req)
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Fatalf("push %q status: %d body: %s", p, resp.StatusCode, body)
@@ -239,7 +249,7 @@ func TestGitRejectsNonGitMergedPath(t *testing.T) {
 		}
 
 		// And the GET surface refuses the same paths.
-		resp, body = getGitPull(t, hs, p)
+		resp, body = getGitPull(t, hs, testWorkspaceID, p)
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Fatalf("pull %q status: %d body: %s", p, resp.StatusCode, body)
 		}
@@ -250,7 +260,7 @@ func TestGitRejectsPathTraversal(t *testing.T) {
 	t.Parallel()
 
 	_, hs := newTestServer(t)
-	req := proto.GitPushRequest{Entity: "specs/../../../etc/passwd", Content: "x"}
+	req := proto.GitPushRequest{WorkspaceID: testWorkspaceID, Entity: "specs/../../../etc/passwd", Content: "x"}
 	resp, body := postGitPush(t, hs, req)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status: %d body: %s", resp.StatusCode, body)
@@ -264,7 +274,7 @@ func TestGitPushRequiresAuthWhenKeystoreSet(t *testing.T) {
 	t.Parallel()
 
 	_, hs, _ := newSignedTestServer(t, "alice")
-	req := proto.GitPushRequest{Entity: "workspace.yaml", Content: "x"}
+	req := proto.GitPushRequest{WorkspaceID: testWorkspaceID, Entity: "workspace.yaml", Content: "x"}
 	resp, body := postGitPush(t, hs, req) // no Bearer
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status: %d body: %s", resp.StatusCode, body)
@@ -282,14 +292,14 @@ func TestGitPushAcceptsSignedRequest(t *testing.T) {
 	fp, _ := identity.FingerprintOf(pub)
 	token := issueTestToken(t, srv, priv)
 
-	req := signGitPush(t, priv, "specs/sync.yaml", "", "spec_version: 1\n")
+	req := signGitPush(t, priv, testWorkspaceID, "specs/sync.yaml", "", "spec_version: 1\n")
 	resp, body := postGitPush(t, hs, req, withBearer(token))
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: %d body: %s", resp.StatusCode, body)
 	}
 
 	// Stored record should attribute the local-prefixed actor.
-	stored, err := srv.GitStore().Get(context.Background(), "specs/sync.yaml")
+	stored, err := srv.GitStore().Get(context.Background(), testWorkspaceID, "specs/sync.yaml")
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -312,7 +322,7 @@ func TestGitPushRejectsTamperedContent(t *testing.T) {
 	priv := privs["alice"]
 	token := issueTestToken(t, srv, priv)
 
-	req := signGitPush(t, priv, "specs/sync.yaml", "", "original\n")
+	req := signGitPush(t, priv, testWorkspaceID, "specs/sync.yaml", "", "original\n")
 	req.Content = "tampered\n" // change after signing
 
 	resp, body := postGitPush(t, hs, req, withBearer(token))
@@ -328,10 +338,90 @@ func TestGitPushRejectsUnregisteredFingerprint(t *testing.T) {
 	// bob is not registered.
 	_, bobPriv, _ := ed25519.GenerateKey(rand.Reader)
 	token := issueTestToken(t, srv, privs["alice"])
-	req := signGitPush(t, bobPriv, "workspace.yaml", "", "x\n")
+	req := signGitPush(t, bobPriv, testWorkspaceID, "workspace.yaml", "", "x\n")
 
 	resp, body := postGitPush(t, hs, req, withBearer(token))
 	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status: %d body: %s", resp.StatusCode, body)
+	}
+}
+
+// TestMemoryGitStoreScopesByWorkspace is the central invariant
+// after the multi-workspace refactor: entities pushed for one
+// workspace are invisible to reads on another. Two workspaces
+// can hold the same path independently.
+func TestMemoryGitStoreScopesByWorkspace(t *testing.T) {
+	t.Parallel()
+	st := NewMemoryGitStore()
+
+	a := proto.GitEntity{Path: "workspace.yaml", Revision: "rev-a", Content: "alpha"}
+	b := proto.GitEntity{Path: "workspace.yaml", Revision: "rev-b", Content: "beta"}
+	if err := st.Put(context.Background(), "ws-a", a, ""); err != nil {
+		t.Fatalf("put a: %v", err)
+	}
+	if err := st.Put(context.Background(), "ws-b", b, ""); err != nil {
+		t.Fatalf("put b: %v", err)
+	}
+
+	got, err := st.Get(context.Background(), "ws-a", "workspace.yaml")
+	if err != nil {
+		t.Fatalf("get a: %v", err)
+	}
+	if got.Content != "alpha" {
+		t.Errorf("ws-a content: got %q want alpha (cross-workspace leak)", got.Content)
+	}
+	got, err = st.Get(context.Background(), "ws-b", "workspace.yaml")
+	if err != nil {
+		t.Fatalf("get b: %v", err)
+	}
+	if got.Content != "beta" {
+		t.Errorf("ws-b content: got %q want beta (cross-workspace leak)", got.Content)
+	}
+
+	pathsA, _ := st.List(context.Background(), "ws-a")
+	pathsB, _ := st.List(context.Background(), "ws-b")
+	if len(pathsA) != 1 || pathsA[0] != "workspace.yaml" {
+		t.Errorf("ws-a list: %v", pathsA)
+	}
+	if len(pathsB) != 1 || pathsB[0] != "workspace.yaml" {
+		t.Errorf("ws-b list: %v", pathsB)
+	}
+
+	// Unknown workspace yields not-found, not the entity from
+	// some other workspace.
+	if _, err := st.Get(context.Background(), "ws-ghost", "workspace.yaml"); err == nil {
+		t.Error("ws-ghost get: expected unknown-entity error")
+	}
+	if rows, _ := st.List(context.Background(), "ws-ghost"); len(rows) != 0 {
+		t.Errorf("ws-ghost list: got %v want empty", rows)
+	}
+
+	// ListWorkspaces enumerates both.
+	ids := st.ListWorkspaces()
+	if len(ids) != 2 || ids[0] != "ws-a" || ids[1] != "ws-b" {
+		t.Errorf("ListWorkspaces: %v want [ws-a ws-b]", ids)
+	}
+
+	// Empty workspace id rejects on every operation.
+	if _, err := st.Get(context.Background(), "", "x"); err == nil {
+		t.Error("Get(\"\"): expected error")
+	}
+	if err := st.Put(context.Background(), "", a, ""); err == nil {
+		t.Error("Put(\"\"): expected error")
+	}
+	if _, err := st.List(context.Background(), ""); err == nil {
+		t.Error("List(\"\"): expected error")
+	}
+}
+
+// TestGitPushRejectsMissingWorkspaceID confirms the handler
+// surfaces a 400 when the wire body omits workspace_id.
+func TestGitPushRejectsMissingWorkspaceID(t *testing.T) {
+	t.Parallel()
+	_, hs := newTestServer(t)
+	req := proto.GitPushRequest{Entity: "workspace.yaml", Content: "x"}
+	resp, body := postGitPush(t, hs, req)
+	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status: %d body: %s", resp.StatusCode, body)
 	}
 }
@@ -343,11 +433,11 @@ func TestMemoryGitStoreEmptyBaseAfterCreatedConflicts(t *testing.T) {
 	// be the "client thinks it's a brand-new file" race.
 	st := NewMemoryGitStore()
 	rec := proto.GitEntity{Path: "workspace.yaml", Revision: "rev-1", Content: "alpha"}
-	if err := st.Put(context.Background(), rec, ""); err != nil {
+	if err := st.Put(context.Background(), testWorkspaceID, rec, ""); err != nil {
 		t.Fatalf("first put: %v", err)
 	}
 	rec2 := proto.GitEntity{Path: "workspace.yaml", Revision: "rev-2", Content: "beta"}
-	err := st.Put(context.Background(), rec2, "")
+	err := st.Put(context.Background(), testWorkspaceID, rec2, "")
 	var conflict *GitRevisionConflictError
 	if err == nil {
 		t.Fatal("expected conflict; got nil")

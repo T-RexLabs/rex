@@ -108,6 +108,34 @@ func (s *MemoryStore) Since(_ context.Context, cursor string) ([]eventlog.Record
 	return out, nil
 }
 
+// SinceForWorkspace mirrors Since but filters to records whose
+// WorkspaceID matches workspaceID. Memory implementation does the
+// filter inline so call sites that prefer the workspace-scoped
+// surface get the same shape from both stores.
+func (s *MemoryStore) SinceForWorkspace(_ context.Context, workspaceID, cursor string) ([]eventlog.Record, error) {
+	if workspaceID == "" {
+		return nil, errors.New("server: SinceForWorkspace requires a non-empty workspace_id")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	start := 0
+	if cursor != "" {
+		idx, ok := s.byID[cursor]
+		if !ok {
+			return nil, fmt.Errorf("%w: %q", ErrUnknownCursor, cursor)
+		}
+		start = idx + 1
+	}
+	tail := s.records[start:]
+	out := make([]eventlog.Record, 0, len(tail))
+	for _, r := range tail {
+		if r.WorkspaceID == workspaceID {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
 // Len returns the total number of records currently held.
 func (s *MemoryStore) Len(_ context.Context) (int, error) {
 	s.mu.RLock()

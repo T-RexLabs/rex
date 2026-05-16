@@ -14,14 +14,26 @@ import (
 	internalweb "github.com/asabla/rex/internal/web"
 )
 
-// stubGitStore is the minimal GitEntityReader the central spec
-// projection needs in tests. Backed by a map[path]content so the
-// test data shape stays in-test and self-evident.
+// stubWorkspaceID is the canonical workspace id every central
+// web test fixture implicitly populates. The stubGitStore treats
+// its `entries` map as belonging to this one workspace; URLs
+// across the test suite use it via `/orgs/<org>/workspaces/ws-1/`.
+// Tests that need multi-workspace behaviour construct a
+// stubGitStore variant via stubGitStoreMulti below.
+const stubWorkspaceID = "ws-1"
+
+// stubGitStore is the minimal GitEntityReader the central
+// projections need in tests. Backed by a map[path]content scoped
+// to stubWorkspaceID so the test data shape stays in-test and
+// self-evident.
 type stubGitStore struct {
 	entries map[string]string
 }
 
-func (s stubGitStore) Get(_ context.Context, path string) (proto.GitEntity, error) {
+func (s stubGitStore) Get(_ context.Context, workspaceID, path string) (proto.GitEntity, error) {
+	if workspaceID != stubWorkspaceID {
+		return proto.GitEntity{}, fmt.Errorf("stub: %w: %q", errUnknownEntity, path)
+	}
 	body, ok := s.entries[path]
 	if !ok {
 		return proto.GitEntity{}, fmt.Errorf("stub: %w: %q", errUnknownEntity, path)
@@ -29,12 +41,65 @@ func (s stubGitStore) Get(_ context.Context, path string) (proto.GitEntity, erro
 	return proto.GitEntity{Path: path, Revision: "rev-" + path, Content: body}, nil
 }
 
-func (s stubGitStore) List(_ context.Context) ([]string, error) {
+func (s stubGitStore) List(_ context.Context, workspaceID string) ([]string, error) {
+	if workspaceID != stubWorkspaceID {
+		return nil, nil
+	}
 	paths := make([]string, 0, len(s.entries))
 	for p := range s.entries {
 		paths = append(paths, p)
 	}
 	return paths, nil
+}
+
+// ListWorkspaces satisfies GitWorkspacesLister so the central
+// workspaces-index handler can enumerate workspaces backed by
+// this stub. Returns the canonical stubWorkspaceID when the
+// stub has any entries; empty otherwise so the empty-state
+// tests can drive the no-workspaces branch.
+func (s stubGitStore) ListWorkspaces() []string {
+	if len(s.entries) == 0 {
+		return nil
+	}
+	return []string{stubWorkspaceID}
+}
+
+// stubGitStoreMulti scopes content by an explicit per-workspace
+// map. Used by the multi-workspace isolation tests below.
+type stubGitStoreMulti struct {
+	workspaces map[string]map[string]string // wsID → path → content
+}
+
+func (s stubGitStoreMulti) Get(_ context.Context, workspaceID, path string) (proto.GitEntity, error) {
+	ws, ok := s.workspaces[workspaceID]
+	if !ok {
+		return proto.GitEntity{}, fmt.Errorf("stub: %w: %q", errUnknownEntity, path)
+	}
+	body, ok := ws[path]
+	if !ok {
+		return proto.GitEntity{}, fmt.Errorf("stub: %w: %q", errUnknownEntity, path)
+	}
+	return proto.GitEntity{Path: path, Revision: "rev-" + path, Content: body}, nil
+}
+
+func (s stubGitStoreMulti) List(_ context.Context, workspaceID string) ([]string, error) {
+	ws, ok := s.workspaces[workspaceID]
+	if !ok {
+		return nil, nil
+	}
+	paths := make([]string, 0, len(ws))
+	for p := range ws {
+		paths = append(paths, p)
+	}
+	return paths, nil
+}
+
+func (s stubGitStoreMulti) ListWorkspaces() []string {
+	ids := make([]string, 0, len(s.workspaces))
+	for id := range s.workspaces {
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 // validSpecYAML returns a minimal but spec-format-valid YAML
@@ -233,7 +298,7 @@ func TestIsSpecPath(t *testing.T) {
 // surface that to the handler (no silent empty-list).
 func TestCentralSpecProjectionListPropagatesStoreError(t *testing.T) {
 	t.Parallel()
-	p := newCentralSpecProjection(context.Background(), errStore{})
+	p := newCentralSpecProjection(context.Background(), errStore{}, stubWorkspaceID)
 	if _, err := p.ListSpecs(); err == nil {
 		t.Fatal("ListSpecs: expected store error to surface")
 	}
@@ -241,26 +306,63 @@ func TestCentralSpecProjectionListPropagatesStoreError(t *testing.T) {
 
 type errStore struct{}
 
-func (errStore) Get(context.Context, string) (proto.GitEntity, error) {
+func (errStore) Get(context.Context, string, string) (proto.GitEntity, error) {
 	return proto.GitEntity{}, errors.New("store down")
 }
 
-func (errStore) List(context.Context) ([]string, error) {
+func (errStore) List(context.Context, string) ([]string, error) {
 	return nil, errors.New("store down")
 }
 
-// TestCentralResolverIgnoresWorkspaceIDInV1 documents the v1
-// single-workspace GitStore limitation: the resolver returns the
-// same projection regardless of the workspace id supplied. When
-// the multi-workspace GitStore refactor lands this test gets
-// rewritten to assert proper isolation.
-func TestCentralResolverIgnoresWorkspaceIDInV1(t *testing.T) {
+// TestCentralResolverScopesByWorkspaceID is the post-multi-workspace
+// invariant: each Resolve call yields a Workspace whose projections
+// are bound to the supplied workspaceID. Spec lookups for ws-1 see
+// only ws-1's content; lookups for ws-2 see only ws-2's; an empty
+// workspaceID yields nil projections.
+func TestCentralResolverScopesByWorkspaceID(t *testing.T) {
+	t.Parallel()
+	store := stubGitStoreMulti{workspaces: map[string]map[string]string{
+		"ws-1": {"specs/alpha.yaml": validSpecYAML("alpha", "Alpha")},
+		"ws-2": {"specs/beta.yaml": validSpecYAML("beta", "Beta")},
+	}}
+	r := newCentralWorkspaceResolver(store)
+
+	ws1, err := r.Resolve("ws-1")
+	if err != nil {
+		t.Fatalf("Resolve(ws-1): %v", err)
+	}
+	rows1, _ := ws1.Specs.ListSpecs()
+	if len(rows1) != 1 || rows1[0].ID != "alpha" {
+		t.Errorf("ws-1 rows: %+v (want [alpha])", rows1)
+	}
+
+	ws2, err := r.Resolve("ws-2")
+	if err != nil {
+		t.Fatalf("Resolve(ws-2): %v", err)
+	}
+	rows2, _ := ws2.Specs.ListSpecs()
+	if len(rows2) != 1 || rows2[0].ID != "beta" {
+		t.Errorf("ws-2 rows: %+v (want [beta])", rows2)
+	}
+
+	empty, err := r.Resolve("")
+	if err != nil {
+		t.Fatalf("Resolve(\"\"): %v", err)
+	}
+	if empty.Specs != nil {
+		t.Error("empty workspaceID: Specs should be nil")
+	}
+}
+
+// keep the legacy roundtrip test for the single-workspace stub,
+// renamed to reflect what it actually proves now.
+func TestCentralResolverRoundtripsWorkspaceID(t *testing.T) {
 	t.Parallel()
 	store := stubGitStore{entries: map[string]string{
 		"specs/alpha.yaml": validSpecYAML("alpha", "Alpha"),
 	}}
 	r := newCentralWorkspaceResolver(store)
-	for _, id := range []string{"ws-1", "ws-2", ""} {
+	for _, id := range []string{stubWorkspaceID} {
 		ws, err := r.Resolve(id)
 		if err != nil {
 			t.Fatalf("Resolve(%q): %v", id, err)

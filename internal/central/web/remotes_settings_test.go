@@ -114,9 +114,9 @@ created_at: 2026-01-01T00:00:00Z
 func TestCentralSettingsRendersWorkspaceYAML(t *testing.T) {
 	t.Parallel()
 	srv := newAmendmentsServer(t, map[string]string{
-		"workspace.yaml": workspaceYAML("ws-acme", "Acme Workspace", "active"),
+		"workspace.yaml": workspaceYAML("ws-1", "Acme Workspace", "active"),
 	})
-	resp, err := http.Get(srv.URL + "/orgs/acme/workspaces/ws-acme/settings")
+	resp, err := http.Get(srv.URL + "/orgs/acme/workspaces/ws-1/settings")
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestCentralSettingsRendersWorkspaceYAML(t *testing.T) {
 	if !strings.Contains(html, "Acme Workspace") {
 		t.Errorf("name not rendered: %s", html)
 	}
-	if !strings.Contains(html, "ws-acme") {
+	if !strings.Contains(html, "ws-1") {
 		t.Errorf("id not rendered: %s", html)
 	}
 	if !strings.Contains(html, "active") {

@@ -12,6 +12,11 @@ import (
 	"github.com/asabla/rex/internal/core/sync/proto"
 )
 
+// rebaseTestWorkspaceID is the canonical workspace id every
+// rebase test runs against. Mirrors central/server/git_test.go's
+// testWorkspaceID without crossing the package boundary.
+const rebaseTestWorkspaceID = "ws-1"
+
 // pushSeed pushes a content blob into the central git store under
 // the given entity path with no base revision (initial creation).
 // Mirrors what `rex sync rebase` would do once shipped, just inlined
@@ -23,7 +28,7 @@ func pushSeed(t *testing.T, srv *server.Server, entity, content string) {
 		Revision: proto.GitContentRevision(content),
 		Content:  content,
 	}
-	if err := srv.GitStore().Put(context.Background(), rec, ""); err != nil {
+	if err := srv.GitStore().Put(context.Background(), rebaseTestWorkspaceID, rec, ""); err != nil {
 		t.Fatalf("seed git: %v", err)
 	}
 }
@@ -60,6 +65,7 @@ func TestRebaseLocalOnlyWhenRemoteIsEmpty(t *testing.T) {
 
 	c := NewClient(hs.URL)
 	res, err := c.RebaseEntity(context.Background(), RunArgs{
+		WorkspaceID:   rebaseTestWorkspaceID,
 		WorkspaceRoot: root, Remote: "primary",
 	}, "specs/x.yaml")
 	if err != nil {
@@ -88,6 +94,7 @@ func TestRebaseUnchangedRefreshesBaseCache(t *testing.T) {
 
 	c := NewClient(hs.URL)
 	res, err := c.RebaseEntity(context.Background(), RunArgs{
+		WorkspaceID:   rebaseTestWorkspaceID,
 		WorkspaceRoot: root, Remote: "primary",
 	}, "workspace.yaml")
 	if err != nil {
@@ -121,6 +128,7 @@ func TestRebaseCleanMergeWritesMerged(t *testing.T) {
 
 	c := NewClient(hs.URL)
 	res, err := c.RebaseEntity(context.Background(), RunArgs{
+		WorkspaceID:   rebaseTestWorkspaceID,
 		WorkspaceRoot: root, Remote: "primary",
 	}, "workspace.yaml")
 	if err != nil {
@@ -159,6 +167,7 @@ func TestRebaseConflictWritesSidecar(t *testing.T) {
 
 	c := NewClient(hs.URL)
 	res, err := c.RebaseEntity(context.Background(), RunArgs{
+		WorkspaceID:   rebaseTestWorkspaceID,
 		WorkspaceRoot: root, Remote: "primary",
 	}, "workspace.yaml")
 	if err != nil {
@@ -198,6 +207,7 @@ func TestRebaseRefusesNonGitMergedPath(t *testing.T) {
 	c := NewClient(hs.URL)
 	for _, p := range []string{"events.log", "index.sqlite", "snapshots/x", "random.txt"} {
 		_, err := c.RebaseEntity(context.Background(), RunArgs{
+			WorkspaceID:   rebaseTestWorkspaceID,
 			WorkspaceRoot: root, Remote: "primary",
 		}, p)
 		if err == nil {
@@ -227,6 +237,7 @@ func TestRebaseCleanClearsStaleSidecar(t *testing.T) {
 
 	c := NewClient(hs.URL)
 	if _, err := c.RebaseEntity(context.Background(), RunArgs{
+		WorkspaceID:   rebaseTestWorkspaceID,
 		WorkspaceRoot: root, Remote: "primary",
 	}, "workspace.yaml"); err != nil {
 		t.Fatalf("RebaseEntity: %v", err)

@@ -307,8 +307,15 @@ func (c *Client) Pull(ctx context.Context, since string, fn func(eventlog.Record
 
 // RunArgs is the per-call configuration for the half- and full-sync
 // operations that wrap the watermark + log dance around HTTP calls.
+//
+// WorkspaceID scopes git-merged content (specs, workspace.yaml,
+// remotes.toml) against the central node's per-workspace tree. It
+// is required for RebaseEntity / GitPull / GitPush; the events
+// push/pull paths read it from each event record so they tolerate
+// an empty WorkspaceID at the RunArgs level.
 type RunArgs struct {
 	WorkspaceRoot string
+	WorkspaceID   string
 	Remote        string
 	EventsLogPath string
 }

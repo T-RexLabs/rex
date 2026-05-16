@@ -146,7 +146,7 @@ func New(opts Options) (*Server, error) {
 	// {entity...} captures `.rex/`-relative paths like
 	// "specs/sync.yaml" via r.PathValue("entity").
 	s.mux.HandleFunc("POST /sync/git", s.handleGitPush)
-	s.mux.HandleFunc("GET /sync/git/{entity...}", s.handleGitPull)
+	s.mux.HandleFunc("GET /sync/git/ws/{ws}/{entity...}", s.handleGitPull)
 	s.mux.HandleFunc(authChallengePath, s.handleAuthChallenge)
 	s.mux.HandleFunc(authVerifyPath, s.handleAuthVerify)
 	s.mux.HandleFunc(authRefreshPath, s.handleAuthRefresh)

@@ -55,11 +55,11 @@ type Options struct {
 }
 
 // NewGitStoreResolver builds an internalweb.WorkspaceResolver
-// backed by the central GitStore (specs) and Event store (runs +
-// audit). v1 single-workspace limitation per
-// centralWorkspaceResolver — the resolver returns the same
-// projections regardless of workspaceID until the multi-workspace
-// store refactor lands. Either argument may be nil; the
+// backed by the central GitStore (specs / amendments / remotes /
+// workspace.yaml) and Event store (runs / audit). Each Resolve
+// call scopes the returned projections to the supplied
+// workspaceID; entities pushed for one workspace are invisible
+// to projections for another. Either argument may be nil; the
 // corresponding projection on the returned Workspace will then
 // be nil and handlers respond 503 for that surface.
 func NewGitStoreResolver(git GitEntityReader, events EventReader) internalweb.WorkspaceResolver {

@@ -17,22 +17,20 @@ import (
 // can land alongside the multi-workspace refactor without changing
 // the handler call sites.
 type centralAuditProjection struct {
-	events EventReader
-	ctx    context.Context
+	events      EventReader
+	workspaceID string
+	ctx         context.Context
 }
 
-func newCentralAuditProjection(ctx context.Context, events EventReader) centralAuditProjection {
+func newCentralAuditProjection(ctx context.Context, events EventReader, workspaceID string) centralAuditProjection {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return centralAuditProjection{events: events, ctx: ctx}
+	return centralAuditProjection{events: events, workspaceID: workspaceID, ctx: ctx}
 }
 
 func (p centralAuditProjection) TailAudit(limit int) ([]internalweb.AuditRow, error) {
-	if p.events == nil {
-		return nil, nil
-	}
-	records, err := p.events.Since(p.ctx, "")
+	records, err := readWorkspaceEvents(p.ctx, p.events, p.workspaceID)
 	if err != nil {
 		return nil, fmt.Errorf("central audit: read events: %w", err)
 	}

@@ -41,11 +41,17 @@ type GitEntity struct {
 
 // GitPushRequest is the body of POST /sync/git (sync.API.4).
 //
-// The wire shape is the {entity, base_revision, content, signature}
-// quad named in the spec. `entity` is the path, not the full GitEntity
-// — Path/Content/Signature are flat at the top level so the request
-// is small and human-readable.
+// The wire shape is the {workspace_id, entity, base_revision,
+// content, signature} tuple. `entity` is the path, not the full
+// GitEntity — Path/Content/Signature are flat at the top level
+// so the request stays small and human-readable.
+//
+// WorkspaceID scopes the entity to one workspace on the central
+// node (a central holds content for many workspaces, and the
+// per-workspace .rex/ trees never cross-contaminate). Required:
+// pushes with an empty WorkspaceID are rejected with 400.
 type GitPushRequest struct {
+	WorkspaceID  string `json:"workspace_id"`
 	Entity       string `json:"entity"`
 	BaseRevision string `json:"base_revision"`
 	Content      string `json:"content"`
@@ -79,35 +85,39 @@ type GitPullResponse struct {
 	Entity GitEntity `json:"entity"`
 }
 
-// GitSigningInput is the canonical struct clients sign and the server
-// reconstructs when verifying a push. JSON-encoded with struct field
-// order; identity-and-trust.* signatures are over the hex-string
-// rendering, not raw bytes.
+// GitSigningInput is the canonical struct clients sign and the
+// server reconstructs when verifying a push. JSON-encoded with
+// struct field order; identity-and-trust.* signatures are over
+// the hex-string rendering, not raw bytes.
 //
 // Fields:
 //
 //	Version       — locks the format; mismatched versions reject
-//	Path          — bound so a signature for one entity cannot move
-//	                to another
+//	WorkspaceID   — bound so a signature for one workspace cannot
+//	                replay against another
+//	Path          — bound so a signature for one entity cannot
+//	                move to another
 //	BaseRevision  — bound so a replay against a different parent
 //	                fails
 //	ContentSHA256 — bound by hash so we sign a fixed-size input
 //	                regardless of payload size
 type GitSigningInput struct {
 	Version       string `json:"version"`
+	WorkspaceID   string `json:"workspace_id"`
 	Path          string `json:"path"`
 	BaseRevision  string `json:"base_revision"`
 	ContentSHA256 string `json:"content_sha256"`
 }
 
 // GitSigningBytes returns the canonical bytes to sign (or verify)
-// for a push of (path, baseRevision, content). The hex SHA-256 of
-// content is bound into the input so the signature commits to the
-// content without growing with payload size.
-func GitSigningBytes(path, baseRevision, content string) ([]byte, error) {
+// for a push of (workspaceID, path, baseRevision, content). The
+// hex SHA-256 of content is bound into the input so the signature
+// commits to the content without growing with payload size.
+func GitSigningBytes(workspaceID, path, baseRevision, content string) ([]byte, error) {
 	sum := sha256.Sum256([]byte(content))
 	in := GitSigningInput{
 		Version:       GitSigningVersion,
+		WorkspaceID:   workspaceID,
 		Path:          path,
 		BaseRevision:  baseRevision,
 		ContentSHA256: hex.EncodeToString(sum[:]),

@@ -13,14 +13,19 @@ import (
 	"github.com/asabla/rex/internal/core/sync/proto"
 )
 
-// seedGitOnCentral pushes content directly into the central git
-// store so the rebase target has a known remote revision.
+// seedTestWorkspaceID matches the workspace id `initSyncWorkspace`
+// stamps on the local workspace.yaml ("demo"). The CLI's
+// `rex sync rebase` reads that id and sends it on
+// /sync/git/ws/<id>/... so the seed has to land under the same
+// key on the central.
+const seedTestWorkspaceID = "demo"
+
 func seedGitOnCentral(t *testing.T, srv *server.Server, entity, content string) {
 	t.Helper()
 	rec := proto.GitEntity{
 		Path: entity, Content: content, Revision: proto.GitContentRevision(content),
 	}
-	if err := srv.GitStore().Put(context.Background(), rec, ""); err != nil {
+	if err := srv.GitStore().Put(context.Background(), seedTestWorkspaceID, rec, ""); err != nil {
 		t.Fatalf("seed git: %v", err)
 	}
 }
@@ -104,9 +109,9 @@ func TestSyncRebaseConflictWritesSidecar(t *testing.T) {
 	srv, hs := startCentral(t)
 	dir := initSyncWorkspace(t)
 
-	base := "name: original\n"
-	local := "name: local-edit\n"
-	remote := "name: remote-edit\n"
+	base := "id: demo\nname: original\n"
+	local := "id: demo\nname: local-edit\n"
+	remote := "id: demo\nname: remote-edit\n"
 	seedGitOnCentral(t, srv, "workspace.yaml", remote)
 	writeRexFile(t, dir, "workspace.yaml", local)
 	if err := os.MkdirAll(filepath.Join(dir, ".rex", "drafts", "primary.git"), 0o755); err != nil {
