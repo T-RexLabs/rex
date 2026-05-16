@@ -3,13 +3,17 @@ package web
 import (
 	"errors"
 	"fmt"
-	"html/template"
 	"net/http"
 	"strings"
 
 	"github.com/asabla/rex/internal/core/search"
 	"github.com/asabla/rex/internal/local/savedsearch"
+	internalweb "github.com/asabla/rex/internal/web"
 )
+
+// searchResultRow aliases the shared row type so existing template
+// references stay valid.
+type searchResultRow = internalweb.SearchResultRow
 
 // searchData backs search.tmpl.
 type searchData struct {
@@ -19,6 +23,10 @@ type searchData struct {
 	Limit   int
 	Error   string
 	Results []searchResultRow
+	// Notice is a one-shot informational banner shown above the
+	// results (e.g. on central: "search backend not yet wired in
+	// v1"). Empty on the local shell.
+	Notice string
 	// Saved is the merged set of per-user + per-workspace saved
 	// searches (web-ui.SEARCH.3). Workspace entries shadow user
 	// entries on name collision; the Source field hints at scope.
@@ -31,17 +39,32 @@ type searchData struct {
 	SaveSuccess string
 }
 
-// searchResultRow is one rendered match. Snippet is FTS5's
-// snippet excerpt with <<term>> highlight markers converted to
-// <mark> tags by markupSnippet so the template can render it
-// safely as HTML.
-type searchResultRow struct {
-	Type    string // "spec" | "event"
-	ID      string
-	Title   string
-	Snippet template.HTML
-	Score   float64
-	Href    string // workspace-local URL the row links to
+// localSearchProjection satisfies internalweb.SearchProjection
+// against the local SQLite FTS5 index.
+type localSearchProjection struct{ root string }
+
+func (l localSearchProjection) Search(query string, opts internalweb.SearchOptions) ([]searchResultRow, error) {
+	idx, err := search.Open(l.root)
+	if err != nil {
+		return nil, fmt.Errorf("open index: %w", err)
+	}
+	defer idx.Close()
+	results, err := idx.Search(query, search.SearchOptions{Limit: opts.Limit})
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]searchResultRow, 0, len(results))
+	for _, res := range results {
+		rows = append(rows, searchResultRow{
+			Type:    res.EntityType,
+			ID:      res.EntityID,
+			Title:   res.Title,
+			Snippet: internalweb.MarkupSnippet(res.Snippet),
+			Score:   res.Score,
+			Href:    internalweb.HrefForEntity(res.EntityType, res.EntityID),
+		})
+	}
+	return rows, nil
 }
 
 // handleSearch renders /search. The query comes in via ?q= so the
@@ -94,15 +117,7 @@ func (s *Server) runSearch(w http.ResponseWriter, r *http.Request, d *searchData
 		s.render(w, r, "search.tmpl", *d)
 		return
 	}
-	idx, err := search.Open(s.opts.WorkspaceRoot)
-	if err != nil {
-		d.Error = "open index: " + err.Error()
-		s.render(w, r, "search.tmpl", *d)
-		return
-	}
-	defer idx.Close()
-
-	results, err := idx.Search(d.Query, search.SearchOptions{Limit: d.Limit})
+	rows, err := localSearchProjection{root: s.opts.WorkspaceRoot}.Search(d.Query, internalweb.SearchOptions{Limit: d.Limit})
 	if err != nil {
 		if errors.Is(err, errEmptyQuery) || strings.Contains(err.Error(), "query is required") {
 			d.Error = "query is empty"
@@ -112,16 +127,7 @@ func (s *Server) runSearch(w http.ResponseWriter, r *http.Request, d *searchData
 		s.render(w, r, "search.tmpl", *d)
 		return
 	}
-	for _, res := range results {
-		d.Results = append(d.Results, searchResultRow{
-			Type:    res.EntityType,
-			ID:      res.EntityID,
-			Title:   res.Title,
-			Snippet: markupSnippet(res.Snippet),
-			Score:   res.Score,
-			Href:    hrefFor(res),
-		})
-	}
+	d.Results = rows
 	s.render(w, r, "search.tmpl", *d)
 }
 
@@ -194,36 +200,3 @@ var _ = fmt.Errorf
 // errEmptyQuery is reserved for future use if we adopt a typed
 // error from the search package.
 var errEmptyQuery = errors.New("search: empty query")
-
-// markupSnippet converts FTS5's `<<term>>` highlight markers into
-// HTML <mark> tags. Source text is HTML-escaped first so a match
-// that happens to contain HTML (e.g. an event payload that
-// embeds HTML inside a JSON string) cannot inject markup.
-func markupSnippet(s string) template.HTML {
-	escaped := template.HTMLEscapeString(s)
-	escaped = strings.ReplaceAll(escaped, "&lt;&lt;", `<mark>`)
-	escaped = strings.ReplaceAll(escaped, "&gt;&gt;", `</mark>`)
-	return template.HTML(escaped)
-}
-
-// hrefFor maps a search.Result to its detail page URL. Specs
-// link to /specs/<id>; events link to /runs/<run-id> when we can
-// pin a run id on the snippet, otherwise to /audit (the catch-all
-// for non-runner events). v1 simplification: events whose
-// EntityID looks like a run-event id link via /runs/<id> regardless
-// of whether the id is the run id or the event id; the run-detail
-// page handles unknown ids with a 404.
-func hrefFor(r search.Result) string {
-	switch r.EntityType {
-	case "spec":
-		return "/specs/" + r.EntityID
-	case "event":
-		// FTS event rows index every audit-class event including
-		// run-lifecycle events. We don't have a /events/<id>
-		// detail page (events live inside runs), so we point at
-		// /audit for now. A follow-up could pin run id when the
-		// row is a runner event.
-		return "/audit"
-	}
-	return "#"
-}

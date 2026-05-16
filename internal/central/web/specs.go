@@ -159,6 +159,11 @@ func (r centralWorkspaceResolver) Resolve(workspaceID string) (internalweb.Works
 		ws.RunDetail = newCentralRunDetailProjection(ctx, r.events)
 		ws.Audit = newCentralAuditProjection(ctx, r.events)
 	}
+	if r.git != nil {
+		ws.Amendments = newCentralAmendmentsProjection(ctx, r.git)
+	}
+	// ws.Search stays nil in v1; the central search handler
+	// renders the notice when the projection is unbound.
 	return ws, nil
 }
 

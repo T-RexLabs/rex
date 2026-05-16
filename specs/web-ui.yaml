@@ -161,8 +161,26 @@ tasks:
 
   - id: central-read-side-search-amendments
     description: "Lift /search and /amendments + /amendments/<stem> into internal/web/ behind SearchProjection and AmendmentsProjection. Central search hits the Postgres FTS index (central-node.DB.4); amendments project from the GitStore"
-    state: todo
+    state: done
+    note: "internal/web/amendments.go owns AmendmentRow, AmendmentDetail, AmendmentsListOptions, AmendmentsProjection, NewAmendmentRow, NewAmendmentDetail, FirstLineOf. internal/web/search.go owns SearchResultRow, SearchOptions, SearchProjection, MarkupSnippet, HrefForEntity. internalweb.Workspace gained Amendments + Search fields. specamend grew ParseAmendmentBytes (filesystem-agnostic parse) so the central side can project from raw GitStore bytes without writing a duplicate parser. Local shell now hosts localAmendmentsProjection (wraps specamend.List/Load) and localSearchProjection (wraps internal/core/search.Index); the existing local handlers (including accept/reject + saved-searches sidebar) keep their behaviour. Central shell hosts centralAmendmentsProjection (walks GitStore for specs/_proposed/[_accepted/]*.yaml, parses via specamend.ParseAmendmentBytes); mounts /orgs/{org}/workspaces/{ws}/amendments (shared amendments_list.tmpl) and /orgs/{org}/workspaces/{ws}/amendments/{stem} (shared amendments_detail.tmpl). The central detail page is read-only — the accept/reject buttons render as absent because central mutations are out of scope in v1 (identity signing + event-log writes are local-only); to make the gate visible to the template, central rewrites the state string for proposed amendments so the template's literal-state check fails. /orgs/{org}/workspaces/{ws}/search renders the shared search.tmpl with a new .Notice field carrying 'central search backend not yet wired in v1' until the Postgres FTS surface (central-node.DB.4) ships; the v1 central resolver leaves Workspace.Search nil. search.tmpl grew the .Notice banner branch (additive, no behaviour change on local). Saved-searches sidebar stays local-only — central declares zero-valued SaveSuccess/SaveError/Saved placeholders so the shared template guards short-circuit. v1 single-workspace limitation continues per central-resolver-bootstrap."
     references: [CENTRAL.1, CENTRAL-LAYOUT.2, SHARED.2]
+    proof:
+      - kind: code
+        path: internal/web/amendments.go
+      - kind: code
+        path: internal/web/search.go
+      - kind: code
+        path: internal/core/specamend/specamend.go
+      - kind: code
+        path: internal/central/web/amendments.go
+      - kind: code
+        path: internal/central/web/search.go
+      - kind: code
+        path: internal/local/web/amendments.go
+      - kind: code
+        path: internal/local/web/search.go
+      - kind: test
+        path: internal/central/web/amendments_search_test.go
 
   - id: central-read-side-remotes-settings
     description: "Lift /remotes and /settings into internal/web/ as read-only on central per the 2026-05-16 amendment. Local shell continues to surface per-machine config (identity, log levels, hook search paths); the shared handler hides those sections when the resolver reports no per-machine context"

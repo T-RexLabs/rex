@@ -225,14 +225,32 @@ func parseFile(path string, state State) (*Amendment, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	var fm frontmatter
-	if err := yaml.Unmarshal(body, &fm); err != nil {
+	stem := strings.TrimSuffix(filepath.Base(path), ".yaml")
+	a, err := ParseAmendmentBytes(stem, body, state)
+	if err != nil {
 		return nil, fmt.Errorf("yaml %s: %w", path, err)
 	}
-	stem := strings.TrimSuffix(filepath.Base(path), ".yaml")
-	a := &Amendment{
+	a.Path = path
+	return a, nil
+}
+
+// ParseAmendmentBytes is the filesystem-agnostic parse path: it
+// takes the amendment's stem + raw YAML bytes + the lifecycle
+// state implied by the source (proposed / accepted) and returns
+// the projected Amendment. Used by callers that don't have a
+// filesystem path — notably the central web shell, which projects
+// amendments from the GitStore.
+//
+// On success Amendment.Path is left empty; callers with a path
+// should set it after the call. Returns a non-nil error only on
+// YAML decode failure.
+func ParseAmendmentBytes(stem string, body []byte, state State) (*Amendment, error) {
+	var fm frontmatter
+	if err := yaml.Unmarshal(body, &fm); err != nil {
+		return nil, fmt.Errorf("yaml %s: %w", stem, err)
+	}
+	return &Amendment{
 		Stem:          stem,
-		Path:          path,
 		State:         state,
 		AmendmentFor:  fm.AmendmentFor,
 		AmendmentDate: fm.AmendmentDate,
@@ -240,8 +258,7 @@ func parseFile(path string, state State) (*Amendment, error) {
 		AmendmentKind: fm.AmendmentKind,
 		Multi:         fm.Target == "multi",
 		Body:          body,
-	}
-	return a, nil
+	}, nil
 }
 
 // AcceptResult captures the file movement performed by Accept and

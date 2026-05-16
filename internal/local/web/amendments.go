@@ -3,7 +3,6 @@ package web
 import (
 	"errors"
 	"fmt"
-	"html/template"
 	"io/fs"
 	"net/http"
 	"path/filepath"
@@ -14,20 +13,12 @@ import (
 	"github.com/asabla/rex/internal/core/search"
 	"github.com/asabla/rex/internal/core/specamend"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
+	internalweb "github.com/asabla/rex/internal/web"
 )
 
-// amendmentRow is the template-friendly view of one amendment in
-// the /amendments index.
-type amendmentRow struct {
-	Stem          string
-	Path          string
-	State         specamend.State
-	AmendmentFor  string
-	AmendmentDate string
-	AmendmentKind string
-	Multi         bool
-	SummaryFirst  string
-}
+// amendmentRow aliases the shared row type so existing handler
+// code references the old identifier.
+type amendmentRow = internalweb.AmendmentRow
 
 // amendmentsListData backs amendments_list.tmpl.
 type amendmentsListData struct {
@@ -37,22 +28,43 @@ type amendmentsListData struct {
 	ForFilter   string
 }
 
-// amendmentDetailData backs amendments_detail.tmpl.
+// amendmentDetailData backs amendments_detail.tmpl. Embeds the
+// shared AmendmentDetail so .Stem / .State / .BodyPretty etc.
+// resolve via the embedded struct without a duplicate declaration.
 type amendmentDetailData struct {
 	pageData
-	Stem          string
-	Path          string
-	State         specamend.State
-	AmendmentFor  string
-	AmendmentDate string
-	AmendmentKind string
-	Multi         bool
-	Summary       string
-	BodyPretty    template.HTML // chroma-highlighted YAML
-	BodyRaw       string
+	internalweb.AmendmentDetail
 	// Flash holds a one-shot status message rendered above the
 	// detail (e.g. "amendment accepted"). Empty on a cold load.
 	Flash string
+}
+
+// localAmendmentsProjection satisfies
+// internalweb.AmendmentsProjection by wrapping specamend's
+// filesystem-backed list/load against the bound workspace root.
+type localAmendmentsProjection struct{ root string }
+
+func (l localAmendmentsProjection) ListAmendments(opts internalweb.AmendmentsListOptions) ([]internalweb.AmendmentRow, error) {
+	amendments, err := specamend.List(l.root, specamend.ListOptions{State: opts.State, For: opts.For})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]internalweb.AmendmentRow, 0, len(amendments))
+	for _, a := range amendments {
+		out = append(out, internalweb.NewAmendmentRow(a))
+	}
+	return out, nil
+}
+
+func (l localAmendmentsProjection) LoadAmendment(stem string, hl *internalweb.Highlighter) (internalweb.AmendmentDetail, bool, error) {
+	a, err := specamend.Load(l.root, stem)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return internalweb.AmendmentDetail{}, false, nil
+		}
+		return internalweb.AmendmentDetail{}, false, err
+	}
+	return internalweb.NewAmendmentDetail(a, hl), true, nil
 }
 
 // handleAmendmentsList renders GET /amendments.
@@ -66,18 +78,13 @@ func (s *Server) handleAmendmentsList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "web: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	amendments, err := specamend.List(s.opts.WorkspaceRoot, specamend.ListOptions{
+	rows, err := localAmendmentsProjection{root: s.opts.WorkspaceRoot}.ListAmendments(internalweb.AmendmentsListOptions{
 		State: state,
 		For:   forFilter,
 	})
 	if err != nil {
 		http.Error(w, "web: list amendments: "+err.Error(), http.StatusInternalServerError)
 		return
-	}
-
-	rows := make([]amendmentRow, 0, len(amendments))
-	for _, a := range amendments {
-		rows = append(rows, toAmendmentRow(a))
 	}
 
 	base := s.basePageData()
@@ -106,33 +113,22 @@ func (s *Server) handleAmendmentDetail(w http.ResponseWriter, r *http.Request) {
 // redirect (only the rejected branch — accepted goes back to
 // _accepted/<stem> via the same URL).
 func (s *Server) renderAmendmentDetail(w http.ResponseWriter, r *http.Request, stem, flash string, status int) {
-	a, err := specamend.Load(s.opts.WorkspaceRoot, stem)
+	detail, found, err := localAmendmentsProjection{root: s.opts.WorkspaceRoot}.LoadAmendment(stem, s.highlighter)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			http.NotFound(w, r)
-			return
-		}
 		http.Error(w, "web: load amendment: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		http.NotFound(w, r)
 		return
 	}
 
 	base := s.basePageData()
 	base.NavSection = "amendments"
 	d := amendmentDetailData{
-		pageData:      base,
-		Stem:          a.Stem,
-		Path:          a.Path,
-		State:         a.State,
-		AmendmentFor:  a.AmendmentFor,
-		AmendmentDate: a.AmendmentDate,
-		AmendmentKind: a.AmendmentKind,
-		Multi:         a.Multi,
-		Summary:       a.Summary,
-		BodyRaw:       string(a.Body),
-		Flash:         flash,
-	}
-	if s.highlighter != nil {
-		d.BodyPretty = s.highlighter.HighlightYAML(string(a.Body))
+		pageData:        base,
+		AmendmentDetail: detail,
+		Flash:           flash,
 	}
 	if status != http.StatusOK {
 		w.WriteHeader(status)
@@ -250,39 +246,14 @@ func parseAmendmentState(s string) (specamend.State, error) {
 	}
 }
 
-func toAmendmentRow(a *specamend.Amendment) amendmentRow {
-	return amendmentRow{
-		Stem:          a.Stem,
-		Path:          a.Path,
-		State:         a.State,
-		AmendmentFor:  a.AmendmentFor,
-		AmendmentDate: a.AmendmentDate,
-		AmendmentKind: a.AmendmentKind,
-		Multi:         a.Multi,
-		SummaryFirst:  firstLineOf(a.Summary),
-	}
-}
-
-func firstLineOf(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
-	}
-	return s
-}
-
 // loadAmendmentsForSpec returns rows for the amendments-panel on
 // /specs/<id>. Used by handleSpecDetail. Errors are swallowed so
 // a missing _proposed/ directory yields an empty panel rather
 // than a 500.
 func loadAmendmentsForSpec(workspaceRoot, specID string) []amendmentRow {
-	amendments, err := specamend.List(workspaceRoot, specamend.ListOptions{For: specID})
+	rows, err := localAmendmentsProjection{root: workspaceRoot}.ListAmendments(internalweb.AmendmentsListOptions{For: specID})
 	if err != nil {
 		return nil
 	}
-	out := make([]amendmentRow, 0, len(amendments))
-	for _, a := range amendments {
-		out = append(out, toAmendmentRow(a))
-	}
-	return out
+	return rows
 }

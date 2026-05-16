@@ -68,4 +68,12 @@ type Workspace struct {
 	// Audit serves the shared /audit handler. nil leaves the
 	// page empty.
 	Audit AuditProjection
+	// Amendments serves the shared /amendments index + detail
+	// handlers. nil leaves the page empty.
+	Amendments AmendmentsProjection
+	// Search serves the shared /search handler. nil makes the
+	// search page render with a "backend not yet wired" notice
+	// instead of running queries (the central shell's v1 path
+	// until Postgres FTS lands per central-node.DB.4).
+	Search SearchProjection
 }

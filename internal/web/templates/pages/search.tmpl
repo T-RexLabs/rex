@@ -45,6 +45,11 @@
         <span><strong>search failed.</strong> {{.Error}}</span>
       </aside>
     {{end}}
+    {{if .Notice}}
+      <aside class="banner banner-info" role="status">
+        <span>{{.Notice}}</span>
+      </aside>
+    {{end}}
 
     {{if .Query}}
       {{if .Results}}
