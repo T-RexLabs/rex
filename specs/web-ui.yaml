@@ -205,8 +205,18 @@ tasks:
 
   - id: central-workspaces-index
     description: "Implement /orgs/<org-id>/workspaces — the per-org workspace index page that lists every workspace the central knows about for the org, with a click-through to the workspace overview. Uses the existing workspaces table + tenant routing"
-    state: todo
+    state: done
+    note: "internal/web/workspaces.go owns WorkspaceIndexRow + WorkspacesIndexProjection. A new workspaces_index.tmpl renders the per-org table with click-through to /orgs/<org>/workspaces/<ws-id>/specs. Central shell mounts /orgs/{org}/workspaces; centralWorkspacesIndexProjection reads the one workspace.yaml the GitStore holds and returns it as a single-row list, matching the v1 single-workspace GitStore limitation. When the multi-workspace GitStore refactor lands, the projection grows real dispatch against the workspaces table (central-node.DB.2 + the existing PostgresStore.WorkspaceOrg helper) without changing the handler call sites. The handler bypasses the standard ws-id route shape because /orgs/<id>/workspaces is org-scoped, not workspace-scoped — it dispatches through centralWorkspaceResolver's git field directly, returning 503 when a non-central resolver is bound."
     references: [CENTRAL.1]
+    proof:
+      - kind: code
+        path: internal/web/workspaces.go
+      - kind: code
+        path: internal/web/templates/pages/workspaces_index.tmpl
+      - kind: code
+        path: internal/central/web/workspaces.go
+      - kind: test
+        path: internal/central/web/workspaces_test.go
 
   - id: central-live-run-watching
     description: "Implement live SSE on central's /orgs/<org-id>/workspaces/<ws-id>/runs/<run-id> plus inline permission-prompt POST handling. Gated: requires either central-side execution (v1.5 per overview.SCOPE.1) or a push-style protocol from a local executor to its synced central beyond the existing /sync/events terminal-event path. v1 ships with the terminal-state-only renderer from central-read-side-runs-audit and a 'live tail not available on central in v1' notice"

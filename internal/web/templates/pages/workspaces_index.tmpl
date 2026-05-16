@@ -1,0 +1,49 @@
+{{define "title"}}rex-central — org {{.OrgID}} workspaces{{end}}
+
+{{define "content"}}
+<header class="page-header">
+  <h1>workspaces</h1>
+  <div class="meta">
+    <span>org: <code>{{.OrgID}}</code></span>
+    {{if .Workspaces}}
+      <span>·</span>
+      <span>{{len .Workspaces}} workspace{{if ne (len .Workspaces) 1}}s{{end}}</span>
+    {{end}}
+  </div>
+</header>
+
+<section class="section">
+  {{if .Workspaces}}
+    <div class="card">
+      <table class="table sortable">
+        <thead>
+          <tr>
+            <th data-sort-type="string" data-sort-default="asc">id</th>
+            <th data-sort-type="string">name</th>
+            <th data-sort-type="string">state</th>
+            <th>workspace</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Workspaces}}
+            <tr>
+              <td><code>{{.ID}}</code></td>
+              <td>{{if .Name}}{{.Name}}{{else}}<span class="dim">—</span>{{end}}</td>
+              <td>
+                {{if .State}}
+                  <span class="pill pill-{{.State}}"><i class="dot"></i>{{.State}}</span>
+                {{else}}
+                  <span class="dim">—</span>
+                {{end}}
+              </td>
+              <td><a href="/orgs/{{$.OrgID}}/workspaces/{{.ID}}/specs">open</a></td>
+            </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  {{else}}
+    <p class="muted small">no workspaces bound to this org yet</p>
+  {{end}}
+</section>
+{{end}}
