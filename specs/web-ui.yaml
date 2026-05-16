@@ -231,8 +231,18 @@ tasks:
 
   - id: central-placeholder-surfaces
     description: "Ship shell-only /orgs/<id>/idp and /orgs/<id>/encryption-keys pages that explain the feature is deferred and link to the tracking spec/issue. No mutation controls. Add the 'CENTRAL ONLY' banner per CENTRAL.2"
-    state: todo
+    state: done
+    note: "base.tmpl gained a CENTRAL ONLY banner that renders above {{block content}} when .CentralOnly is true (web-ui.CENTRAL.2). Both shells' page-data envelopes added the field — local always false; central sets true on org-scoped admin surfaces. A new placeholder_central.tmpl renders the deferred-feature copy + tracking hint. /orgs/{org}/idp explains the SSO/IdP bridging deferral with a pointer to central-node.IDP-CENTRAL.1-note; /orgs/{org}/encryption-keys explains the v1.5 deferral of per-tenant transcript encryption with a pointer to storage.encryption-opt-in + web-ui.CENTRAL.4. Both routes mount on the central web shell at GET /orgs/{org}/idp + GET /orgs/{org}/encryption-keys; no resolver dependency (the org id is the only input). Tests cover both pages' banner + copy + tracking hint, plus a negative test that the banner does not leak into workspace-scoped pages."
     references: [CENTRAL.1, CENTRAL.2, CENTRAL.4]
+    proof:
+      - kind: code
+        path: internal/web/templates/base.tmpl
+      - kind: code
+        path: internal/web/templates/pages/placeholder_central.tmpl
+      - kind: code
+        path: internal/central/web/placeholders.go
+      - kind: test
+        path: internal/central/web/placeholders_test.go
 
   - id: live-run-watching
     description: "Implement the live-run-watching SSE endpoint and the corresponding HTML view that streams transcript and permission prompts"

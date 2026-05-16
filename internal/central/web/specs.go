@@ -187,6 +187,11 @@ type centralPageData struct {
 	// central read-side handlers land.
 	OrgID       string
 	WorkspaceID string
+	// CentralOnly drives the "CENTRAL ONLY" banner the base
+	// layout renders on org-scoped admin surfaces (members,
+	// roles, idp, encryption-keys) per web-ui.CENTRAL.2.
+	// Workspace-scoped pages leave it false.
+	CentralOnly bool
 }
 
 // centralWorkspaceSummary is the shape base.tmpl's .Workspace

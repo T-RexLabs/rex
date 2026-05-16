@@ -166,6 +166,10 @@ type pageData struct {
 	// means "current workspace". Remotes is the list of registered
 	// remotes the user can dispatch a cross-workspace search to.
 	SearchScope internalweb.ScopePickerData
+	// CentralOnly is always false on the local shell; declared
+	// so the shared base.tmpl's banner branch can short-circuit
+	// uniformly on either shell (web-ui.CENTRAL.2).
+	CentralOnly bool
 }
 
 // ScopeOption / ScopePickerData live in internal/web (the

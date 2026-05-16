@@ -1,0 +1,22 @@
+{{define "title"}}rex-central — {{.Title}}{{end}}
+
+{{define "content"}}
+<header class="page-header">
+  <h1>{{.Title}}</h1>
+  <div class="meta">
+    <span>org: <code>{{.OrgID}}</code></span>
+    <span>·</span>
+    <span>shell-only placeholder</span>
+  </div>
+</header>
+
+<section class="section">
+  <div class="callout">
+    <p><strong>This feature is deferred.</strong></p>
+    <p>{{.Body}}</p>
+    {{if .TrackingHint}}
+      <p class="muted small">Tracking: {{.TrackingHint}}</p>
+    {{end}}
+  </div>
+</section>
+{{end}}

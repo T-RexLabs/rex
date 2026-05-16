@@ -38,6 +38,14 @@
     </div>
   </header>
   <main class="main">
+    {{if .CentralOnly}}
+      <aside class="banner banner-info banner-central-only" role="status">
+        <strong>CENTRAL ONLY.</strong>
+        This surface exists only on central nodes — the local UI
+        omits it because the feature lives on the central tenant
+        (web-ui.CENTRAL.2).
+      </aside>
+    {{end}}
     {{block "content" .}}{{end}}
   </main>
   <footer class="footer">
