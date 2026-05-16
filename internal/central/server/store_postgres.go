@@ -652,6 +652,46 @@ var schemaSteps = []string{
 		)
 		AND NOT EXISTS (SELECT 1 FROM admin_bootstrap);
 	`,
+
+	// 6: git_entities — workspace-scoped storage for git-merged
+	// content (sync.CAT.2 / sync.API.4). Mirrors what
+	// MemoryGitStore holds in process, but durably and
+	// org-isolated via the same RLS scheme the events table uses
+	// (DB.2). Composite primary key (org_id, workspace_id, path)
+	// matches the in-memory map[workspaceID]map[path]GitEntity
+	// shape and lets Postgres do the natural-key lookup that
+	// `gitStore.Get` needs.
+	//
+	// updated_at is the server-stamped acceptance time, surfaced
+	// on GetResponses so the rebase engine has a "when was this
+	// pushed" hint without an extra column on the wire.
+	//
+	// RLS mirrors events / workspaces: rows are visible only when
+	// app.current_org_id matches. Application-layer scoping is
+	// still primary (every query carries WHERE org_id = $1), but
+	// the policy keeps a future read-only audit role from
+	// stumbling across other tenants' content.
+	`
+		CREATE TABLE IF NOT EXISTS git_entities (
+			org_id        UUID NOT NULL REFERENCES orgs(id),
+			workspace_id  TEXT NOT NULL REFERENCES workspaces(id),
+			path          TEXT NOT NULL,
+			revision      TEXT NOT NULL,
+			content       TEXT NOT NULL,
+			signature     TEXT NOT NULL DEFAULT '',
+			actor         TEXT NOT NULL DEFAULT '',
+			updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+			PRIMARY KEY (org_id, workspace_id, path)
+		);
+		CREATE INDEX IF NOT EXISTS git_entities_workspace_idx
+			ON git_entities(workspace_id);
+
+		ALTER TABLE git_entities ENABLE ROW LEVEL SECURITY;
+
+		CREATE POLICY git_entities_org_isolation ON git_entities
+			USING      (org_id::text = current_setting('app.current_org_id', true))
+			WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
+	`,
 }
 
 // DefaultOrgName is the seeded org's name. Used by

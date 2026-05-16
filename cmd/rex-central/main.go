@@ -167,6 +167,10 @@ lost on restart.
 				}
 				defer pg.Close()
 				opts.Store = pg
+				// Same pool backs the git-merged content store.
+				// PostgresGitStore uses the parent's withOrgScope
+				// helper so RLS scoping carries through.
+				opts.GitStore = server.NewPostgresGitStore(pg)
 				logger.Info("postgres store opened",
 					"op", "startup",
 					"store", "postgres",

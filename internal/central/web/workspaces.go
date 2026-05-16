@@ -10,41 +10,67 @@ import (
 // GitWorkspacesLister is the opt-in subset of the central
 // GitStore that exposes the set of workspace ids the store
 // currently holds content for. MemoryGitStore implements it
-// directly; the future PostgresGitStore will satisfy it by
-// querying the workspaces table.
+// directly (no ctx needed); PostgresGitStore satisfies it via
+// a SELECT DISTINCT against the git_entities table.
 //
 // Kept separate from GitEntityReader because per-entity reads
 // are always workspace-scoped, while the index is the
 // not-workspace-scoped pivot point that lets us enumerate them.
+//
+// Two shapes are accepted at the call site: a context-free
+// listing (the in-memory store can satisfy that cheaply) and
+// the context-aware listing required by Postgres. The web shell
+// type-switches on whichever is implemented.
 type GitWorkspacesLister interface {
 	ListWorkspaces() []string
 }
 
-// centralWorkspacesIndexProjection satisfies
-// internalweb.WorkspacesIndexProjection by enumerating the
-// GitStore's workspaces and reading each workspace.yaml for the
-// rendered metadata. v1 limitation: the orgID is currently
-// ignored because the in-memory GitStore has no org binding;
-// when the PostgresGitStore lands the listing tightens to "ws
-// rows whose org_id matches orgID".
-type centralWorkspacesIndexProjection struct {
-	store  GitEntityReader
-	lister GitWorkspacesLister
-	ctx    context.Context
+// GitWorkspacesListerCtx is the context-aware variant
+// PostgresGitStore satisfies. Implementations that need
+// transaction scope (RLS via app.current_org_id) take this
+// interface; in-memory stores stick with the ctx-free
+// GitWorkspacesLister.
+type GitWorkspacesListerCtx interface {
+	ListWorkspaces(ctx context.Context) ([]string, error)
 }
 
-func newCentralWorkspacesIndexProjection(ctx context.Context, store GitEntityReader, lister GitWorkspacesLister) centralWorkspacesIndexProjection {
+// centralWorkspacesIndexProjection satisfies
+// internalweb.WorkspacesIndexProjection by enumerating the
+// GitStore's workspaces (via either the ctx-free or ctx-aware
+// lister) and reading each workspace.yaml for the rendered
+// metadata. Both lister shapes are accepted so the in-memory
+// and Postgres-backed stores plug in without an adapter.
+type centralWorkspacesIndexProjection struct {
+	store     GitEntityReader
+	lister    GitWorkspacesLister
+	listerCtx GitWorkspacesListerCtx
+	ctx       context.Context
+}
+
+func newCentralWorkspacesIndexProjection(ctx context.Context, store GitEntityReader, lister GitWorkspacesLister, listerCtx GitWorkspacesListerCtx) centralWorkspacesIndexProjection {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return centralWorkspacesIndexProjection{store: store, lister: lister, ctx: ctx}
+	return centralWorkspacesIndexProjection{store: store, lister: lister, listerCtx: listerCtx, ctx: ctx}
 }
 
 func (p centralWorkspacesIndexProjection) ListWorkspaces(orgID string) ([]internalweb.WorkspaceIndexRow, error) {
-	if p.store == nil || p.lister == nil {
+	if p.store == nil {
 		return nil, nil
 	}
-	ids := p.lister.ListWorkspaces()
+	var ids []string
+	switch {
+	case p.listerCtx != nil:
+		out, err := p.listerCtx.ListWorkspaces(p.ctx)
+		if err != nil {
+			return nil, err
+		}
+		ids = out
+	case p.lister != nil:
+		ids = p.lister.ListWorkspaces()
+	default:
+		return nil, nil
+	}
 	out := make([]internalweb.WorkspaceIndexRow, 0, len(ids))
 	for _, id := range ids {
 		row := internalweb.WorkspaceIndexRow{ID: id}
@@ -88,12 +114,13 @@ func (s *Server) handleWorkspacesIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "central web: workspaces index requires a GitStore-backed resolver", http.StatusServiceUnavailable)
 		return
 	}
-	lister, ok := cr.git.(GitWorkspacesLister)
-	if !ok {
+	lister, _ := cr.git.(GitWorkspacesLister)
+	listerCtx, _ := cr.git.(GitWorkspacesListerCtx)
+	if lister == nil && listerCtx == nil {
 		http.Error(w, "central web: GitStore does not implement GitWorkspacesLister", http.StatusServiceUnavailable)
 		return
 	}
-	rows, err := newCentralWorkspacesIndexProjection(context.Background(), cr.git, lister).ListWorkspaces(orgID)
+	rows, err := newCentralWorkspacesIndexProjection(r.Context(), cr.git, lister, listerCtx).ListWorkspaces(orgID)
 	if err != nil {
 		http.Error(w, "central web: list workspaces: "+err.Error(), http.StatusInternalServerError)
 		return
