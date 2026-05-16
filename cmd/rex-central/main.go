@@ -158,8 +158,10 @@ lost on restart.
 					"count", len(ks.Handles()),
 				)
 			}
+			var pg *server.PostgresStore
 			if cfg.DB.DSN != "" {
-				pg, err := server.NewPostgresStore(cmd.Context(), cfg.DB.DSN)
+				var err error
+				pg, err = server.NewPostgresStore(cmd.Context(), cfg.DB.DSN)
 				if err != nil {
 					return fmt.Errorf("postgres store: %w", err)
 				}
@@ -187,7 +189,7 @@ lost on restart.
 			// internal/web package is reachable from the central
 			// binary.
 			if webEnabled {
-				webShell, err := centralweb.New(centralweb.Options{
+				webOpts := centralweb.Options{
 					Version:  version,
 					BindAddr: cfg.Server.Addr,
 					Auth:     s, // *server.Server implements the Auth interface via IssueLoginChallenge
@@ -200,7 +202,17 @@ lost on restart.
 					// resolver returns the same projections regardless
 					// of ws-id until the multi-workspace refactor lands.
 					Resolver: centralweb.NewGitStoreResolver(s.GitStore(), s.Store()),
-				})
+				}
+				if pg != nil {
+					// Org-admin pages need a workspace-id-independent
+					// read against the org / membership tables. The
+					// memory store has no org concept, so wire the
+					// adapter only when --db (Postgres) is on.
+					// Mutation surfaces (invite, role change, removal)
+					// are still pending central-node.RBAC-SVR.1.
+					webOpts.Orgs = newPostgresOrgsAdapter(pg)
+				}
+				webShell, err := centralweb.New(webOpts)
 				if err != nil {
 					return fmt.Errorf("build web shell: %w", err)
 				}

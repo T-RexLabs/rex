@@ -1,0 +1,57 @@
+{{define "title"}}rex-central — org {{.OrgID}} members{{end}}
+
+{{define "content"}}
+<header class="page-header">
+  <h1>members</h1>
+  <div class="meta">
+    <span>org: <code>{{.OrgID}}</code></span>
+    {{if .Members}}
+      <span>·</span>
+      <span>{{len .Members}} member{{if ne (len .Members) 1}}s{{end}}</span>
+    {{end}}
+  </div>
+</header>
+
+<section class="section">
+  <div class="callout">
+    <p><strong>Read-only in v1.</strong>
+       Invite issuance, role changes, and removal land with the
+       org/member/role admin REST API tracked under
+       <code>central-node.RBAC-SVR.1</code>. Until then this page
+       surfaces the current membership for review only.</p>
+  </div>
+</section>
+
+<section class="section">
+  {{if .Members}}
+    <div class="card">
+      <table class="table sortable">
+        <thead>
+          <tr>
+            <th data-sort-type="string" data-sort-default="asc">fingerprint</th>
+            <th data-sort-type="string">role</th>
+            <th data-sort-type="date">joined</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Members}}
+            <tr>
+              <td><code>{{.Fingerprint}}</code></td>
+              <td><span class="pill pill-{{.Role}}"><i class="dot"></i>{{.Role}}</span></td>
+              <td>
+                {{if not .JoinedAt.IsZero}}
+                  <time>{{.JoinedAt.UTC.Format "2006-01-02 15:04 UTC"}}</time>
+                {{else}}
+                  <span class="dim">—</span>
+                {{end}}
+              </td>
+            </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  {{else}}
+    <p class="muted small">no members in this org</p>
+  {{end}}
+</section>
+{{end}}

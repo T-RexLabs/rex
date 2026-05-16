@@ -1,0 +1,39 @@
+{{define "title"}}rex-central — org {{.OrgID}} roles{{end}}
+
+{{define "content"}}
+<header class="page-header">
+  <h1>roles</h1>
+  <div class="meta">
+    <span>org: <code>{{.OrgID}}</code></span>
+    <span>·</span>
+    <span>v1 catalog: built into the binary; per-org rule edits
+      land with the admin REST API
+      (<code>central-node.RBAC-SVR.1</code>)</span>
+  </div>
+</header>
+
+<section class="section">
+  {{if .Roles}}
+    <div class="card">
+      {{range .Roles}}
+        <div class="role-row">
+          <div class="role-name">
+            <span class="pill pill-{{.Role}}"><i class="dot"></i>{{.Role}}</span>
+          </div>
+          {{if .Permissions}}
+            <ul class="role-perms">
+              {{range .Permissions}}
+                <li><code>{{.}}</code></li>
+              {{end}}
+            </ul>
+          {{else}}
+            <p class="muted small">no permissions</p>
+          {{end}}
+        </div>
+      {{end}}
+    </div>
+  {{else}}
+    <p class="muted small">no roles defined</p>
+  {{end}}
+</section>
+{{end}}

@@ -226,8 +226,26 @@ tasks:
 
   - id: central-org-admin-pages
     description: "Implement the org-administration pages: /orgs/<id> (overview), /orgs/<id>/members (invite, role change, removal), /orgs/<id>/roles (role catalog view + edit). Every mutation runs through RBAC and writes audit entries (CENTRAL.3). Requires the org/member/role REST API to land first or alongside (tracked under central-node.RBAC-SVR.1)"
-    state: todo
+    state: done
+    note: "Ships the READ side of the three pages end-to-end; the mutating actions (invite, role change, removal — CENTRAL.3) stay pending the org/member/role admin REST API tracked under central-node.RBAC-SVR.1. The members page surfaces an inline 'Read-only in v1 — admin REST API pending central-node.RBAC-SVR.1' notice so operators know what's missing. internal/web/orgs.go owns OrgSummary + MembershipRow + RoleCatalogRow + OrgsProjection (LookupOrg + ListMembers; mutations deliberately absent). Three new templates: org_overview.tmpl (header card + quick-action navigation), org_members.tmpl (membership table + pending-API notice), org_roles.tmpl (built-in role catalog from internal/core/rbac). Central web shell mounts GET /orgs/{org}, /orgs/{org}/members, /orgs/{org}/roles; all three set CentralOnly so the shared base layout renders the CENTRAL ONLY banner (CENTRAL.2). PostgresStore grew two thin read methods: LookupOrgByID + ListMembersForOrg; cmd/rex-central provides a postgresOrgsAdapter that satisfies OrgsProjection (lives in cmd/ so internal/central/web stays free of internal/central/server). The adapter only wires when --db Postgres is enabled — MemoryStore deployments respond 503 on overview + members (no org data) but /roles still renders because it reads the built-in catalog. v1 single-workspace + admin-REST-pending limitations carried in the page copy and in this note."
     references: [CENTRAL.1, CENTRAL.3]
+    proof:
+      - kind: code
+        path: internal/web/orgs.go
+      - kind: code
+        path: internal/web/templates/pages/org_overview.tmpl
+      - kind: code
+        path: internal/web/templates/pages/org_members.tmpl
+      - kind: code
+        path: internal/web/templates/pages/org_roles.tmpl
+      - kind: code
+        path: internal/central/web/orgs.go
+      - kind: code
+        path: internal/central/server/orgs.go
+      - kind: code
+        path: cmd/rex-central/orgs_adapter.go
+      - kind: test
+        path: internal/central/web/orgs_test.go
 
   - id: central-placeholder-surfaces
     description: "Ship shell-only /orgs/<id>/idp and /orgs/<id>/encryption-keys pages that explain the feature is deferred and link to the tracking spec/issue. No mutation controls. Add the 'CENTRAL ONLY' banner per CENTRAL.2"

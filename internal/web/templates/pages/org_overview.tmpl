@@ -1,0 +1,26 @@
+{{define "title"}}rex-central — org {{.Org.Name}}{{end}}
+
+{{define "content"}}
+<header class="page-header">
+  <h1>{{if .Org.DisplayName}}{{.Org.DisplayName}}{{else}}{{.Org.Name}}{{end}}</h1>
+  <div class="meta">
+    <span>org id: <code>{{.Org.ID}}</code></span>
+    <span>·</span>
+    <span>name: <code>{{.Org.Name}}</code></span>
+    {{if not .Org.CreatedAt.IsZero}}
+      <span>·</span>
+      <span>created {{.Org.CreatedAt.UTC.Format "2006-01-02 15:04 UTC"}}</span>
+    {{end}}
+  </div>
+</header>
+
+<section class="section">
+  <ul class="quick-actions">
+    <li><a href="/orgs/{{.Org.ID}}/workspaces">workspaces</a></li>
+    <li><a href="/orgs/{{.Org.ID}}/members">members</a></li>
+    <li><a href="/orgs/{{.Org.ID}}/roles">roles</a></li>
+    <li><a href="/orgs/{{.Org.ID}}/idp">identity provider</a></li>
+    <li><a href="/orgs/{{.Org.ID}}/encryption-keys">encryption keys</a></li>
+  </ul>
+</section>
+{{end}}

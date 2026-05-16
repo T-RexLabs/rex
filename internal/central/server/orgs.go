@@ -169,3 +169,50 @@ func (s *PostgresStore) ListOrgs(ctx context.Context) ([]Org, error) {
 	}
 	return out, rows.Err()
 }
+
+// LookupOrgByID returns the org with the given id, or
+// pgx.ErrNoRows when the id is unknown. The web shell's
+// /orgs/<id> overview handler calls it; ListOrgs is the broader
+// list-everything alternative.
+func (s *PostgresStore) LookupOrgByID(ctx context.Context, id string) (Org, error) {
+	var o Org
+	err := s.pool.QueryRow(ctx,
+		`SELECT id::text, name, display_name, created_at FROM orgs WHERE id::text = $1`,
+		id,
+	).Scan(&o.ID, &o.Name, &o.DisplayName, &o.CreatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return o, fmt.Errorf("server: org %q not found", id)
+		}
+		return o, fmt.Errorf("server: lookup org %q: %w", id, err)
+	}
+	return o, nil
+}
+
+// ListMembersForOrg returns the membership rows for orgID,
+// ordered by fingerprint so the list view is deterministic.
+// Returns an empty slice + nil when the org has no members or
+// when orgID does not exist (read-only surface — no separate
+// "not found" branch).
+func (s *PostgresStore) ListMembersForOrg(ctx context.Context, orgID string) ([]Membership, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT m.org_id::text, o.name, m.role, m.joined_at, m.fingerprint
+		FROM   org_memberships m
+		JOIN   orgs            o ON o.id = m.org_id
+		WHERE  m.org_id::text = $1
+		ORDER  BY m.fingerprint
+	`, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("server: list members for org: %w", err)
+	}
+	defer rows.Close()
+	var out []Membership
+	for rows.Next() {
+		var m Membership
+		if err := rows.Scan(&m.OrgID, &m.OrgName, &m.Role, &m.JoinedAt, &m.Fingerprint); err != nil {
+			return nil, fmt.Errorf("server: list members scan: %w", err)
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

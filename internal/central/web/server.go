@@ -45,6 +45,13 @@ type Options struct {
 	// route responds 503. The v1 central wireup binds a
 	// GitStore-backed resolver; tests inject stubs.
 	Resolver internalweb.WorkspaceResolver
+	// Orgs powers the central org-admin surfaces (/orgs/<id>,
+	// /orgs/<id>/members, /orgs/<id>/roles). Optional; the v1
+	// wireup binds a PostgresStore-backed adapter from
+	// cmd/rex-central. When nil, the read-side admin handlers
+	// respond 503 with a pointer to central-node.RBAC-SVR.1
+	// (admin REST API pending).
+	Orgs internalweb.OrgsProjection
 }
 
 // NewGitStoreResolver builds an internalweb.WorkspaceResolver
@@ -124,6 +131,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /orgs/{org}/workspaces", s.handleWorkspacesIndex)
 	s.mux.HandleFunc("GET /orgs/{org}/idp", s.handleOrgIdP)
 	s.mux.HandleFunc("GET /orgs/{org}/encryption-keys", s.handleOrgEncryptionKeys)
+	s.mux.HandleFunc("GET /orgs/{org}", s.handleOrgOverview)
+	s.mux.HandleFunc("GET /orgs/{org}/members", s.handleOrgMembers)
+	s.mux.HandleFunc("GET /orgs/{org}/roles", s.handleOrgRoles)
 }
 
 // handleChromaCSS serves the chroma stylesheet generated at
