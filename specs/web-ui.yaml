@@ -7,7 +7,7 @@ metadata:
   owners: []
   related_specs: [overview, cli, execution, search, audit, central-node, sync]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-15T00:00:00Z
+  updated_at: 2026-05-16T00:00:00Z
 
 description: |
   Rex ships two web UIs from day one: a local UI served by the local
@@ -117,10 +117,36 @@ tasks:
       - kind: test
         path: internal/local/cli/remote_login_test.go
 
-  - id: central-read-side-pages
-    description: "Mount the read-side shared handlers under the /orgs/<org-id>/workspaces/<ws-id>/ prefix on central; bind a Postgres-backed WorkspaceResolver. Covers specs, runs, audit, search, amendments, remotes, settings (read paths only)"
+  - id: central-resolver-bootstrap
+    description: "Pin the WorkspaceResolver projection pattern by lifting /specs and /specs/<spec-id> into internal/web/ behind a SpecProjection interface. Local shell satisfies it by reading <Root>/.rex/specs/; central shell satisfies it by reading from the GitStore. Mount /orgs/<org-id>/workspaces/<ws-id>/specs and /orgs/<org-id>/workspaces/<ws-id>/specs/<spec-id> on the central web shell"
     state: todo
-    references: [CENTRAL.1, SHARED.2]
+    references: [CENTRAL.1, CENTRAL-LAYOUT.2, SHARED.2]
+
+  - id: central-read-side-runs-audit
+    description: "Lift /runs (list), /runs/<run-id> (terminal-state only — no live SSE; that's central-live-run-watching), and /audit handlers into internal/web/ behind a RunsProjection + AuditProjection. Central implementations read from the central event store (Postgres). The live-tail UI degrades to a banner on /runs/<run-id> for non-terminal runs"
+    state: todo
+    references: [CENTRAL.1, CENTRAL-LAYOUT.2, SHARED.2]
+
+  - id: central-read-side-search-amendments
+    description: "Lift /search and /amendments + /amendments/<stem> into internal/web/ behind SearchProjection and AmendmentsProjection. Central search hits the Postgres FTS index (central-node.DB.4); amendments project from the GitStore"
+    state: todo
+    references: [CENTRAL.1, CENTRAL-LAYOUT.2, SHARED.2]
+
+  - id: central-read-side-remotes-settings
+    description: "Lift /remotes and /settings into internal/web/ as read-only on central per the 2026-05-16 amendment. Local shell continues to surface per-machine config (identity, log levels, hook search paths); the shared handler hides those sections when the resolver reports no per-machine context"
+    state: todo
+    references: [CENTRAL.1, CENTRAL-LAYOUT.2, SHARED.2]
+
+  - id: central-workspaces-index
+    description: "Implement /orgs/<org-id>/workspaces — the per-org workspace index page that lists every workspace the central knows about for the org, with a click-through to the workspace overview. Uses the existing workspaces table + tenant routing"
+    state: todo
+    references: [CENTRAL.1]
+
+  - id: central-live-run-watching
+    description: "Implement live SSE on central's /orgs/<org-id>/workspaces/<ws-id>/runs/<run-id> plus inline permission-prompt POST handling. Gated: requires either central-side execution (v1.5 per overview.SCOPE.1) or a push-style protocol from a local executor to its synced central beyond the existing /sync/events terminal-event path. v1 ships with the terminal-state-only renderer from central-read-side-runs-audit and a 'live tail not available on central in v1' notice"
+    state: todo
+    note: "Deferred — depends on either central-side execution or a push channel for in-flight events."
+    references: [CENTRAL.1, LIVE.1, LIVE.2, LIVE.3]
 
   - id: central-org-admin-pages
     description: "Implement the org-administration pages: /orgs/<id> (overview), /orgs/<id>/members (invite, role change, removal), /orgs/<id>/roles (role catalog view + edit). Every mutation runs through RBAC and writes audit entries (CENTRAL.3). Requires the org/member/role REST API to land first or alongside (tracked under central-node.RBAC-SVR.1)"
@@ -211,13 +237,33 @@ components:
         mirrors the local UI under
         `/orgs/<org-id>/workspaces/<ws-id>/...`: `/specs`,
         `/specs/<spec-id>`, `/amendments`, `/amendments/<stem>`,
-        `/runs`, `/runs/<run-id>` (live), `/audit`, `/remotes`,
+        `/runs`, `/runs/<run-id>`, `/audit`, `/remotes`,
         `/settings`, plus `/orgs/<org-id>/workspaces` for the
         per-org workspace index. `/search` is org-scoped via the
         session (the picker can scope further per SEARCH.1). `/`
         redirects to `/orgs/<id>` for single-org users and to an
         org picker for multi-org users (matches central-node.
         TENANT.2 — never picks for the user).
+
+        Per-route semantics on central differ from local where
+        the underlying model differs:
+
+        - `/remotes` renders the workspace's *synced* remotes
+          registry (`.rex/remotes.toml` from the GitStore, per
+          storage.WS.2.7). Read-only on central; per-machine
+          remote management remains the local shell's surface.
+        - `/settings` renders `workspace.yaml` (the
+          workspace-level synced settings). Per-machine config
+          (identity selection, log levels, hook search paths)
+          is local-only and is omitted on central rather than
+          shown empty or 404'd.
+        - `/runs/<run-id>` renders terminal-state runs from the
+          replayed event store. Live SSE and inline permission
+          prompts are deferred to `central-live-run-watching`,
+          which is gated on a push-style channel for in-flight
+          events (see the 2026-05-16 amendment, Decision B).
+          Non-terminal runs render with a "live tail not
+          available on central in v1" notice.
       "2": "Org-scoped pages show a 'CENTRAL ONLY' banner indicator on shared layout headers when accessed in a context that has them gated; this gate is also reflected in the local UI's nav (those routes don't exist locally)"
       "3": "Members view supports invite issuance, role changes, and removal; every action runs through RBAC and writes audit entries"
       "4": |

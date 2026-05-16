@@ -1,0 +1,403 @@
+# Proposed amendment — split `central-read-side-pages` into PR-sized
+# sub-tasks, pin the WorkspaceResolver projection design, defer live-run
+# watching on central until execution-side decisions land, and clarify
+# what /remotes and /settings mean on a central node.
+#
+# Status: accepted
+# Date:   2026-05-16
+# Folded: 2026-05-16 — web-ui.CENTRAL.1 text replaced (route list
+#         unchanged; per-route semantics for /remotes, /settings,
+#         /runs/<run-id> grow clarifying paragraphs).
+#         `central-read-side-pages` replaced with five sub-tasks
+#         (central-resolver-bootstrap, central-read-side-runs-audit,
+#         central-read-side-search-amendments,
+#         central-read-side-remotes-settings, central-workspaces-index).
+#         New deferred task `central-live-run-watching` added.
+#         web-ui.metadata.updated_at bumped to 2026-05-16.
+#
+# Surfaced by:
+#   `central-read-side-pages` reads as one task but bundles nine routes
+#   (the workspace-scoped subset of CENTRAL.1: /specs, /specs/<id>,
+#   /amendments, /amendments/<stem>, /runs, /runs/<id> live, /audit,
+#   /remotes, /settings + the /orgs/<org-id>/workspaces index). The
+#   handlers each have their own data loader; collectively they touch
+#   the spec store, the event log, the audit registry, the FTS index,
+#   the amendment directory, the remotes registry, and the workspace
+#   settings file. Lifting all nine in a single PR violates the
+#   "one task per PR" sizing intent and forecloses on the staging
+#   work each handler needs (the central has no filesystem; every
+#   reader needs a Postgres / GitStore projection that isn't built
+#   yet).
+#
+#   Three open design questions sit underneath the bundle:
+#
+#     a. **Projection layer.** Local handlers reach
+#        `opts.WorkspaceRoot/.rex/specs/...` directly. Central has no
+#        workspace directory; content lives in the existing GitStore
+#        (specs, workspace.yaml, amendments) and the event log (runs,
+#        audit, transcripts). CENTRAL-LAYOUT.2 names a
+#        `WorkspaceResolver` interface but does not pin its projection
+#        methods. Doing them up-front is speculative; growing them per
+#        lifted handler is safer.
+#
+#     b. **Live run watching on central.** `/runs/<id>` (live) on the
+#        local UI uses file-tail polling of `.rex/events.log` at
+#        ~100ms cadence (LIVE.1-note). Central has no event-log file,
+#        so the mechanism doesn't carry. A push-style channel
+#        (Postgres LISTEN/NOTIFY or an in-process bus) is the right
+#        long-term answer, but the runs being watched all execute
+#        somewhere — and central-side execution is deferred to v1.5
+#        (overview.SCOPE.1). For v1 the central can show terminal
+#        states of synced runs but cannot stream in-flight events
+#        from a remote local node it does not control.
+#
+#     c. **/remotes and /settings on central.** Locally /remotes
+#        manages `~/.config/rex/remotes.toml` (per-machine) and
+#        /settings covers identity selection, default remote, log
+#        levels, hook search paths — all machine-bound. None of that
+#        applies on a central tenant. CENTRAL.1 lists both routes
+#        as part of the workspace-scoped subset; their *meaning*
+#        on central was not pinned.
+#
+# This amendment establishes the split + the design pins so the
+# implementation can ship as a sequence of PR-sized tasks.
+
+target: web-ui
+state: accepted
+amendment_for: web-ui
+amendment_date: 2026-05-16
+amendment_kind: clarifying
+
+summary: |
+  Split the monolithic `central-read-side-pages` task into five
+  sequenced sub-tasks. Pin three design decisions:
+    1. WorkspaceResolver projection methods are added per lifted
+       handler (incremental), not declared up front; the local
+       resolver wraps filesystem reads, the central resolver
+       wraps GitStore + event-store reads.
+    2. Live-run watching on central (`/runs/<id>` live SSE +
+       inline permission prompts) is carved out to its own
+       sub-task and deferred until a push-style channel exists;
+       v1 central renders runs in terminal-state-only mode.
+    3. /remotes and /settings on central render the workspace's
+       *synced* configuration (workspace.yaml, remotes registry
+       from the GitStore) — not per-machine config, which is
+       local-only and absent on central.
+
+migration_impact: |
+  Additive: no existing requirement is removed; CENTRAL.1's route
+  list keeps the same nine routes. The single
+  `central-read-side-pages` task is replaced with five sub-tasks;
+  nothing has been built against it yet, so there is no
+  implementation churn. The clarifying notes on /remotes,
+  /settings, and live-run on central are folded into CENTRAL.1.
+
+# -----------------------------------------------------------------
+# Decision A — WorkspaceResolver projection methods grow per
+# lifted handler.
+#
+# The interface starts at the minimal shape from web-package-split:
+#
+#   type Workspace struct { ID, Root string }
+#   type WorkspaceResolver interface {
+#       Resolve(workspaceID string) (Workspace, error)
+#   }
+#
+# Each lifted handler extends Workspace (or adds a sibling
+# interface) with the projection methods it actually needs. Example
+# trajectory for /specs:
+#
+#   type SpecProjection interface {
+#       ListSpecs() ([]SpecRow, error)
+#       OpenSpec(id string) (io.ReadCloser, error)
+#   }
+#
+# The local shell satisfies SpecProjection by reading
+# `<Root>/.rex/specs/`; the central shell satisfies it by reading
+# from the GitStore.
+#
+# This avoids the "design every projection up front" tax. The
+# downside — interface churn as handlers land — is bounded by the
+# small handler count (five lifted handlers in v1) and tracked by
+# the sub-task sequence below.
+# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------
+# Decision B — Live-run watching on central is deferred.
+#
+# `/runs/<id>` (live SSE + inline permission prompts) needs an
+# event source for in-flight runs. On the local shell that's
+# events.log + a poller. On central there's no events.log; runs
+# arrive via /sync/events. v1 can:
+#
+#   - Render terminal runs (status, transcript chunks, spec_refs,
+#     etc.) by replaying from the event store.
+#   - NOT stream in-flight events live or accept permission
+#     responses, because the executing node is the remote local
+#     node, not the central.
+#
+# `central-live-run-watching` (new sub-task in this amendment)
+# captures the deferred work. It's gated on either:
+#   - central-side execution shipping (v1.5 per
+#     overview.SCOPE.1), or
+#   - a push protocol from a local node to a central it's
+#     synced to that pumps in-flight events past the existing
+#     /sync/events terminal-only path.
+#
+# The read-side-static sub-task in this split renders runs in
+# terminal-state-only mode and surfaces a "live tail not
+# available on central in v1" notice on /runs/<id> for
+# non-terminal runs.
+# -----------------------------------------------------------------
+
+# -----------------------------------------------------------------
+# Decision C — /remotes and /settings on central render the
+# workspace's SYNCED configuration only.
+#
+# Local /remotes manages the per-machine remotes registry
+# (`~/.config/rex/remotes.toml`). On central, "remotes for this
+# workspace" means the entries in `.rex/remotes.toml` (per
+# storage.WS.2.7), which are git-merged and arrive via the
+# GitStore. Render is read-only; central never edits a
+# workspace's per-machine remote list.
+#
+# Local /settings covers identity selection, default remote,
+# log levels, hook search paths. None of those are workspace-
+# bound; they're machine-bound. On central, /settings renders
+# `workspace.yaml` (the workspace-level settings file) in
+# read-only form — the bits that ARE part of the workspace's
+# synced state. Per-machine config has no central equivalent
+# and is omitted entirely (no 404 on the route; the page
+# simply does not surface those sections).
+#
+# Both surfaces are READ-ONLY on central in v1. Write paths
+# (workspace.yaml edit, RBAC config) are explicitly out of
+# scope for this task family; they belong with
+# central-org-admin-pages or later.
+# -----------------------------------------------------------------
+
+changes:
+
+  - id: clarify-central1-route-semantics
+    title: Fold /remotes, /settings, and live-run carve-outs into CENTRAL.1
+    affects: [web-ui]
+    rationale: |
+      CENTRAL.1 lists the nine workspace-scoped routes but the
+      meaning of /remotes and /settings on central — and the
+      v1-deferral of /runs/<id> live SSE — is not pinned. This
+      edit grows the requirement text with the three decisions
+      above so the implementer doesn't re-derive them.
+    edits:
+      - target: CENTRAL
+        kind: replace-requirement-text
+        requirement_id: "1"
+        replaced_meaning: false
+        rationale_for_no_meaning_change: |
+          Same route list; only the per-route semantics for
+          /remotes, /settings, and /runs/<id> grow clarifying
+          text. No surface is added or removed.
+        current_text: |
+          Routes on central are org-scoped. The org section is:
+          `/orgs/<org-id>` (overview), `/orgs/<org-id>/members`,
+          `/orgs/<org-id>/roles`, `/orgs/<org-id>/idp` (shell-only
+          placeholder pre-IdP-shipping; see central-node.IDP-CENTRAL.1-note),
+          `/orgs/<org-id>/encryption-keys` (shell-only placeholder
+          pre-encryption-shipping; see CENTRAL.4 and
+          storage.encryption-opt-in). The workspace-scoped subset
+          mirrors the local UI under
+          `/orgs/<org-id>/workspaces/<ws-id>/...`: `/specs`,
+          `/specs/<spec-id>`, `/amendments`, `/amendments/<stem>`,
+          `/runs`, `/runs/<run-id>` (live), `/audit`, `/remotes`,
+          `/settings`, plus `/orgs/<org-id>/workspaces` for the
+          per-org workspace index. `/search` is org-scoped via the
+          session (the picker can scope further per SEARCH.1). `/`
+          redirects to `/orgs/<id>` for single-org users and to an
+          org picker for multi-org users (matches central-node.
+          TENANT.2 — never picks for the user).
+        new_text: |
+          Routes on central are org-scoped. The org section is:
+          `/orgs/<org-id>` (overview), `/orgs/<org-id>/members`,
+          `/orgs/<org-id>/roles`, `/orgs/<org-id>/idp` (shell-only
+          placeholder pre-IdP-shipping; see central-node.IDP-CENTRAL.1-note),
+          `/orgs/<org-id>/encryption-keys` (shell-only placeholder
+          pre-encryption-shipping; see CENTRAL.4 and
+          storage.encryption-opt-in). The workspace-scoped subset
+          mirrors the local UI under
+          `/orgs/<org-id>/workspaces/<ws-id>/...`: `/specs`,
+          `/specs/<spec-id>`, `/amendments`, `/amendments/<stem>`,
+          `/runs`, `/runs/<run-id>`, `/audit`, `/remotes`,
+          `/settings`, plus `/orgs/<org-id>/workspaces` for the
+          per-org workspace index. `/search` is org-scoped via the
+          session (the picker can scope further per SEARCH.1). `/`
+          redirects to `/orgs/<id>` for single-org users and to an
+          org picker for multi-org users (matches central-node.
+          TENANT.2 — never picks for the user).
+
+          Per-route semantics on central differ from local where
+          the underlying model differs:
+
+          - `/remotes` renders the workspace's *synced* remotes
+            registry (`.rex/remotes.toml` from the GitStore, per
+            storage.WS.2.7). Read-only on central; per-machine
+            remote management remains the local shell's surface.
+          - `/settings` renders `workspace.yaml` (the
+            workspace-level synced settings). Per-machine config
+            (identity selection, log levels, hook search paths)
+            is local-only and is omitted on central rather than
+            shown empty or 404'd.
+          - `/runs/<run-id>` renders terminal-state runs from the
+            replayed event store. Live SSE and inline permission
+            prompts are deferred to `central-live-run-watching`,
+            which is gated on a push-style channel for in-flight
+            events (see Decision B in the 2026-05-16 amendment).
+            Non-terminal runs render with a "live tail not
+            available on central in v1" notice.
+
+  - id: replace-central-read-side-pages-task
+    title: Replace `central-read-side-pages` task with five sequenced sub-tasks
+    affects: [web-ui]
+    rationale: |
+      Nine routes + the projection layer in one PR violates the
+      one-task-per-PR sizing intent. Splitting groups the routes
+      by what data source they project from so each sub-task
+      ships a coherent slice of the projection layer alongside
+      its handlers.
+    edits:
+      - target: TASKS
+        kind: replace-task
+        task_id: central-read-side-pages
+        new_tasks:
+          - id: central-resolver-bootstrap
+            description: |
+              Pin the WorkspaceResolver projection pattern by
+              lifting the simplest read-side handler — /specs and
+              /specs/<spec-id> — into internal/web/ behind a
+              SpecProjection interface. Local shell satisfies it
+              by reading <Root>/.rex/specs/; central shell
+              satisfies it by reading from the GitStore. Mount
+              `/orgs/<org-id>/workspaces/<ws-id>/specs` and
+              `/orgs/<org-id>/workspaces/<ws-id>/specs/<spec-id>`
+              on the central web shell with the central
+              resolver bound.
+            references: [CENTRAL.1, CENTRAL-LAYOUT.2, SHARED.2]
+            state: todo
+          - id: central-read-side-runs-audit
+            description: |
+              Lift /runs (list), /runs/<run-id> (terminal-state
+              only — no live SSE; that's central-live-run-watching),
+              and /audit handlers into internal/web/ behind a
+              RunsProjection + AuditProjection. Central
+              implementations read from the central event store
+              (Postgres). The live-tail UI degrades to a banner
+              on /runs/<run-id> for non-terminal runs.
+            references: [CENTRAL.1, CENTRAL-LAYOUT.2, SHARED.2]
+            state: todo
+          - id: central-read-side-search-amendments
+            description: |
+              Lift /search and /amendments + /amendments/<stem>
+              into internal/web/ behind SearchProjection and
+              AmendmentsProjection. Central search hits the
+              Postgres FTS index (central-node.DB.4);
+              amendments project from the GitStore.
+            references: [CENTRAL.1, CENTRAL-LAYOUT.2, SHARED.2]
+            state: todo
+          - id: central-read-side-remotes-settings
+            description: |
+              Lift /remotes and /settings into internal/web/ as
+              read-only on central per Decision C. Local shell
+              continues to surface per-machine config (identity,
+              log levels, hook search paths); the shared handler
+              hides those sections when the resolver reports
+              no per-machine context.
+            references: [CENTRAL.1, CENTRAL-LAYOUT.2, SHARED.2]
+            state: todo
+          - id: central-workspaces-index
+            description: |
+              Implement `/orgs/<org-id>/workspaces` — the per-org
+              workspace index page that lists every workspace
+              the central knows about for the org, with a
+              click-through to the workspace overview. Uses the
+              existing workspaces table + tenant routing; no
+              new projection layer required.
+            references: [CENTRAL.1]
+            state: todo
+
+  - id: add-central-live-run-watching-task
+    title: Add a deferred sub-task for central live-run SSE + permission prompts
+    affects: [web-ui]
+    rationale: |
+      Live SSE on central needs a push-style channel for
+      in-flight events that does not exist in v1. Carving out
+      the work into its own task with the gating note prevents
+      it being silently dropped or re-attempted before the
+      prerequisite ships.
+    edits:
+      - target: TASKS
+        kind: add-task
+        new_task:
+          id: central-live-run-watching
+          description: |
+            Implement live SSE on central's
+            `/orgs/<org-id>/workspaces/<ws-id>/runs/<run-id>`
+            plus inline permission-prompt POST handling. Gated:
+            requires either central-side execution (v1.5 per
+            overview.SCOPE.1) or a push-style protocol from a
+            local executor to its synced central beyond the
+            existing /sync/events terminal-event path. v1 ships
+            with the terminal-state-only renderer from
+            central-read-side-runs-audit and a "live tail not
+            available on central in v1" notice.
+          references: [CENTRAL.1, LIVE.1, LIVE.2, LIVE.3]
+          state: todo
+          note: |
+            Deferred — depends on either central-side execution
+            or a push channel for in-flight events.
+
+verification:
+  - existing_implementation: internal/web/resolver.go
+    notes: |
+      Holds the minimal WorkspaceResolver from web-package-split.
+      central-resolver-bootstrap grows the first projection
+      interface (SpecProjection) alongside it.
+
+  - existing_implementation: internal/local/web/specs.go
+    notes: |
+      Houses loadSpecsList + loadSpecDetail today; the lift
+      moves them to internal/web/ and refactors against
+      SpecProjection. The local shell keeps a thin handler
+      that constructs the projection from the workspace root.
+
+  - existing_implementation: internal/central/server/git_store.go
+    notes: |
+      Central's spec content lives here as GitStore entries
+      keyed by `specs/<spec-id>.yaml`. The central
+      SpecProjection reads from this store.
+
+  - existing_implementation: internal/central/server/store_postgres.go
+    notes: |
+      Central event-store backing for the runs + audit
+      projections that land with central-read-side-runs-audit.
+
+extra:
+  authors: [claude]
+  scope:
+    in:
+      - splitting `central-read-side-pages` into five sub-tasks
+      - pinning incremental WorkspaceResolver design (Decision A)
+      - deferring live-run watching on central (Decision B)
+      - pinning /remotes + /settings semantics on central (Decision C)
+      - adding `central-live-run-watching` as a tracked deferred task
+    out:
+      - the projection-method shape for handlers beyond /specs
+        (those crystallise as each sub-task lifts its handler)
+      - central-side execution itself (deferred to v1.5)
+      - any write paths on /remotes or /settings (read-only in v1)
+      - any change to local-UI behaviour
+  follow_up: |
+    On signoff, fold the changes into web-ui.yaml at the named
+    requirement / task locations, bump metadata.updated_at to
+    2026-05-16, then move this proposal file to
+    `specs/_proposed/_accepted/`. The first sub-task to pick up
+    is `central-resolver-bootstrap` — it pins the
+    projection-interface pattern with the smallest possible
+    handler scope (specs list + detail).
