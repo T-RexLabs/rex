@@ -24,12 +24,74 @@
   <section class="section">
     <div class="callout">
       <p><strong>Read-only for this role.</strong>
-         Promote / demote / remove require the <code>admin</code>
-         role in this org. Invite issuance is pending — the
-         org_invites schema is wired but the redeem flow ships
-         in a follow-up under <code>central-node.RBAC-SVR.1</code>.</p>
+         Promote / demote / remove / invite require the
+         <code>admin</code> role in this org.</p>
     </div>
   </section>
+{{end}}
+
+{{if .JustIssuedToken}}
+  <section class="section">
+    <aside class="banner banner-info" role="status">
+      <p><strong>Invite issued.</strong> Share this token with the
+         invitee over a secure channel — it's shown once here and
+         then only retrievable from the pending-invites table below.</p>
+      <pre class="login-cmd"><code>{{.JustIssuedToken}}</code></pre>
+    </aside>
+  </section>
+{{end}}
+
+{{if .ViewerIsAdmin}}
+  <section class="section">
+    <div class="section-head">
+      <h2>invite</h2>
+      <span class="section-meta">creates a 7-day token the invitee
+        redeems via the (pending) <code>rex remote join</code>
+        subcommand</span>
+    </div>
+    <form method="post" action="/orgs/{{.OrgID}}/members/invite" class="invite-form">
+      <label>
+        role:
+        <select name="role" aria-label="role">
+          <option value="member" selected>member</option>
+          <option value="admin">admin</option>
+          <option value="viewer">viewer</option>
+        </select>
+      </label>
+      <button class="btn btn-primary" type="submit">issue invite</button>
+    </form>
+  </section>
+
+  {{if .PendingInvites}}
+    <section class="section">
+      <div class="section-head">
+        <h2>pending invites</h2>
+        <span class="section-meta">{{len .PendingInvites}} unredeemed</span>
+      </div>
+      <div class="card">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>token</th>
+              <th>role</th>
+              <th>invited by</th>
+              <th>expires</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .PendingInvites}}
+              <tr>
+                <td><code class="dim">{{.Token}}</code></td>
+                <td><span class="pill pill-{{.Role}}"><i class="dot"></i>{{.Role}}</span></td>
+                <td><code class="dim">{{.InvitedBy}}</code></td>
+                <td><time>{{.ExpiresAt.UTC.Format "2006-01-02 15:04 UTC"}}</time></td>
+              </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {{end}}
 {{end}}
 
 <section class="section">

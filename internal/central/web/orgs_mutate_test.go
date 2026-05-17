@@ -223,6 +223,120 @@ func TestOrgMembersRendersAdminFormsForAdminViewer(t *testing.T) {
 	}
 }
 
+// TestIssueInviteHappyPath covers the admin-only invite flow:
+// alice POSTs the invite form, the projection captures the
+// inviter fingerprint, the handler 303s back with the freshly-
+// minted token in the URL so the page can show it one-time.
+func TestIssueInviteHappyPath(t *testing.T) {
+	t.Parallel()
+	srv, orgs := newMutateServer(t,
+		map[string]string{"tok-alice": "fp-alice"},
+		map[string]map[string]string{"acme": {"fp-alice": "admin"}},
+	)
+	resp := postForm(t, srv, "/orgs/acme/members/invite", "tok-alice", url.Values{"role": {"viewer"}})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status: %d (want 303)", resp.StatusCode)
+	}
+	loc := resp.Header.Get("Location")
+	if !strings.Contains(loc, "invite_token=") || !strings.Contains(loc, "flash=") {
+		t.Errorf("Location missing token / flash: %q", loc)
+	}
+	if got := orgs.invites["acme"]; len(got) != 1 || got[0].Role != "viewer" || got[0].InvitedBy != "fp-alice" {
+		t.Errorf("invite row: %+v", got)
+	}
+}
+
+// TestIssueInviteDefaultsToMember covers the form's role-omission
+// branch: an empty role submission lands as member.
+func TestIssueInviteDefaultsToMember(t *testing.T) {
+	t.Parallel()
+	srv, orgs := newMutateServer(t,
+		map[string]string{"tok-alice": "fp-alice"},
+		map[string]map[string]string{"acme": {"fp-alice": "admin"}},
+	)
+	resp := postForm(t, srv, "/orgs/acme/members/invite", "tok-alice", url.Values{})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status: %d (want 303)", resp.StatusCode)
+	}
+	if got := orgs.invites["acme"]; len(got) != 1 || got[0].Role != "member" {
+		t.Errorf("invite role: %+v", got)
+	}
+}
+
+// TestIssueInviteRejectsNonAdmin keeps the admin gate strict:
+// bob (member) cannot mint invites.
+func TestIssueInviteRejectsNonAdmin(t *testing.T) {
+	t.Parallel()
+	srv, orgs := newMutateServer(t,
+		map[string]string{"tok-bob": "fp-bob"},
+		map[string]map[string]string{"acme": {"fp-bob": "member"}},
+	)
+	resp := postForm(t, srv, "/orgs/acme/members/invite", "tok-bob", url.Values{"role": {"viewer"}})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status: %d (want 403)", resp.StatusCode)
+	}
+	if got := orgs.invites["acme"]; len(got) != 0 {
+		t.Errorf("invite row was created despite admin gate: %+v", got)
+	}
+}
+
+// TestOrgMembersAdminViewerSeesInviteForm covers the admin
+// affordance render: the invite POST form appears alongside the
+// per-row mutation forms.
+func TestOrgMembersAdminViewerSeesInviteForm(t *testing.T) {
+	t.Parallel()
+	srv, _ := newMutateServer(t,
+		map[string]string{"tok-alice": "fp-alice"},
+		map[string]map[string]string{"acme": {"fp-alice": "admin"}},
+	)
+	c := noFollowClient()
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/orgs/acme/members", nil)
+	req.AddCookie(&http.Cookie{Name: "rex_session", Value: "tok-alice"})
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	html := string(body)
+	if !strings.Contains(html, `action="/orgs/acme/members/invite"`) {
+		t.Errorf("invite form missing")
+	}
+	if !strings.Contains(html, ">issue invite</button>") {
+		t.Errorf("invite submit button missing")
+	}
+}
+
+// TestOrgMembersShowsJustIssuedTokenOnRedirect covers the
+// post-issue render: the invite_token query renders inline as a
+// one-shot copyable code block.
+func TestOrgMembersShowsJustIssuedTokenOnRedirect(t *testing.T) {
+	t.Parallel()
+	srv, _ := newMutateServer(t,
+		map[string]string{"tok-alice": "fp-alice"},
+		map[string]map[string]string{"acme": {"fp-alice": "admin"}},
+	)
+	c := noFollowClient()
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/orgs/acme/members?invite_token=tok-fresh&flash=invite+issued", nil)
+	req.AddCookie(&http.Cookie{Name: "rex_session", Value: "tok-alice"})
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	html := string(body)
+	if !strings.Contains(html, "tok-fresh") {
+		t.Errorf("freshly-issued token not rendered: %s", html)
+	}
+	if !strings.Contains(html, "Invite issued") {
+		t.Errorf("invite-issued banner missing")
+	}
+}
+
 // TestOrgMembersHidesAdminFormsForNonAdminViewer is the
 // negative of the above: bob (member) gets the read-only notice
 // and no per-row forms.

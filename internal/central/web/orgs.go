@@ -22,11 +22,18 @@ type orgPageData struct {
 type orgMembersData struct {
 	centralPageData
 	Members []internalweb.MembershipRow
+	// PendingInvites surfaces unredeemed invites the admin can
+	// re-fetch tokens from; only populated when ViewerIsAdmin.
+	PendingInvites []internalweb.InviteRow
+	// JustIssuedToken renders inline (one-shot) right after a
+	// fresh invite POST so the admin can copy the token before
+	// it's only available as a row in PendingInvites. Empty
+	// otherwise.
+	JustIssuedToken string
 	// ViewerIsAdmin gates the per-row role-change + remove
-	// forms. Non-admin viewers see the membership list without
-	// mutation affordances; admins see dropdowns + remove
-	// buttons inline (CENTRAL.3 — every mutation runs through
-	// RBAC; the page-level check echoes the handler-level one).
+	// forms + the invite form. Non-admin viewers see the
+	// membership list without any mutation affordances (the
+	// page-level check echoes the handler-level requireAdmin).
 	ViewerIsAdmin bool
 	// Flash is a one-shot status string rendered above the
 	// table after a successful mutation reloads the page.
@@ -103,8 +110,52 @@ func (s *Server) handleOrgMembers(w http.ResponseWriter, r *http.Request) {
 		Members:         members,
 		ViewerIsAdmin:   role == "admin",
 		Flash:           r.URL.Query().Get("flash"),
+		JustIssuedToken: r.URL.Query().Get("invite_token"),
+	}
+	if role == "admin" {
+		// Pending invites only render for admins. Best-effort:
+		// a transient failure renders the page without the
+		// invite list rather than 500ing the whole page.
+		if invites, err := s.opts.Orgs.ListPendingInvites(orgID); err == nil {
+			data.PendingInvites = invites
+		}
 	}
 	s.renderer.Render(w, r, "org_members.tmpl", data)
+}
+
+// handleOrgMemberInvite is POST /orgs/<org-id>/members/invite.
+// Admin-only. Mints a new invite with the chosen role and
+// 303s back to /members with the freshly-minted token in the
+// invite_token query so the page shows it one-time for the
+// admin to copy.
+func (s *Server) handleOrgMemberInvite(w http.ResponseWriter, r *http.Request) {
+	if s.opts.Orgs == nil {
+		http.Error(w, "central web: orgs projection not configured (admin API pending — central-node.RBAC-SVR.1)", http.StatusServiceUnavailable)
+		return
+	}
+	orgID := r.PathValue("org")
+	if !s.requireAdmin(w, r, orgID) {
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "central web: parse form: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	role := strings.TrimSpace(r.FormValue("role"))
+	if role == "" {
+		role = "member"
+	}
+	inviter, _ := SessionFromContext(r.Context())
+	inv, err := s.opts.Orgs.IssueInvite(orgID, inviter.Fingerprint, role)
+	if err != nil {
+		http.Error(w, "central web: issue invite: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	q := url.Values{
+		"flash":        {"invite issued for role: " + inv.Role},
+		"invite_token": {inv.Token},
+	}
+	http.Redirect(w, r, "/orgs/"+orgID+"/members?"+q.Encode(), http.StatusSeeOther)
 }
 
 // handleOrgMemberRoleChange is POST /orgs/<org-id>/members/<fp>/role.

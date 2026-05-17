@@ -24,6 +24,7 @@ type stubOrgs struct {
 	orgs    map[string]internalweb.OrgSummary
 	members map[string][]internalweb.MembershipRow
 	roles   map[string]map[string]string
+	invites map[string][]internalweb.InviteRow
 	err     error
 
 	changes []stubMutationCall
@@ -75,6 +76,30 @@ func (s *stubOrgs) ChangeMemberRole(orgID, fingerprint, newRole, changer string)
 		OrgID: orgID, Fingerprint: fingerprint, NewRole: newRole, Changer: changer,
 	})
 	return prior, nil
+}
+
+func (s *stubOrgs) IssueInvite(orgID, inviter, role string) (internalweb.InviteRow, error) {
+	if s.err != nil {
+		return internalweb.InviteRow{}, s.err
+	}
+	if s.invites == nil {
+		s.invites = make(map[string][]internalweb.InviteRow)
+	}
+	inv := internalweb.InviteRow{
+		ID:        "inv-" + role,
+		Token:     "tok-stub-" + role,
+		Role:      role,
+		InvitedBy: inviter,
+	}
+	s.invites[orgID] = append(s.invites[orgID], inv)
+	return inv, nil
+}
+
+func (s *stubOrgs) ListPendingInvites(orgID string) ([]internalweb.InviteRow, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.invites[orgID], nil
 }
 
 func (s *stubOrgs) RemoveMember(orgID, fingerprint, remover string) (string, error) {
@@ -160,8 +185,11 @@ func TestCentralOrgOverview404(t *testing.T) {
 	}
 }
 
-// TestCentralOrgMembersListsRows covers the members table render
-// + the read-only notice pointing at central-node.RBAC-SVR.1.
+// TestCentralOrgMembersListsRows covers the basic members
+// table render — fingerprints land in the page and the
+// CENTRAL ONLY banner renders. The Auth-nil dev-mode path
+// (this test) skips the gate + RBAC so the admin forms are
+// hidden but the read view still works for inspection.
 func TestCentralOrgMembersListsRows(t *testing.T) {
 	t.Parallel()
 	projection := &stubOrgs{
@@ -186,9 +214,6 @@ func TestCentralOrgMembersListsRows(t *testing.T) {
 	html := string(body)
 	if !strings.Contains(html, "fp-alice") || !strings.Contains(html, "fp-bob") {
 		t.Errorf("members missing: %s", html)
-	}
-	if !strings.Contains(html, "RBAC-SVR.1") {
-		t.Errorf("pending-API notice missing: %s", html)
 	}
 	if !strings.Contains(html, "CENTRAL ONLY") {
 		t.Errorf("CENTRAL ONLY banner missing: %s", html)

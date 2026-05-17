@@ -131,3 +131,71 @@ func TestRemoveMemberUnknownMembershipIsErrUnknownMembership(t *testing.T) {
 		t.Fatalf("err: got %v want ErrUnknownMembership", err)
 	}
 }
+
+// TestIssueInviteCreatesRowAndReturnsToken covers the issuer
+// side: a fresh row lands in org_invites with a non-empty token,
+// the role + invited_by ride through, and expires_at lands in
+// the future (the 7-day TTL is implicit in the SQL).
+func TestIssueInviteCreatesRowAndReturnsToken(t *testing.T) {
+	t.Parallel()
+	store, _ := freshPostgresStore(t)
+	ctx := defaultOrgCtx(t, store)
+	org, _ := store.LookupOrg(context.Background(), DefaultOrgName)
+
+	inv, err := store.IssueInvite(ctx, org.ID, "fp-alice", "viewer")
+	if err != nil {
+		t.Fatalf("IssueInvite: %v", err)
+	}
+	if inv.Token == "" {
+		t.Error("Token is empty")
+	}
+	if inv.Role != "viewer" {
+		t.Errorf("Role: got %q want viewer", inv.Role)
+	}
+	if inv.InvitedBy != "fp-alice" {
+		t.Errorf("InvitedBy: got %q want fp-alice", inv.InvitedBy)
+	}
+	if !inv.ExpiresAt.After(inv.CreatedAt) {
+		t.Errorf("ExpiresAt %s not after CreatedAt %s", inv.ExpiresAt, inv.CreatedAt)
+	}
+}
+
+// TestIssueInviteRejectsUnknownRole keeps the input gate honest
+// at the server layer (mirrors ChangeMemberRole's check).
+func TestIssueInviteRejectsUnknownRole(t *testing.T) {
+	t.Parallel()
+	store, _ := freshPostgresStore(t)
+	ctx := defaultOrgCtx(t, store)
+	org, _ := store.LookupOrg(context.Background(), DefaultOrgName)
+	_, err := store.IssueInvite(ctx, org.ID, "fp-alice", "founder")
+	if err == nil || !contains(err.Error(), "built-in role") {
+		t.Fatalf("err: got %v want built-in-role complaint", err)
+	}
+}
+
+// TestListPendingInvitesReturnsIssuedRows covers the read side:
+// after issuing two invites both appear in the pending list.
+func TestListPendingInvitesReturnsIssuedRows(t *testing.T) {
+	t.Parallel()
+	store, _ := freshPostgresStore(t)
+	ctx := defaultOrgCtx(t, store)
+	org, _ := store.LookupOrg(context.Background(), DefaultOrgName)
+
+	for _, role := range []string{"viewer", "member"} {
+		if _, err := store.IssueInvite(ctx, org.ID, "fp-alice", role); err != nil {
+			t.Fatalf("IssueInvite %s: %v", role, err)
+		}
+	}
+	invs, err := store.ListPendingInvites(ctx, org.ID)
+	if err != nil {
+		t.Fatalf("ListPendingInvites: %v", err)
+	}
+	if len(invs) != 2 {
+		t.Fatalf("invites: got %d want 2", len(invs))
+	}
+	for _, inv := range invs {
+		if inv.Token == "" || inv.Role == "" {
+			t.Errorf("malformed invite: %+v", inv)
+		}
+	}
+}

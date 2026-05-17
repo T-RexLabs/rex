@@ -261,6 +261,93 @@ func (s *PostgresStore) RemoveMember(ctx context.Context, orgID, fingerprint str
 // RemoveMember when no row matches (orgID, fingerprint).
 var ErrUnknownMembership = errors.New("server: unknown membership")
 
+// Invite is the read-side projection of one org_invites row.
+// The token is included so the issuer can hand it to the
+// invitee (the row is the source-of-truth for the token; v1
+// shows it once on the issuer's screen and the admin can
+// re-fetch via ListPendingInvites later).
+type Invite struct {
+	ID        string
+	OrgID     string
+	Token     string
+	Role      string
+	InvitedBy string
+	ExpiresAt time.Time
+	CreatedAt time.Time
+}
+
+// IssueInvite creates a fresh invite row under (orgID, role)
+// with a random token. The TTL is fixed at 7 days — generous
+// enough for an admin to share via Slack/email, short enough
+// that a leaked token can't be redeemed months later. Returns
+// the populated Invite so the caller can render the token to
+// the issuer for one-time copy.
+//
+// Input validation: role must be one of the built-in roles
+// (admin / member / viewer).
+func (s *PostgresStore) IssueInvite(ctx context.Context, orgID, invitedBy, role string) (Invite, error) {
+	if orgID == "" {
+		return Invite{}, errors.New("server: IssueInvite requires orgID")
+	}
+	if !isBuiltinRole(role) {
+		return Invite{}, fmt.Errorf("server: role %q is not a built-in role (admin/member/viewer)", role)
+	}
+	var inv Invite
+	err := s.withOrgScope(ctx, func(tx pgx.Tx) error {
+		err := tx.QueryRow(ctx, `
+			INSERT INTO org_invites (org_id, invited_by, token, role, expires_at)
+			VALUES ($1, $2,
+			        replace(gen_random_uuid()::text, '-', '') ||
+			        replace(gen_random_uuid()::text, '-', ''),
+			        $3, now() + INTERVAL '7 days')
+			RETURNING id::text, token, role, invited_by, expires_at, now() AS created_at
+		`, orgID, invitedBy, role).Scan(
+			&inv.ID, &inv.Token, &inv.Role, &inv.InvitedBy, &inv.ExpiresAt, &inv.CreatedAt,
+		)
+		if err != nil {
+			return fmt.Errorf("server: issue invite: %w", err)
+		}
+		inv.OrgID = orgID
+		return nil
+	})
+	return inv, err
+}
+
+// ListPendingInvites returns every unredeemed, unexpired invite
+// for the org so the /members page can render them alongside
+// the current memberships. Ordered by expiration descending so
+// the most recently issued lands first.
+func (s *PostgresStore) ListPendingInvites(ctx context.Context, orgID string) ([]Invite, error) {
+	if orgID == "" {
+		return nil, errors.New("server: ListPendingInvites requires orgID")
+	}
+	var out []Invite
+	err := s.withOrgScope(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT id::text, org_id::text, token, role, invited_by, expires_at,
+			       expires_at - INTERVAL '7 days' AS created_at
+			FROM   org_invites
+			WHERE  org_id = $1
+			AND    redeemed_at IS NULL
+			AND    expires_at > now()
+			ORDER  BY expires_at DESC
+		`, orgID)
+		if err != nil {
+			return fmt.Errorf("server: list invites: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var inv Invite
+			if err := rows.Scan(&inv.ID, &inv.OrgID, &inv.Token, &inv.Role, &inv.InvitedBy, &inv.ExpiresAt, &inv.CreatedAt); err != nil {
+				return fmt.Errorf("server: list invites scan: %w", err)
+			}
+			out = append(out, inv)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
 // isBuiltinRole reports whether s is one of the built-in role
 // strings. Mirrors internal/core/rbac's catalog without an
 // import (the central server already keeps these strings literal

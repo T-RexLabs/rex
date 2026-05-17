@@ -119,6 +119,54 @@ func (a *postgresOrgsAdapter) ChangeMemberRole(orgID, fingerprint, newRole, chan
 	return prior, nil
 }
 
+// IssueInvite forwards to PostgresStore.IssueInvite and emits
+// an org.member.invited audit event on success. The token never
+// rides through the audit body — InviteID is the bookkeeping
+// reference for the eventual redeem entry.
+func (a *postgresOrgsAdapter) IssueInvite(orgID, inviter, role string) (internalweb.InviteRow, error) {
+	ctx := server.WithOrgID(context.Background(), orgID)
+	inv, err := a.pg.IssueInvite(ctx, orgID, inviter, role)
+	if err != nil {
+		return internalweb.InviteRow{}, err
+	}
+	if a.appender != nil {
+		_ = a.appender.Append(ctx, audit.EventTypeOrgMemberInvited, audit.OrgMemberInvitedEvent{
+			OrgID:    orgID,
+			InviteID: inv.ID,
+			Role:     inv.Role,
+			Inviter:  inviter,
+		})
+	}
+	return internalweb.InviteRow{
+		ID:        inv.ID,
+		Token:     inv.Token,
+		Role:      inv.Role,
+		InvitedBy: inv.InvitedBy,
+		ExpiresAt: inv.ExpiresAt,
+	}, nil
+}
+
+// ListPendingInvites forwards to PostgresStore and maps the
+// server-side Invite shape onto the web-side InviteRow.
+func (a *postgresOrgsAdapter) ListPendingInvites(orgID string) ([]internalweb.InviteRow, error) {
+	ctx := server.WithOrgID(context.Background(), orgID)
+	invs, err := a.pg.ListPendingInvites(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]internalweb.InviteRow, 0, len(invs))
+	for _, inv := range invs {
+		out = append(out, internalweb.InviteRow{
+			ID:        inv.ID,
+			Token:     inv.Token,
+			Role:      inv.Role,
+			InvitedBy: inv.InvitedBy,
+			ExpiresAt: inv.ExpiresAt,
+		})
+	}
+	return out, nil
+}
+
 // RemoveMember forwards to the central server's PostgresStore
 // with the same sentinel translation as ChangeMemberRole, plus
 // an org.member.removed audit emission on success.

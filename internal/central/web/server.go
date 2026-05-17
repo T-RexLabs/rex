@@ -199,6 +199,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /orgs/{org}/roles", s.handleOrgRoles)
 	s.mux.HandleFunc("POST /orgs/{org}/members/{fp}/role", s.handleOrgMemberRoleChange)
 	s.mux.HandleFunc("POST /orgs/{org}/members/{fp}/remove", s.handleOrgMemberRemove)
+	s.mux.HandleFunc("POST /orgs/{org}/members/invite", s.handleOrgMemberInvite)
 }
 
 // requireSession wraps the whole central web mux with a session

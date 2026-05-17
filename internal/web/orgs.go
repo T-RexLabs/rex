@@ -20,6 +20,19 @@ type MembershipRow struct {
 	JoinedAt    time.Time
 }
 
+// InviteRow is one pending invite on the /orgs/<id>/members
+// page. The token rides through so the issuer can copy it for
+// out-of-band delivery; the admin who issued the invite is the
+// only viewer the page renders it to (the token persists in
+// the db so a future admin can re-fetch via list).
+type InviteRow struct {
+	ID        string
+	Token     string
+	Role      string
+	InvitedBy string
+	ExpiresAt time.Time
+}
+
 // RoleCatalogRow is one row on the /orgs/<id>/roles page. Lists
 // the rbac role + its assigned permissions. The catalog is
 // static today (built from internal/core/rbac); the page surfaces
@@ -54,6 +67,15 @@ type OrgsProjection interface {
 	// Returns a non-nil error only on storage failures the
 	// handler should surface as 500.
 	RoleFor(orgID, fingerprint string) (string, error)
+	// IssueInvite mints a new invite for orgID with the given
+	// role and returns the populated InviteRow so the admin
+	// can copy the token for out-of-band delivery. inviter is
+	// the authenticated caller's fingerprint, stamped into
+	// both the row and the audit event.
+	IssueInvite(orgID, inviter, role string) (InviteRow, error)
+	// ListPendingInvites returns the org's unredeemed
+	// unexpired invites for display on the members page.
+	ListPendingInvites(orgID string) ([]InviteRow, error)
 	// ChangeMemberRole updates an existing member's role and
 	// returns the prior role so callers can audit the
 	// transition. changerFingerprint is the authenticated
