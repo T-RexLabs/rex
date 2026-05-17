@@ -286,6 +286,10 @@ lost on restart.
 					// keystore + emits identity.key_registered
 					// and org.member.joined audit events.
 					webOpts.Redeemer = newPostgresInviteRedeemer(pg, ks, auditAppender)
+					// Org-scoped /orgs/<id>/audit: scopes the
+					// central event store by app.current_org_id
+					// via WithOrgID + the shared audit filter.
+					webOpts.OrgAudit = newPostgresOrgAuditProjection(pg)
 				}
 				webShell, err := centralweb.New(webOpts)
 				if err != nil {

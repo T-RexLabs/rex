@@ -79,8 +79,14 @@ func (a *postgresInviteRedeemer) RedeemInvite(req internalweb.RedeemRequest) (in
 	}
 
 	if a.appender != nil {
+		// PostgresStore.Append (called via appender) requires
+		// org_id on ctx — RedeemInvite returns the resolved org
+		// in res.OrgID, so stamp the scope here so the audit
+		// rows actually land. Without this both events would
+		// silently drop (the appender's caller swallows err).
+		actx := server.WithOrgID(ctx, res.OrgID)
 		if res.KeyRegistered {
-			_ = a.appender.Append(ctx, audit.EventTypeIdentityKeyRegistered, audit.IdentityKeyRegisteredEvent{
+			_ = a.appender.Append(actx, audit.EventTypeIdentityKeyRegistered, audit.IdentityKeyRegisteredEvent{
 				Fingerprint: res.Fingerprint,
 				Handle:      res.Handle,
 				Source:      "invite-redeem",
@@ -88,7 +94,7 @@ func (a *postgresInviteRedeemer) RedeemInvite(req internalweb.RedeemRequest) (in
 			})
 		}
 		if res.MemberJoined {
-			_ = a.appender.Append(ctx, audit.EventTypeOrgMemberJoined, audit.OrgMemberJoinedEvent{
+			_ = a.appender.Append(actx, audit.EventTypeOrgMemberJoined, audit.OrgMemberJoinedEvent{
 				OrgID:       res.OrgID,
 				Fingerprint: res.Fingerprint,
 				Role:        res.Role,

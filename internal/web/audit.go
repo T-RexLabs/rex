@@ -37,6 +37,18 @@ type AuditProjection interface {
 	TailAudit(limit int) ([]AuditRow, error)
 }
 
+// OrgAuditProjection is the org-scoped sibling of AuditProjection:
+// it surfaces the audit-class events the central node emitted
+// against orgID (workspace-id is ignored; cross-workspace events
+// like org.member.* + identity.key_registered + auth.* land here
+// alongside any per-workspace audit rows whose org_id matches).
+// Drives /orgs/<id>/audit (CENTRAL.3 — "every action runs through
+// RBAC and writes audit entries"; that audit must be queryable
+// per org).
+type OrgAuditProjection interface {
+	TailOrgAudit(orgID string, limit int) ([]AuditRow, error)
+}
+
 // FilterRecordsToAuditRows is the pure helper both shells'
 // projections can use: walk records, keep audit-class entries,
 // keep the last `limit` of them in a ring buffer.

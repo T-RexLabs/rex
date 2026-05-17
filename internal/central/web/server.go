@@ -105,6 +105,11 @@ type Options struct {
 	// emission) from cmd/rex-central when --db is on. When nil,
 	// both routes respond 503.
 	Redeemer internalweb.InviteRedeemer
+	// OrgAudit powers /orgs/<id>/audit, the org-scoped
+	// audit-log tail. Optional; the v1 wireup binds a
+	// PostgresStore-backed adapter from cmd/rex-central when
+	// --db is on. When nil, the route responds 503.
+	OrgAudit internalweb.OrgAuditProjection
 }
 
 // NewGitStoreResolver builds an internalweb.WorkspaceResolver
@@ -204,6 +209,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /orgs/{org}", s.handleOrgOverview)
 	s.mux.HandleFunc("GET /orgs/{org}/members", s.handleOrgMembers)
 	s.mux.HandleFunc("GET /orgs/{org}/roles", s.handleOrgRoles)
+	s.mux.HandleFunc("GET /orgs/{org}/audit", s.handleOrgAudit)
 	s.mux.HandleFunc("POST /orgs/{org}/members/{fp}/role", s.handleOrgMemberRoleChange)
 	s.mux.HandleFunc("POST /orgs/{org}/members/{fp}/remove", s.handleOrgMemberRemove)
 	s.mux.HandleFunc("POST /orgs/{org}/members/invite", s.handleOrgMemberInvite)

@@ -1,0 +1,37 @@
+{{define "title"}}rex-central — org {{.OrgID}} audit{{end}}
+
+{{define "content"}}
+<header class="page-header">
+  <h1>org audit</h1>
+  <div class="meta">
+    <span>org: <code>{{.OrgID}}</code></span>
+    <span>·</span>
+    <span>last {{.Limit}} audit-class entries{{if .Source}} from <code>{{.Source}}</code>{{end}}</span>
+  </div>
+</header>
+
+<section class="section">
+  {{if .Rows}}
+    <div class="card">
+      <table class="table sortable">
+        <thead>
+          <tr>
+            <th data-sort-type="date" data-sort-default="desc" aria-sort="descending">timestamp</th>
+            <th data-sort-type="string">type</th>
+            <th data-sort-type="string">actor</th>
+            <th data-sort-type="string">workspace</th>
+            <th data-sort-type="string">id</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Rows}}
+            {{template "audit_row" .}}
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  {{else}}
+    <p class="muted small">no audit entries for this org yet</p>
+  {{end}}
+</section>
+{{end}}
