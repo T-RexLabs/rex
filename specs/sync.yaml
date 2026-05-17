@@ -131,8 +131,18 @@ tasks:
 
   - id: bootstrap-flow
     description: "Implement `rex remote add <name> <url>` and the per-workspace clone flow"
-    state: todo
-    references: [BOOT.1, BOOT.2]
+    state: done
+    references: [BOOT.1, "BOOT.1.1", BOOT.2]
+    note: "`rex remote add` (internal/local/cli/remote.go) now runs an initial handshake against the supplied URL by default — fetches the server's fingerprint + protocol_version + actor and prompts the operator to confirm trust (TOFU-with-confirmation). --yes accepts the observed fingerprint without prompting; --skip-handshake preserves the offline-registration path for cases where the remote isn't reachable yet. Network failure during the handshake leaves the registry untouched. The per-workspace clone flow lives in workspace_clone.go (`rex workspace clone`) and was shipped earlier; first-push attachment lands in .rex/drafts/<remote>.toml watermarks via the existing push path."
+    proof:
+      - kind: code
+        path: internal/local/cli/remote.go
+      - kind: code
+        path: internal/local/cli/workspace_clone.go
+      - kind: test
+        path: internal/local/cli/remote_test.go
+      - kind: test
+        path: internal/local/cli/workspace_clone_test.go
 
 components:
 

@@ -18,7 +18,7 @@ func TestRemoteAddListShow(t *testing.T) {
 	reg := tempRegistry(t)
 
 	if _, err := executeCommand(t, "remote", "add", "primary", "http://127.0.0.1:9000",
-		"--remotes-file", reg,
+		"--remotes-file", reg, "--skip-handshake",
 	); err != nil {
 		t.Fatalf("add: %v", err)
 	}
@@ -44,10 +44,10 @@ func TestRemoteAddRejectsDuplicate(t *testing.T) {
 	t.Parallel()
 
 	reg := tempRegistry(t)
-	if _, err := executeCommand(t, "remote", "add", "primary", "http://x", "--remotes-file", reg); err != nil {
+	if _, err := executeCommand(t, "remote", "add", "primary", "http://x", "--remotes-file", reg, "--skip-handshake"); err != nil {
 		t.Fatalf("first add: %v", err)
 	}
-	if _, err := executeCommand(t, "remote", "add", "primary", "http://y", "--remotes-file", reg); err == nil {
+	if _, err := executeCommand(t, "remote", "add", "primary", "http://y", "--remotes-file", reg, "--skip-handshake"); err == nil {
 		t.Fatal("duplicate add should error")
 	}
 }
@@ -56,7 +56,7 @@ func TestRemoteAddRejectsBadName(t *testing.T) {
 	t.Parallel()
 
 	reg := tempRegistry(t)
-	_, err := executeCommand(t, "remote", "add", "Bad Name", "http://x", "--remotes-file", reg)
+	_, err := executeCommand(t, "remote", "add", "Bad Name", "http://x", "--remotes-file", reg, "--skip-handshake")
 	if err == nil {
 		t.Fatal("expected error for bad name")
 	}
@@ -66,7 +66,7 @@ func TestRemoteRemove(t *testing.T) {
 	t.Parallel()
 
 	reg := tempRegistry(t)
-	if _, err := executeCommand(t, "remote", "add", "primary", "http://x", "--remotes-file", reg); err != nil {
+	if _, err := executeCommand(t, "remote", "add", "primary", "http://x", "--remotes-file", reg, "--skip-handshake"); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 	if _, err := executeCommand(t, "remote", "remove", "primary", "--remotes-file", reg); err != nil {
@@ -95,10 +95,10 @@ func TestRemoteListJSON(t *testing.T) {
 	t.Parallel()
 
 	reg := tempRegistry(t)
-	if _, err := executeCommand(t, "remote", "add", "alpha", "http://a", "--remotes-file", reg); err != nil {
+	if _, err := executeCommand(t, "remote", "add", "alpha", "http://a", "--remotes-file", reg, "--skip-handshake"); err != nil {
 		t.Fatalf("add alpha: %v", err)
 	}
-	if _, err := executeCommand(t, "remote", "add", "beta", "http://b", "--remotes-file", reg); err != nil {
+	if _, err := executeCommand(t, "remote", "add", "beta", "http://b", "--remotes-file", reg, "--skip-handshake"); err != nil {
 		t.Fatalf("add beta: %v", err)
 	}
 	out, err := executeCommand(t, "remote", "list", "--remotes-file", reg, "--json")
@@ -123,7 +123,7 @@ func TestRemoteTestRecordsFingerprint(t *testing.T) {
 	srv, hs := startCentral(t)
 	reg := tempRegistry(t)
 
-	if _, err := executeCommand(t, "remote", "add", "primary", hs.URL, "--remotes-file", reg); err != nil {
+	if _, err := executeCommand(t, "remote", "add", "primary", hs.URL, "--remotes-file", reg, "--yes"); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 	out, err := executeCommand(t, "remote", "test", "primary", "--remotes-file", reg)
@@ -140,6 +140,96 @@ func TestRemoteTestRecordsFingerprint(t *testing.T) {
 	}
 	if !strings.Contains(show, srv.Actor().Fingerprint.String()) {
 		t.Fatalf("show should include observed fingerprint: %s", show)
+	}
+}
+
+// TestRemoteAddDoesHandshakeAndRecordsFingerprint covers
+// sync.BOOT.1: by default `rex remote add` contacts the server,
+// fetches its fingerprint, and records it on the registry entry.
+// --yes accepts the observed fingerprint without prompting.
+func TestRemoteAddDoesHandshakeAndRecordsFingerprint(t *testing.T) {
+	t.Parallel()
+	srv, hs := startCentral(t)
+	reg := tempRegistry(t)
+
+	out, err := executeCommand(t, "remote", "add", "primary", hs.URL,
+		"--remotes-file", reg, "--yes",
+	)
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "server fingerprint:") {
+		t.Errorf("output missing fingerprint preamble: %s", out)
+	}
+	show, err := executeCommand(t, "remote", "show", "primary", "--remotes-file", reg)
+	if err != nil {
+		t.Fatalf("show: %v\n%s", err, show)
+	}
+	if !strings.Contains(show, srv.Actor().Fingerprint.String()) {
+		t.Errorf("show should include fingerprint stamped at add time: %s", show)
+	}
+}
+
+// TestRemoteAddPromptAcceptsViaPipedYes covers BOOT.1.1's
+// confirmation prompt: a "y\n" piped via stdin counts as accept.
+func TestRemoteAddPromptAcceptsViaPipedYes(t *testing.T) {
+	t.Parallel()
+	_, hs := startCentral(t)
+	reg := tempRegistry(t)
+
+	out, err := executeCommandWithStdin(t, "y\n", "remote", "add", "primary", hs.URL,
+		"--remotes-file", reg,
+	)
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, `added remote "primary"`) {
+		t.Errorf("output missing add confirmation: %s", out)
+	}
+}
+
+// TestRemoteAddDeclinesOnEmptyStdin covers the non-interactive
+// "stdin EOF" branch: confirmTrust returns false, the command
+// reports decline and exits 0 without registering.
+func TestRemoteAddDeclinesOnEmptyStdin(t *testing.T) {
+	t.Parallel()
+	_, hs := startCentral(t)
+	reg := tempRegistry(t)
+
+	out, err := executeCommandWithStdin(t, "", "remote", "add", "primary", hs.URL,
+		"--remotes-file", reg,
+	)
+	if err != nil {
+		t.Fatalf("add: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "declined") {
+		t.Errorf("output missing decline message: %s", out)
+	}
+	// Registry should be empty.
+	list, _ := executeCommand(t, "remote", "list", "--remotes-file", reg)
+	if !strings.Contains(list, "no remotes registered") {
+		t.Errorf("registry should be empty after decline: %s", list)
+	}
+}
+
+// TestRemoteAddNetworkFailureLeavesRegistryUntouched covers the
+// "handshake failed" branch: an unreachable URL errors out and
+// the registry stays empty.
+func TestRemoteAddNetworkFailureLeavesRegistryUntouched(t *testing.T) {
+	t.Parallel()
+	reg := tempRegistry(t)
+	_, err := executeCommand(t, "remote", "add", "primary", "http://127.0.0.1:1",
+		"--remotes-file", reg, "--yes",
+	)
+	if err == nil {
+		t.Fatal("expected handshake to fail against unreachable URL")
+	}
+	if !strings.Contains(err.Error(), "contact") || !strings.Contains(err.Error(), "--skip-handshake") {
+		t.Errorf("error wording: %v", err)
+	}
+	list, _ := executeCommand(t, "remote", "list", "--remotes-file", reg)
+	if !strings.Contains(list, "no remotes registered") {
+		t.Errorf("registry should be empty after handshake failure: %s", list)
 	}
 }
 
@@ -161,7 +251,7 @@ func TestPushUsesNamedRemoteFromRegistry(t *testing.T) {
 
 	_, hs := startCentral(t)
 	reg := tempRegistry(t)
-	if _, err := executeCommand(t, "remote", "add", "primary", hs.URL, "--remotes-file", reg); err != nil {
+	if _, err := executeCommand(t, "remote", "add", "primary", hs.URL, "--remotes-file", reg, "--yes"); err != nil {
 		t.Fatalf("add: %v", err)
 	}
 	dir := t.TempDir()
@@ -209,7 +299,7 @@ func TestPushURLOverridesRegistry(t *testing.T) {
 	reg := tempRegistry(t)
 	// Register with a bogus URL; --url should still win.
 	if _, err := executeCommand(t, "remote", "add", "primary", "http://bogus.invalid:1",
-		"--remotes-file", reg,
+		"--remotes-file", reg, "--skip-handshake",
 	); err != nil {
 		t.Fatalf("add: %v", err)
 	}

@@ -94,7 +94,7 @@ func TestRemoteAddRemoveEmitAuditWhenInWorkspace(t *testing.T) {
 
 	if _, err := executeCommand(t, "remote", "--workspace", root,
 		"add", "primary", "https://example.invalid",
-		"--remotes-file", remotesPath,
+		"--remotes-file", remotesPath, "--skip-handshake",
 	); err != nil {
 		t.Fatalf("remote add: %v", err)
 	}

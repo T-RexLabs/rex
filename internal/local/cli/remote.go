@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -76,14 +78,32 @@ func loadRegistry(cmd *cobra.Command) (*remotes.Registry, string, error) {
 }
 
 func newRemoteAddCmd() *cobra.Command {
+	var (
+		autoYes       bool
+		skipHandshake bool
+	)
 	cmd := &cobra.Command{
 		Use:   "add <name> <url>",
-		Short: "Register a named remote",
-		Long: `Adds <name> -> <url> to ~/.config/rex/remotes.toml. The remote is
-not contacted; use ` + "`rex remote test`" + ` to verify connectivity and
-record the server's fingerprint.`,
+		Short: "Register a named remote (handshake + TOFU confirmation by default)",
+		Long: `Adds <name> -> <url> to ~/.config/rex/remotes.toml. By default the
+command runs an initial handshake against <url> (` + "`GET /sync/state`" + `) to
+fetch the server's public-key fingerprint and protocol version, then
+prompts the user to confirm trust before recording the entry
+(sync.BOOT.1 + BOOT.1.1: TOFU-with-confirmation).
+
+Flags:
+  --yes / -y         accept the observed fingerprint without
+                     prompting (for scripts / non-interactive runs).
+  --skip-handshake   do not contact the remote at all; record the
+                     URL only. The fingerprint stays blank until
+                     ` + "`rex remote test`" + ` is run. Useful when the
+                     remote isn't reachable yet (e.g. provisioning).
+
+The remote is saved to the registry only after the user accepts the
+fingerprint; on rejection or network failure no entry is added.`,
 		Example: `  rex remote add primary https://central.example.invalid
-  rex remote add staging https://staging.example.invalid --remotes-file ./remotes.toml`,
+  rex remote add primary https://central.example.invalid --yes
+  rex remote add primary https://central.example.invalid --skip-handshake`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, url := args[0], args[1]
@@ -91,7 +111,34 @@ record the server's fingerprint.`,
 			if err != nil {
 				return err
 			}
-			if err := reg.Add(remotes.Remote{Name: name, URL: url}); err != nil {
+			entry := remotes.Remote{Name: name, URL: url}
+
+			if !skipHandshake {
+				ctx := commandContext(cmd)
+				client := syncclient.NewClient(url)
+				state, err := client.State(ctx)
+				if err != nil {
+					return fmt.Errorf("contact %q: %w (pass --skip-handshake to register without contacting the server)", url, err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(),
+					"server fingerprint: %s\nprotocol version:   %d\nactor:              %s\n",
+					state.Fingerprint, state.ProtocolVersion, state.Actor,
+				)
+				if !autoYes {
+					ok, err := confirmTrust(cmd, name)
+					if err != nil {
+						return err
+					}
+					if !ok {
+						fmt.Fprintln(cmd.OutOrStdout(), "declined; remote not registered")
+						return nil
+					}
+				}
+				entry.Fingerprint = state.Fingerprint
+				entry.LastSeen = time.Now().UTC()
+			}
+
+			if err := reg.Add(entry); err != nil {
 				return err
 			}
 			if err := remotes.Save(path, reg); err != nil {
@@ -110,8 +157,33 @@ record the server's fingerprint.`,
 		"rex remote show <name>",
 		"rex push --remote <name>",
 	)
+	cmd.Flags().BoolVarP(&autoYes, "yes", "y", false, "accept the observed fingerprint without prompting")
+	cmd.Flags().BoolVar(&skipHandshake, "skip-handshake", false, "do not contact the remote during add; record URL only")
 	addRemoteSharedFlags(cmd)
 	return cmd
+}
+
+// confirmTrust prompts the user to approve the fingerprint just
+// observed on the handshake (sync.BOOT.1.1 — TOFU-with-
+// confirmation). Reads one line from the command's stdin and
+// treats "y" or "yes" (case-insensitive) as accept; anything
+// else, including EOF, declines.
+//
+// Returning (false, nil) means "user declined politely" — caller
+// surfaces a no-op message and exits 0. A returned error covers
+// "couldn't read stdin at all", which is a hard failure.
+func confirmTrust(cmd *cobra.Command, name string) (bool, error) {
+	fmt.Fprintf(cmd.OutOrStdout(), "Trust this fingerprint and register %q? [y/N]: ", name)
+	reader := bufio.NewReader(cmd.InOrStdin())
+	line, err := reader.ReadString('\n')
+	if err != nil && line == "" {
+		// EOF on a closed stdin (non-interactive without pre-piped
+		// input) — treat as decline and tell the caller how to
+		// proceed.
+		return false, nil
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
+	return answer == "y" || answer == "yes", nil
 }
 
 func newRemoteListCmd() *cobra.Command {
