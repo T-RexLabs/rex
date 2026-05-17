@@ -189,6 +189,11 @@ type centralPageData struct {
 	// roles, idp, encryption-keys) per web-ui.CENTRAL.2.
 	// Workspace-scoped pages leave it false.
 	CentralOnly bool
+	// Shell is the topbar/footer-branching discriminator. Always
+	// "central" here so base.tmpl renders the org-scoped nav,
+	// hides the local workspace badge + search, and labels the
+	// footer "central".
+	Shell string
 }
 
 // centralWorkspaceSummary is the shape base.tmpl's .Workspace
@@ -337,5 +342,6 @@ func (s *Server) pageData(orgID, wsID, navSection string) centralPageData {
 		NavSection:  navSection,
 		OrgID:       orgID,
 		WorkspaceID: wsID,
+		Shell:       "central",
 	}
 }

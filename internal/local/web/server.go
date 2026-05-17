@@ -170,6 +170,10 @@ type pageData struct {
 	// so the shared base.tmpl's banner branch can short-circuit
 	// uniformly on either shell (web-ui.CENTRAL.2).
 	CentralOnly bool
+	// Shell is the topbar/footer-branching discriminator. Always
+	// "local" here; the central shell sets "central" so the shared
+	// base.tmpl renders the right nav, badge, and footer label.
+	Shell string
 }
 
 // ScopeOption / ScopePickerData live in internal/web (the
@@ -187,6 +191,7 @@ func (s *Server) basePageData() pageData {
 		Workspace: ws,
 		BindAddr:  s.opts.BindAddr,
 		Version:   s.opts.Version,
+		Shell:     "local",
 		SearchScope: ScopePickerData{
 			Remotes: loadScopeRemotes(),
 		},

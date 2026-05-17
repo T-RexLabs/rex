@@ -288,6 +288,7 @@ func (s *Server) orgPage(orgID, nav string) centralPageData {
 		NavSection:  nav,
 		OrgID:       orgID,
 		CentralOnly: true,
+		Shell:       "central",
 	}
 }
 

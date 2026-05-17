@@ -204,10 +204,13 @@ func (s *PostgresGitStore) List(ctx context.Context, workspaceID string) ([]stri
 // it returns the set of workspaces, which is the input the
 // caller uses to subsequently scope by. The org filter still
 // applies via withOrgScope.
-func (s *PostgresGitStore) ListWorkspaces(ctx context.Context) ([]string, error) {
+func (s *PostgresGitStore) ListWorkspaces(ctx context.Context, orgID string) ([]string, error) {
+	if orgID == "" {
+		return nil, fmt.Errorf("server: ListWorkspaces requires orgID")
+	}
+	ctx = WithOrgID(ctx, orgID)
 	var out []string
 	err := s.parent.withOrgScope(ctx, func(tx pgx.Tx) error {
-		orgID := OrgIDFromContext(ctx)
 		rows, err := tx.Query(ctx, `
 			SELECT DISTINCT workspace_id
 			FROM   git_entities

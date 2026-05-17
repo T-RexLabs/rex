@@ -207,6 +207,25 @@ hr {
   color: var(--text);
 }
 .brand:hover { color: var(--text); text-decoration: none; }
+.brand-suffix {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  font-weight: 400;
+  margin-left: 4px;
+  padding: 1px 6px;
+  background: var(--surface-sunk);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+}
+.nav-sep {
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  padding: 0 var(--sp-1);
+  user-select: none;
+}
+.topbar-signout {
+  margin-left: auto;
+}
 .nav {
   display: flex;
   gap: var(--sp-5);
@@ -360,6 +379,43 @@ hr {
   padding: var(--sp-5);
 }
 .card.compact { padding: var(--sp-4); }
+
+/* card-grid — flexible 3-column card layout for dashboard-style
+ * pages (central /orgs/<id>, future workspace overviews). Cards
+ * collapse to single-column on narrow screens. */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--sp-4);
+}
+.card-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 80ms ease, background 80ms ease;
+}
+.card-link:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-sunk);
+}
+.card-link h3 {
+  margin: 0 0 var(--sp-2) 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text);
+}
+.card-link p {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.card-deferred h3::after {
+  content: " (deferred)";
+  font-weight: 400;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
 
 /* ============================================================
  * 6. Toolbar

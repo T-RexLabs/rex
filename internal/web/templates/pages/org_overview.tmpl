@@ -15,13 +15,35 @@
 </header>
 
 <section class="section">
-  <ul class="quick-actions">
-    <li><a href="/orgs/{{.Org.ID}}/workspaces">workspaces</a></li>
-    <li><a href="/orgs/{{.Org.ID}}/members">members</a></li>
-    <li><a href="/orgs/{{.Org.ID}}/roles">roles</a></li>
-    <li><a href="/orgs/{{.Org.ID}}/audit">audit</a></li>
-    <li><a href="/orgs/{{.Org.ID}}/idp">identity provider</a></li>
-    <li><a href="/orgs/{{.Org.ID}}/encryption-keys">encryption keys</a></li>
-  </ul>
+  <div class="section-head">
+    <h2>administration</h2>
+    <span class="section-meta">org-scoped surfaces</span>
+  </div>
+  <div class="card-grid">
+    <a class="card card-link" href="/orgs/{{.Org.ID}}/workspaces">
+      <h3>workspaces</h3>
+      <p>browse the workspaces this org owns; pivot into a single workspace's specs / runs / audit / settings.</p>
+    </a>
+    <a class="card card-link" href="/orgs/{{.Org.ID}}/members">
+      <h3>members</h3>
+      <p>list members + roles, issue invites, promote / demote / remove. admin-only mutations.</p>
+    </a>
+    <a class="card card-link" href="/orgs/{{.Org.ID}}/roles">
+      <h3>roles</h3>
+      <p>built-in rbac catalog: admin / member / viewer and the permissions each grants.</p>
+    </a>
+    <a class="card card-link" href="/orgs/{{.Org.ID}}/audit">
+      <h3>audit</h3>
+      <p>org-scoped audit tail: invite / join / role-change / remove + identity registration + auth events.</p>
+    </a>
+    <a class="card card-link card-deferred" href="/orgs/{{.Org.ID}}/idp">
+      <h3>identity provider</h3>
+      <p>SSO / IdP bridging (SAML / OIDC / SCIM) — deferred surface; data model is in place, code paths are not.</p>
+    </a>
+    <a class="card card-link card-deferred" href="/orgs/{{.Org.ID}}/encryption-keys">
+      <h3>encryption keys</h3>
+      <p>per-tenant transcript encryption — deferred to v1.5 alongside central-side execution.</p>
+    </a>
+  </div>
 </section>
 {{end}}

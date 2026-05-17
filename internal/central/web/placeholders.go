@@ -75,5 +75,6 @@ func (s *Server) placeholderPage(orgID, nav string) centralPageData {
 		NavSection:  nav,
 		OrgID:       orgID,
 		CentralOnly: true,
+		Shell:       "central",
 	}
 }

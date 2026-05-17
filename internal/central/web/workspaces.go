@@ -29,9 +29,11 @@ type GitWorkspacesLister interface {
 // PostgresGitStore satisfies. Implementations that need
 // transaction scope (RLS via app.current_org_id) take this
 // interface; in-memory stores stick with the ctx-free
-// GitWorkspacesLister.
+// GitWorkspacesLister. The orgID is supplied explicitly so
+// the implementation can stamp app.current_org_id without the
+// web layer needing to import internal/central/server.
 type GitWorkspacesListerCtx interface {
-	ListWorkspaces(ctx context.Context) ([]string, error)
+	ListWorkspaces(ctx context.Context, orgID string) ([]string, error)
 }
 
 // centralWorkspacesIndexProjection satisfies
@@ -61,7 +63,7 @@ func (p centralWorkspacesIndexProjection) ListWorkspaces(orgID string) ([]intern
 	var ids []string
 	switch {
 	case p.listerCtx != nil:
-		out, err := p.listerCtx.ListWorkspaces(p.ctx)
+		out, err := p.listerCtx.ListWorkspaces(p.ctx, orgID)
 		if err != nil {
 			return nil, err
 		}
@@ -136,6 +138,8 @@ func (s *Server) handleWorkspacesIndex(w http.ResponseWriter, r *http.Request) {
 			NavSection:  "workspaces",
 			OrgID:       orgID,
 			WorkspaceID: "",
+			CentralOnly: true,
+			Shell:       "central",
 		},
 		Workspaces: rows,
 	}

@@ -122,7 +122,7 @@ func TestPostgresGitStoreScopesByWorkspace(t *testing.T) {
 	}
 
 	// ListWorkspaces enumerates both.
-	ids, err := gs.ListWorkspaces(ctx)
+	ids, err := gs.ListWorkspaces(ctx, OrgIDFromContext(ctx))
 	if err != nil {
 		t.Fatalf("ListWorkspaces: %v", err)
 	}
