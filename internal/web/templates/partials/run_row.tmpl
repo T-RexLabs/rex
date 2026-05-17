@@ -7,14 +7,14 @@ WithEnded=false in a wrapper to skip the ended/finished column. */}}
 
 {{define "run_row"}}
 <tr>
-  <td><a href="/runs/{{.RunID}}"><code>{{.Name}}</code></a></td>
+  <td><a href="{{.LinkBase}}/runs/{{.RunID}}"><code>{{.Name}}</code></a></td>
   <td><span class="pill pill-{{.Kind}}">{{.Kind}}</span></td>
   <td><span class="pill pill-{{.Status}}"><i class="dot"></i>{{.Status}}</span></td>
   <td>
     {{- if .FromTask -}}
       {{$parts := splitTaskRef .FromTask}}
       {{- if eq (len $parts) 2 -}}
-        <a href="/specs/{{index $parts 0}}#{{index $parts 1}}" class="muted small"><code>{{.FromTask}}</code></a>
+        <a href="{{.LinkBase}}/specs/{{index $parts 0}}#{{index $parts 1}}" class="muted small"><code>{{.FromTask}}</code></a>
       {{- else -}}
         <code class="muted small">{{.FromTask}}</code>
       {{- end -}}

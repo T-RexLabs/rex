@@ -15,7 +15,21 @@
       {{if eq .Shell "central"}}
         <nav class="nav" aria-label="primary">
           <a href="/" {{if eq .NavSection "home"}}aria-current="page"{{end}}>home</a>
-          {{if .OrgID}}
+          {{if and .OrgID .WorkspaceID}}
+            <span class="nav-sep">/</span>
+            <a href="/orgs/{{.OrgID}}" class="muted">org</a>
+            <span class="nav-sep">/</span>
+            <a href="/orgs/{{.OrgID}}/workspaces" class="muted">workspaces</a>
+            <span class="nav-sep">/</span>
+            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}"           {{if eq .NavSection "workspace"}}aria-current="page"{{end}}>overview</a>
+            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/specs"     {{if eq .NavSection "specs"}}aria-current="page"{{end}}>specs</a>
+            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/runs"      {{if eq .NavSection "runs"}}aria-current="page"{{end}}>runs</a>
+            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/audit"     {{if eq .NavSection "audit"}}aria-current="page"{{end}}>audit</a>
+            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/amendments" {{if eq .NavSection "amendments"}}aria-current="page"{{end}}>amendments</a>
+            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/search"    {{if eq .NavSection "search"}}aria-current="page"{{end}}>search</a>
+            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/remotes"   {{if eq .NavSection "remotes"}}aria-current="page"{{end}}>remotes</a>
+            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/settings"  {{if eq .NavSection "settings"}}aria-current="page"{{end}}>settings</a>
+          {{else if .OrgID}}
             <span class="nav-sep">/</span>
             <a href="/orgs/{{.OrgID}}"                {{if eq .NavSection "org"}}aria-current="page"{{end}}>overview</a>
             <a href="/orgs/{{.OrgID}}/members"        {{if eq .NavSection "members"}}aria-current="page"{{end}}>members</a>

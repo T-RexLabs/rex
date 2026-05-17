@@ -35,6 +35,13 @@ type RunRow struct {
 	// and per-row badges.
 	SpecRefs []string
 	FromTask string
+	// LinkBase is the URL prefix the row links to for /runs/<id>
+	// and /specs/<id>#<task>. Empty on the local shell (links
+	// resolve to /runs/<id> directly); set to
+	// "/orgs/<org>/workspaces/<ws>" on the central shell so the
+	// click-throughs land on the right org-scoped surface
+	// instead of the local-only path.
+	LinkBase string
 }
 
 // RunsListProjection is the read-side surface the shared /runs

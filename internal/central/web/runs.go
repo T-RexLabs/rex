@@ -167,6 +167,13 @@ func (s *Server) handleRunsList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "central web: list runs: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Stamp the central-shell link base on every row so the
+	// shared run_row partial renders /orgs/<org>/workspaces/<ws>/
+	// runs/<id> instead of the local /runs/<id> path.
+	base := "/orgs/" + orgID + "/workspaces/" + wsID
+	for i := range rows {
+		rows[i].LinkBase = base
+	}
 	specFilter := r.URL.Query().Get("spec")
 	if specFilter != "" {
 		filtered := rows[:0]
