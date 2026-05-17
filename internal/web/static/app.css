@@ -417,6 +417,35 @@ hr {
   color: var(--text-3);
 }
 
+/* empty-state — used by central pages that have no rows yet
+ * (workspaces / audit / pending invites). Replaces the
+ * "p.muted.small" one-liner with a calmer block that explains
+ * what users would expect to see and the next step. */
+.empty-state {
+  border: 1px dashed var(--border);
+  border-radius: var(--r);
+  padding: var(--sp-6);
+  text-align: center;
+  color: var(--text-2);
+  background: var(--surface-sunk);
+}
+.empty-state h3 {
+  margin: 0 0 var(--sp-2) 0;
+  font-size: var(--fs-md);
+  color: var(--text);
+}
+.empty-state p {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.empty-state code {
+  background: var(--surface);
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
 /* ============================================================
  * 6. Toolbar
  * ============================================================ */

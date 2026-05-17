@@ -163,6 +163,12 @@ func (s *Server) handleAuthRedeem(w http.ResponseWriter, r *http.Request) {
 // invalidates the underlying token (web-ui.CENTRAL-AUTH.4). The
 // cookie is cleared even on revoke errors so a corrupted token in
 // the cookie can't pin the session open.
+//
+// Browser callers (Accept: text/html, set by the topbar sign-out
+// form) get a 303 to /login so the post-form navigation lands on
+// a useful page instead of an empty 204. API callers (no Accept
+// header or anything non-html) keep getting 204 so existing CLI
+// integrations stay stable.
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, proto.ErrCodeBadRequest, "POST only")
@@ -189,6 +195,10 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 	})
+	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

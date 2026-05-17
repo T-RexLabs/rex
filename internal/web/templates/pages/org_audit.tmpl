@@ -31,7 +31,12 @@
       </table>
     </div>
   {{else}}
-    <p class="muted small">no audit entries for this org yet</p>
+    <div class="empty-state">
+      <h3>no audit entries yet</h3>
+      <p>The audit log captures every membership change, invite issuance/redemption,
+         identity registration, auth event, and remote attach/detach scoped to this org.
+         Trigger something (e.g. invite a member) to populate.</p>
+    </div>
   {{end}}
 </section>
 {{end}}

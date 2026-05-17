@@ -43,7 +43,12 @@
       </table>
     </div>
   {{else}}
-    <p class="muted small">no workspaces bound to this org yet</p>
+    <div class="empty-state">
+      <h3>no workspaces yet</h3>
+      <p>Workspaces are created when a local rex node pushes one here for the first time
+         (sync.BOOT.2 first-push-wins binding). Run <code>rex remote add</code> +
+         <code>rex push</code> against this central from a local workspace to populate.</p>
+    </div>
   {{end}}
 </section>
 {{end}}

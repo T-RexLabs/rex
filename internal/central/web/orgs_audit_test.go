@@ -104,7 +104,7 @@ func TestOrgAuditEmptyShowsNotice(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "no audit entries for this org yet") {
+	if !strings.Contains(string(body), "no audit entries yet") {
 		t.Errorf("empty-state notice missing: %s", body)
 	}
 }

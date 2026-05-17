@@ -58,7 +58,7 @@ func TestCentralWorkspacesIndexEmptyState(t *testing.T) {
 		t.Fatalf("status: %d", resp.StatusCode)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "no workspaces bound to this org yet") {
+	if !strings.Contains(string(body), "no workspaces yet") {
 		t.Errorf("missing empty-state copy: %s", body)
 	}
 }
