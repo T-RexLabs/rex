@@ -1,0 +1,57 @@
+{{define "title"}}rex-central — workspace {{.Workspace.ID}}{{end}}
+
+{{define "content"}}
+<header class="page-header">
+  <h1>{{if .WorkspaceName}}{{.WorkspaceName}}{{else}}{{.Workspace.ID}}{{end}}</h1>
+  <div class="meta">
+    <span>workspace id: <code>{{.Workspace.ID}}</code></span>
+    <span>·</span>
+    <span>org: <code>{{.OrgID}}</code></span>
+    {{if .WorkspaceState}}
+      <span>·</span>
+      <span><span class="pill pill-{{.WorkspaceState}}"><i class="dot"></i>{{.WorkspaceState}}</span></span>
+    {{end}}
+    {{if .WorkspaceCreatedAt}}
+      <span>·</span>
+      <span>created {{.WorkspaceCreatedAt}}</span>
+    {{end}}
+  </div>
+</header>
+
+<section class="section">
+  <div class="section-head">
+    <h2>workspace surfaces</h2>
+    <span class="section-meta">read-only on central; edits land via the local shell</span>
+  </div>
+  <div class="card-grid">
+    <a class="card card-link" href="/orgs/{{.OrgID}}/workspaces/{{.Workspace.ID}}/specs">
+      <h3>specs</h3>
+      <p>the workspace's spec catalog (synced via the git-merged sync category).</p>
+    </a>
+    <a class="card card-link" href="/orgs/{{.OrgID}}/workspaces/{{.Workspace.ID}}/runs">
+      <h3>runs</h3>
+      <p>terminal-state run records pushed from local executors. live SSE lands with v1.5.</p>
+    </a>
+    <a class="card card-link" href="/orgs/{{.OrgID}}/workspaces/{{.Workspace.ID}}/audit">
+      <h3>audit</h3>
+      <p>workspace-scoped audit tail: runs, hook completions, sync events, permission decisions.</p>
+    </a>
+    <a class="card card-link" href="/orgs/{{.OrgID}}/workspaces/{{.Workspace.ID}}/amendments">
+      <h3>amendments</h3>
+      <p>proposed + accepted spec amendments under <code>.rex/specs/_proposed/</code>.</p>
+    </a>
+    <a class="card card-link" href="/orgs/{{.OrgID}}/workspaces/{{.Workspace.ID}}/search">
+      <h3>search</h3>
+      <p>full-text search over events + specs in this workspace (Postgres FTS).</p>
+    </a>
+    <a class="card card-link" href="/orgs/{{.OrgID}}/workspaces/{{.Workspace.ID}}/remotes">
+      <h3>remotes</h3>
+      <p>the synced <code>.rex/remotes.toml</code> view — which central nodes this workspace pushes to.</p>
+    </a>
+    <a class="card card-link" href="/orgs/{{.OrgID}}/workspaces/{{.Workspace.ID}}/settings">
+      <h3>settings</h3>
+      <p>the synced <code>workspace.yaml</code> with metadata + the raw highlighted body.</p>
+    </a>
+  </div>
+</section>
+{{end}}
