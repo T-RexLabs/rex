@@ -111,16 +111,36 @@ func (s *PostgresStore) Close() {
 	}
 }
 
-// Head returns the id of the row with the largest insertion_seq
-// for the request's org. Three layers of scoping:
+// Head returns the id of the row with the largest insertion_seq.
+//
+// When ctx carries an org id (WithOrgID), the result is scoped
+// to that org and runs through withOrgScope — three layers of
+// scoping line up:
 //
 //  1. WithOrgID requires an org id on ctx (application gate).
 //  2. The WHERE org_id = $1 filter on the query.
 //  3. Postgres RLS rules from schema v4 — defense in depth.
 //
-// All three must agree; if app code forgets either of the
-// first two, RLS catches it.
+// Without an org id (e.g. the unauthenticated GET /sync/state
+// handshake the CLI runs before any token is issued), the
+// query falls back to a global max(insertion_seq) — the
+// handshake response just needs *a* head id to confirm the
+// server is reachable; org-scoping kicks in once the caller
+// has a session.
 func (s *PostgresStore) Head(ctx context.Context) (string, error) {
+	if OrgIDFromContext(ctx) == "" {
+		var id string
+		serr := s.pool.QueryRow(ctx,
+			`SELECT id FROM events ORDER BY insertion_seq DESC LIMIT 1`,
+		).Scan(&id)
+		if errors.Is(serr, pgx.ErrNoRows) {
+			return "", nil
+		}
+		if serr != nil {
+			return "", fmt.Errorf("server: head: %w", serr)
+		}
+		return id, nil
+	}
 	var id string
 	err := s.withOrgScope(ctx, func(tx pgx.Tx) error {
 		orgID := OrgIDFromContext(ctx) // already validated by withOrgScope
