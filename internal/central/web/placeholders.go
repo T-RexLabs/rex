@@ -20,6 +20,9 @@ type centralPlaceholderData struct {
 // to keep the nav shape stable for users (web-ui.CENTRAL.1).
 func (s *Server) handleOrgIdP(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("org")
+	if _, _, ok := s.requireOrgMember(w, r, orgID); !ok {
+		return
+	}
 	if orgID == "" {
 		http.NotFound(w, r)
 		return
@@ -42,6 +45,9 @@ func (s *Server) handleOrgIdP(w http.ResponseWriter, r *http.Request) {
 // eventual surface and explains the deferral inline.
 func (s *Server) handleOrgEncryptionKeys(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("org")
+	if _, _, ok := s.requireOrgMember(w, r, orgID); !ok {
+		return
+	}
 	if orgID == "" {
 		http.NotFound(w, r)
 		return

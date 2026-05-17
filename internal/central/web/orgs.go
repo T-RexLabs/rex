@@ -39,6 +39,9 @@ func (s *Server) handleOrgOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := r.PathValue("org")
+	if _, _, ok := s.requireOrgMember(w, r, orgID); !ok {
+		return
+	}
 	if orgID == "" {
 		http.NotFound(w, r)
 		return
@@ -68,6 +71,9 @@ func (s *Server) handleOrgMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := r.PathValue("org")
+	if _, _, ok := s.requireOrgMember(w, r, orgID); !ok {
+		return
+	}
 	if orgID == "" {
 		http.NotFound(w, r)
 		return
@@ -90,6 +96,9 @@ func (s *Server) handleOrgMembers(w http.ResponseWriter, r *http.Request) {
 // land with the admin API.
 func (s *Server) handleOrgRoles(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("org")
+	if _, _, ok := s.requireOrgMember(w, r, orgID); !ok {
+		return
+	}
 	if orgID == "" {
 		http.NotFound(w, r)
 		return

@@ -149,6 +149,9 @@ func (s *Server) handleRunsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := r.PathValue("org")
+	if _, _, ok := s.requireOrgMember(w, r, orgID); !ok {
+		return
+	}
 	wsID := r.PathValue("ws")
 	ws, err := s.opts.Resolver.Resolve(wsID)
 	if err != nil {
@@ -197,6 +200,9 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := r.PathValue("org")
+	if _, _, ok := s.requireOrgMember(w, r, orgID); !ok {
+		return
+	}
 	wsID := r.PathValue("ws")
 	runID := r.PathValue("id")
 	if runID == "" {

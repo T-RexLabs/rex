@@ -13,9 +13,13 @@ import (
 )
 
 // stubOrgs is the deterministic OrgsProjection used in tests.
+// roles maps (orgID, fingerprint) → role string; when nil OR no
+// entry exists for the pair, RoleFor returns "" (no membership)
+// which the rbac helper treats as forbidden.
 type stubOrgs struct {
 	orgs    map[string]internalweb.OrgSummary
 	members map[string][]internalweb.MembershipRow
+	roles   map[string]map[string]string
 	err     error
 }
 
@@ -32,6 +36,13 @@ func (s *stubOrgs) ListMembers(orgID string) ([]internalweb.MembershipRow, error
 		return nil, s.err
 	}
 	return s.members[orgID], nil
+}
+
+func (s *stubOrgs) RoleFor(orgID, fingerprint string) (string, error) {
+	if s.err != nil {
+		return "", s.err
+	}
+	return s.roles[orgID][fingerprint], nil
 }
 
 func newOrgsServer(t *testing.T, projection internalweb.OrgsProjection) *httptest.Server {

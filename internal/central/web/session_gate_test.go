@@ -12,6 +12,11 @@ import (
 // newGatedServer constructs a central web shell with Auth wired
 // so the session gate fires. The supplied valid tokens land in
 // the stub's validTokens map; everything else is rejected.
+//
+// The stub Orgs grants every valid-token fingerprint the
+// "member" role in the test org so the gate tests stay focused
+// on the session boundary — per-org RBAC has its own tests in
+// orgs_test.go.
 func newGatedServer(t *testing.T, validTokens ...string) *httptest.Server {
 	t.Helper()
 	allowed := make(map[string]SessionInfo, len(validTokens))
@@ -22,7 +27,11 @@ func newGatedServer(t *testing.T, validTokens ...string) *httptest.Server {
 		Version:  "test",
 		Auth:     &stubAuth{validTokens: allowed},
 		Resolver: NewGitStoreResolver(stubGitStore{entries: map[string]string{}}, nil),
-		Orgs:     &stubOrgs{},
+		Orgs: &stubOrgs{
+			roles: map[string]map[string]string{
+				"acme": {"fp-test": "member"},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)

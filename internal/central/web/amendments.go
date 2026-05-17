@@ -181,6 +181,9 @@ func (s *Server) handleAmendmentsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := r.PathValue("org")
+	if _, _, ok := s.requireOrgMember(w, r, orgID); !ok {
+		return
+	}
 	wsID := r.PathValue("ws")
 	ws, err := s.opts.Resolver.Resolve(wsID)
 	if err != nil {
@@ -230,6 +233,9 @@ func (s *Server) handleAmendmentDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := r.PathValue("org")
+	if _, _, ok := s.requireOrgMember(w, r, orgID); !ok {
+		return
+	}
 	wsID := r.PathValue("ws")
 	stem := r.PathValue("stem")
 	if stem == "" {

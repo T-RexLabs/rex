@@ -57,3 +57,10 @@ func (a *postgresOrgsAdapter) ListMembers(orgID string) ([]internalweb.Membershi
 	}
 	return out, nil
 }
+
+// RoleFor returns the role the fingerprint holds in orgID, or
+// "" when no membership exists. Backs the web shell's per-handler
+// requireOrgMember check (identity-and-trust.RBAC.1).
+func (a *postgresOrgsAdapter) RoleFor(orgID, fingerprint string) (string, error) {
+	return a.pg.RoleFor(context.Background(), orgID, fingerprint)
+}

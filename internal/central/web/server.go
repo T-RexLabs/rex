@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"html"
@@ -13,6 +14,25 @@ import (
 	"github.com/asabla/rex/internal/core/sync/proto"
 	internalweb "github.com/asabla/rex/internal/web"
 )
+
+// sessionContextKey is the unexported context key the session
+// gate stores the validated SessionInfo under. Per-handler RBAC
+// checks pull it back via SessionFromContext.
+type sessionContextKey struct{}
+
+// withSession returns ctx augmented with info — used by the gate
+// after a successful ValidateSession.
+func withSession(ctx context.Context, info SessionInfo) context.Context {
+	return context.WithValue(ctx, sessionContextKey{}, info)
+}
+
+// SessionFromContext returns the SessionInfo the gate stored,
+// or false when no session is on the context (dev-mode
+// pass-through, or a request handled outside the gate).
+func SessionFromContext(ctx context.Context) (SessionInfo, bool) {
+	info, ok := ctx.Value(sessionContextKey{}).(SessionInfo)
+	return info, ok
+}
 
 // Auth is the subset of central-node auth surface the web shell
 // needs to power /login + the session gate (web-ui.CENTRAL-AUTH.*).
@@ -193,11 +213,16 @@ func (s *Server) requireSession(next http.Handler) http.Handler {
 			s.failSession(w, r)
 			return
 		}
-		if _, err := s.opts.Auth.ValidateSession(token); err != nil {
+		info, err := s.opts.Auth.ValidateSession(token)
+		if err != nil {
 			s.failSession(w, r)
 			return
 		}
-		next.ServeHTTP(w, r)
+		// Stash the validated session on the request context so
+		// downstream RBAC checks (requireOrgMember on every
+		// /orgs/<id>/... handler) can read the caller's
+		// fingerprint without re-validating the token.
+		next.ServeHTTP(w, r.WithContext(withSession(r.Context(), info)))
 	})
 }
 

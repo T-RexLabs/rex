@@ -105,6 +105,9 @@ func (s *Server) handleWorkspacesIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := r.PathValue("org")
+	if _, _, ok := s.requireOrgMember(w, r, orgID); !ok {
+		return
+	}
 	if orgID == "" {
 		http.NotFound(w, r)
 		return
