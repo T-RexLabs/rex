@@ -43,9 +43,14 @@ func (s *PostgresGitStore) Get(ctx context.Context, workspaceID, path string) (p
 	if workspaceID == "" {
 		return proto.GitEntity{}, errors.New("server: git get requires a non-empty workspace_id")
 	}
+	ctx, orgID, err := s.parent.ensureOrgScopeFromWorkspace(ctx, workspaceID)
+	if err != nil {
+		// Unknown workspace looks like "no content for that path"
+		// to the caller, matching MemoryGitStore's ErrUnknownGitEntity.
+		return proto.GitEntity{}, fmt.Errorf("%w: %q", ErrUnknownGitEntity, path)
+	}
 	var out proto.GitEntity
-	err := s.parent.withOrgScope(ctx, func(tx pgx.Tx) error {
-		orgID := OrgIDFromContext(ctx)
+	err = s.parent.withOrgScope(ctx, func(tx pgx.Tx) error {
 		return tx.QueryRow(ctx, `
 			SELECT path, revision, content, signature, actor, updated_at
 			FROM   git_entities
@@ -166,9 +171,13 @@ func (s *PostgresGitStore) List(ctx context.Context, workspaceID string) ([]stri
 	if workspaceID == "" {
 		return nil, errors.New("server: git list requires a non-empty workspace_id")
 	}
+	ctx, orgID, err := s.parent.ensureOrgScopeFromWorkspace(ctx, workspaceID)
+	if err != nil {
+		// Unknown workspace -> empty list, matching MemoryGitStore.
+		return nil, nil
+	}
 	var out []string
-	err := s.parent.withOrgScope(ctx, func(tx pgx.Tx) error {
-		orgID := OrgIDFromContext(ctx)
+	err = s.parent.withOrgScope(ctx, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `
 			SELECT path
 			FROM   git_entities

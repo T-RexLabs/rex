@@ -159,6 +159,33 @@ func (s *PostgresStore) Head(ctx context.Context) (string, error) {
 	return id, nil
 }
 
+// ensureOrgScopeFromWorkspace returns ctx with WithOrgID set
+// (passthrough when already present) or derives the org id from
+// the workspaces binding table for workspaceID. Lets handlers
+// that have a workspace id but no session-stamped org context
+// (the central web shell's per-workspace pages) call
+// org-scoped reads without each handler needing to import the
+// server package's WithOrgID directly.
+//
+// Returns the orgID alongside the wrapped ctx so callers don't
+// need to re-read it from context.
+func (s *PostgresStore) ensureOrgScopeFromWorkspace(ctx context.Context, workspaceID string) (context.Context, string, error) {
+	if id := OrgIDFromContext(ctx); id != "" {
+		return ctx, id, nil
+	}
+	if workspaceID == "" {
+		return ctx, "", errors.New("server: org scope requires either WithOrgID on ctx or a workspaceID")
+	}
+	orgID, ok, err := s.WorkspaceOrg(ctx, workspaceID)
+	if err != nil {
+		return ctx, "", err
+	}
+	if !ok {
+		return ctx, "", fmt.Errorf("workspace %q is not bound to any org", workspaceID)
+	}
+	return WithOrgID(ctx, orgID), orgID, nil
+}
+
 // Append inserts rec, idempotent on the id PK. Returns
 // added=true on a fresh insert, added=false on a duplicate.
 //
@@ -354,8 +381,12 @@ func (s *PostgresStore) SinceForWorkspace(ctx context.Context, workspaceID, curs
 	if workspaceID == "" {
 		return nil, errors.New("server: SinceForWorkspace requires a non-empty workspace_id")
 	}
+	ctx, _, err := s.ensureOrgScopeFromWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, nil
+	}
 	var out []eventlog.Record
-	err := s.withOrgScope(ctx, func(tx pgx.Tx) error {
+	err = s.withOrgScope(ctx, func(tx pgx.Tx) error {
 		orgID := OrgIDFromContext(ctx)
 		var (
 			rows pgx.Rows

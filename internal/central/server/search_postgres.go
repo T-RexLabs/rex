@@ -59,10 +59,12 @@ func (s *PostgresSearch) Search(ctx context.Context, workspaceID, query string, 
 	if limit <= 0 {
 		limit = 25
 	}
+	ctx, orgID, err := s.parent.ensureOrgScopeFromWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, nil
+	}
 	var out []SearchHit
-	err := s.parent.withOrgScope(ctx, func(tx pgx.Tx) error {
-		orgID := OrgIDFromContext(ctx)
-
+	err = s.parent.withOrgScope(ctx, func(tx pgx.Tx) error {
 		// Specs: only the canonical specs/<id>.yaml entries —
 		// amendments live under specs/_proposed/... and surface
 		// on the /amendments page instead.
