@@ -453,6 +453,42 @@ func (s *PostgresStore) RedeemInvite(ctx context.Context, token, handle, publicK
 	return res, nil
 }
 
+// PeekInvite looks up an invite by token without any side effects.
+// Backs the GET /invites/<token> handler so the form can fail
+// fast on unknown / expired / already-redeemed tokens instead of
+// making the recipient paste a PEM first. Sentinel errors mirror
+// RedeemInvite so handlers can branch on the same set.
+func (s *PostgresStore) PeekInvite(ctx context.Context, token string) (Invite, error) {
+	var inv Invite
+	if token == "" {
+		return inv, errors.New("server: PeekInvite requires token")
+	}
+	var redeemedAt *time.Time
+	err := s.pool.QueryRow(ctx, `
+		SELECT id::text, org_id::text, token, role, invited_by, expires_at,
+		       expires_at - INTERVAL '7 days' AS created_at,
+		       redeemed_at
+		FROM   org_invites
+		WHERE  token = $1
+	`, token).Scan(
+		&inv.ID, &inv.OrgID, &inv.Token, &inv.Role, &inv.InvitedBy,
+		&inv.ExpiresAt, &inv.CreatedAt, &redeemedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return inv, ErrInviteNotFound
+		}
+		return inv, fmt.Errorf("server: peek invite: %w", err)
+	}
+	if redeemedAt != nil {
+		return inv, ErrInviteAlreadyRedeemed
+	}
+	if !inv.ExpiresAt.After(time.Now()) {
+		return inv, ErrInviteExpired
+	}
+	return inv, nil
+}
+
 // ListPendingInvites returns every unredeemed, unexpired invite
 // for the org so the /members page can render them alongside
 // the current memberships. Ordered by expiration descending so

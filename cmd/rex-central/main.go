@@ -148,11 +148,13 @@ lost on restart.
 			})
 
 			opts := server.Options{Logger: logger}
+			var ks *server.Keystore
 			if cfg.Auth.KeysFile != "" {
-				ks, err := server.LoadKeystoreFile(cfg.Auth.KeysFile)
+				loaded, err := server.LoadKeystoreFile(cfg.Auth.KeysFile)
 				if err != nil {
 					return err
 				}
+				ks = loaded
 				opts.Keystore = ks
 				logger.Info("authorized keys loaded",
 					"op", "startup",
@@ -177,6 +179,24 @@ lost on restart.
 					"op", "startup",
 					"store", "postgres",
 				)
+				// AUTH.2.2: overlay runtime-registered keys from
+				// authorized_keys onto the in-memory Keystore so
+				// invite-redeemed identities authenticate without
+				// waiting for a TOML rewrite. The TOML file (loaded
+				// above) covers bootstrap + dev fallback; the DB
+				// overlay covers everything redeem-flow added.
+				if ks == nil {
+					ks = server.NewKeystore()
+					opts.Keystore = ks
+				}
+				if n, err := server.LoadAuthorizedKeysIntoKeystore(cmd.Context(), ks, pg, logger); err != nil {
+					return fmt.Errorf("overlay authorized_keys: %w", err)
+				} else if n > 0 {
+					logger.Info("authorized keys overlaid from db",
+						"op", "startup",
+						"count", n,
+					)
+				}
 			} else {
 				logger.Warn("no db dsn configured — using in-memory store; events lost on restart",
 					"op", "startup",
@@ -260,6 +280,12 @@ lost on restart.
 					// mutations emit org.member.* audit events on
 					// success (CENTRAL.3).
 					webOpts.Orgs = newPostgresOrgsAdapter(pg, auditAppender)
+					// Invite redeem flow (AUTH.2.1): the
+					// adapter wraps PostgresStore.RedeemInvite +
+					// overlays the new key into the in-memory
+					// keystore + emits identity.key_registered
+					// and org.member.joined audit events.
+					webOpts.Redeemer = newPostgresInviteRedeemer(pg, ks, auditAppender)
 				}
 				webShell, err := centralweb.New(webOpts)
 				if err != nil {

@@ -98,6 +98,13 @@ type Options struct {
 	// respond 503 with a pointer to central-node.RBAC-SVR.1
 	// (admin REST API pending).
 	Orgs internalweb.OrgsProjection
+	// Redeemer powers the unauthenticated /invites/<token> +
+	// /invites/redeem surface (identity-and-trust.AUTH.2.1).
+	// Optional; the v1 wireup binds a PostgresStore-backed
+	// adapter (plus in-memory Keystore overlay + audit
+	// emission) from cmd/rex-central when --db is on. When nil,
+	// both routes respond 503.
+	Redeemer internalweb.InviteRedeemer
 }
 
 // NewGitStoreResolver builds an internalweb.WorkspaceResolver
@@ -200,6 +207,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /orgs/{org}/members/{fp}/role", s.handleOrgMemberRoleChange)
 	s.mux.HandleFunc("POST /orgs/{org}/members/{fp}/remove", s.handleOrgMemberRemove)
 	s.mux.HandleFunc("POST /orgs/{org}/members/invite", s.handleOrgMemberInvite)
+	s.mux.HandleFunc("GET /invites/{token}", s.handleInvitePeek)
+	s.mux.HandleFunc("POST /invites/redeem", s.handleInviteRedeem)
 }
 
 // requireSession wraps the whole central web mux with a session
@@ -244,13 +253,22 @@ func (s *Server) requireSession(next http.Handler) http.Handler {
 // isPublicWebPath reports whether a request path is reachable
 // without a session. Kept exhaustive on purpose — every entry
 // here is a deliberate carve-out from CENTRAL-AUTH.3's gate.
+//
+// /invites/<token> + /invites/redeem are public because the
+// invite token IS the credential (identity-and-trust.AUTH.2.1);
+// recipients reach the redeem form before they have a key
+// registered, so a session check would be circular.
 func isPublicWebPath(path string) bool {
 	switch {
 	case path == "/login":
 		return true
 	case path == "/_web/health":
 		return true
+	case path == "/invites/redeem":
+		return true
 	case strings.HasPrefix(path, "/static/"):
+		return true
+	case strings.HasPrefix(path, "/invites/"):
 		return true
 	}
 	return false
