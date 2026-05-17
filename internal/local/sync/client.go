@@ -306,7 +306,16 @@ func (c *Client) Pull(ctx context.Context, since string, fn func(eventlog.Record
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return 0, decodeError(resp)
+		err := decodeError(resp)
+		// The central returns 400 "unknown cursor" when our
+		// watermark points at an event id it doesn't have —
+		// typically because the central's db was wiped between
+		// runs and the local watermark is stale. Surface a
+		// sentinel so callers (PullOnly) can self-heal.
+		if resp.StatusCode == http.StatusBadRequest && strings.Contains(err.Error(), "unknown cursor") {
+			return 0, ErrUnknownCursor
+		}
+		return 0, err
 	}
 	count, err := scanSSE(resp.Body, fn)
 	if err != nil {
@@ -314,6 +323,12 @@ func (c *Client) Pull(ctx context.Context, since string, fn func(eventlog.Record
 	}
 	return count, nil
 }
+
+// ErrUnknownCursor is the typed sentinel Pull returns when the
+// central rejects the supplied since cursor with 400 "unknown
+// cursor". PullOnly catches it and re-runs the pull from the
+// empty cursor, automatically recovering from a central reset.
+var ErrUnknownCursor = errors.New("sync: central rejected the watermark cursor (likely a central reset)")
 
 // RunArgs is the per-call configuration for the half- and full-sync
 // operations that wrap the watermark + log dance around HTTP calls.
@@ -389,7 +404,10 @@ func (c *Client) PullOnly(ctx context.Context, args RunArgs) (int, error) {
 		return 0, err
 	}
 	defer logWriter.Close()
-	var newHead string
+	var (
+		newHead         string
+		recoveredCursor bool
+	)
 	pulled, err := c.Pull(ctx, wm.LastAckedEventID, func(rec eventlog.Record) error {
 		if err := appendRaw(logWriter, rec); err != nil {
 			return err
@@ -397,11 +415,36 @@ func (c *Client) PullOnly(ctx context.Context, args RunArgs) (int, error) {
 		newHead = rec.ID
 		return nil
 	})
+	if errors.Is(err, ErrUnknownCursor) {
+		// Central doesn't know our cursor — typically a wiped
+		// central between dev runs. Clear the watermark + retry
+		// from scratch. The pull stream returns whatever the
+		// (possibly empty) central has; the user's local log is
+		// untouched and a subsequent `rex push` will re-push it.
+		wm.LastAckedEventID = ""
+		wm.NeedsRebase = false
+		wm.LastConflictHead = ""
+		newHead = ""
+		recoveredCursor = true
+		pulled, err = c.Pull(ctx, "", func(rec eventlog.Record) error {
+			if err := appendRaw(logWriter, rec); err != nil {
+				return err
+			}
+			newHead = rec.ID
+			return nil
+		})
+	}
 	if err != nil {
 		return pulled, err
 	}
-	if newHead != "" {
-		wm.LastAckedEventID = newHead
+	// Persist the watermark when we either pulled new events OR
+	// performed an unknown-cursor recovery — the latter has to
+	// clear the stale cursor on disk even when newHead is empty,
+	// otherwise the next pull replays the same failure.
+	if newHead != "" || recoveredCursor {
+		if newHead != "" {
+			wm.LastAckedEventID = newHead
+		}
 		wm.AckedAt = time.Now().UTC()
 		// A successful pull means we have observed everything
 		// up to the server's head as of the request, so the
