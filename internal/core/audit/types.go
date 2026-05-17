@@ -90,6 +90,16 @@ const (
 	EventTypeTokenRefreshed    = "token.refreshed"
 	EventTypeTokenRevoked      = "token.revoked"
 	EventTypeAuthReplayAttempt = "auth.replay_attempt"
+
+	// Org-admin mutations (CENTRAL.3 — "every action runs
+	// through RBAC and writes audit entries"). The
+	// `org.member.*` family fires from the central node's
+	// member-administration surface, currently driven by the
+	// /orgs/<id>/members POST handlers in internal/central/web
+	// and the underlying PostgresStore mutators.
+	EventTypeOrgMemberInvited     = "org.member.invited"
+	EventTypeOrgMemberRoleChanged = "org.member.role_changed"
+	EventTypeOrgMemberRemoved     = "org.member.removed"
 )
 
 // EventVersion is the schema version for audit-package event payloads.
@@ -129,6 +139,9 @@ var auditEventTypes = func() map[string]struct{} {
 		EventTypeTokenRefreshed:        {},
 		EventTypeTokenRevoked:          {},
 		EventTypeAuthReplayAttempt:     {},
+		EventTypeOrgMemberInvited:      {},
+		EventTypeOrgMemberRoleChanged:  {},
+		EventTypeOrgMemberRemoved:      {},
 
 		// Runner events are audit-class per TYPES.1 ("every harness
 		// invocation start/end ... every workspace state change").
@@ -440,4 +453,41 @@ type AuthReplayAttemptEvent struct {
 	Fingerprint string `json:"fingerprint"`
 	ChainID     string `json:"chain_id"`
 	OldTokenID  string `json:"old_token_id"`
+}
+
+// OrgMemberInvitedEvent is the payload for EventTypeOrgMemberInvited
+// — fires when an org admin issues a new invite via the central
+// web shell (or any future CLI/REST surface). The invite token
+// itself never lands in the audit body; only the rendered
+// fingerprint stub + role + invite id, enough for an operator to
+// trace the chain when the invite is later redeemed.
+type OrgMemberInvitedEvent struct {
+	OrgID    string `json:"org_id"`
+	InviteID string `json:"invite_id"`
+	Role     string `json:"role"`
+	Inviter  string `json:"inviter"`
+}
+
+// OrgMemberRoleChangedEvent is the payload for
+// EventTypeOrgMemberRoleChanged — fires when an admin promotes
+// or demotes a member via the central web shell. The from/to
+// pair lets reviewers reconstruct the role timeline without
+// replaying the prior membership state.
+type OrgMemberRoleChangedEvent struct {
+	OrgID       string `json:"org_id"`
+	Fingerprint string `json:"fingerprint"`
+	FromRole    string `json:"from_role"`
+	ToRole      string `json:"to_role"`
+	ChangedBy   string `json:"changed_by"`
+}
+
+// OrgMemberRemovedEvent is the payload for
+// EventTypeOrgMemberRemoved — fires when an admin removes a
+// member from the org. Includes the prior role so reviewers can
+// see what access was revoked.
+type OrgMemberRemovedEvent struct {
+	OrgID       string `json:"org_id"`
+	Fingerprint string `json:"fingerprint"`
+	PriorRole   string `json:"prior_role"`
+	RemovedBy   string `json:"removed_by"`
 }

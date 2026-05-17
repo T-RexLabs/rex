@@ -45,6 +45,36 @@ func (s *stubOrgs) RoleFor(orgID, fingerprint string) (string, error) {
 	return s.roles[orgID][fingerprint], nil
 }
 
+func (s *stubOrgs) ChangeMemberRole(orgID, fingerprint, newRole string) (string, error) {
+	if s.err != nil {
+		return "", s.err
+	}
+	if s.roles[orgID] == nil {
+		return "", internalweb.ErrUnknownMembership
+	}
+	prior, ok := s.roles[orgID][fingerprint]
+	if !ok {
+		return "", internalweb.ErrUnknownMembership
+	}
+	s.roles[orgID][fingerprint] = newRole
+	return prior, nil
+}
+
+func (s *stubOrgs) RemoveMember(orgID, fingerprint string) (string, error) {
+	if s.err != nil {
+		return "", s.err
+	}
+	if s.roles[orgID] == nil {
+		return "", internalweb.ErrUnknownMembership
+	}
+	prior, ok := s.roles[orgID][fingerprint]
+	if !ok {
+		return "", internalweb.ErrUnknownMembership
+	}
+	delete(s.roles[orgID], fingerprint)
+	return prior, nil
+}
+
 func newOrgsServer(t *testing.T, projection internalweb.OrgsProjection) *httptest.Server {
 	t.Helper()
 	s, err := New(Options{Version: "test", Orgs: projection})

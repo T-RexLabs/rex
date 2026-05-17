@@ -124,6 +124,23 @@
 //	  fires when a refresh token is reused after rotation; the
 //	  chain is auto-revoked and TokenRevokedEvent fires too.
 //
+// Org-admin mutations (CENTRAL.3 — "every action runs through
+// RBAC and writes audit entries"). Producers live on the central
+// node's member-administration surface (internal/central/web's
+// POST handlers and the underlying PostgresStore mutators).
+//
+//	org.member.invited      payload: OrgMemberInvitedEvent
+//	  fires when an org admin issues a new invite. The token
+//	  itself stays out of the audit body; InviteID + Role +
+//	  Inviter let an operator chase the chain when the invite
+//	  is later redeemed.
+//	org.member.role_changed payload: OrgMemberRoleChangedEvent
+//	  fires when an admin promotes or demotes a member. From +
+//	  To role pair captures the transition.
+//	org.member.removed      payload: OrgMemberRemovedEvent
+//	  fires when an admin removes a member. PriorRole records
+//	  the access that was revoked.
+//
 // Git-merged content sync (sync.GIT.1-4 — every rebase outcome
 // counts as a workspace state change for audit purposes):
 //

@@ -189,6 +189,91 @@ func (s *PostgresStore) LookupOrgByID(ctx context.Context, id string) (Org, erro
 	return o, nil
 }
 
+// ChangeMemberRole updates an existing membership's role and
+// returns the prior role so the caller can render or audit the
+// transition. Returns ErrUnknownMembership when no row exists
+// for (orgID, fingerprint); the handler surfaces that as 404
+// rather than silently no-op'ing.
+//
+// Input validation: newRole must be one of the built-in roles
+// (admin / member / viewer). Custom per-org roles are deferred
+// — when they land the gate moves to a per-org role catalog.
+func (s *PostgresStore) ChangeMemberRole(ctx context.Context, orgID, fingerprint, newRole string) (priorRole string, err error) {
+	if orgID == "" || fingerprint == "" {
+		return "", errors.New("server: ChangeMemberRole requires orgID + fingerprint")
+	}
+	if !isBuiltinRole(newRole) {
+		return "", fmt.Errorf("server: role %q is not a built-in role (admin/member/viewer)", newRole)
+	}
+	err = s.withOrgScope(ctx, func(tx pgx.Tx) error {
+		// Lock the row + read the prior role atomically.
+		err := tx.QueryRow(ctx, `
+			SELECT role FROM org_memberships
+			WHERE  org_id = $1 AND fingerprint = $2
+			FOR UPDATE
+		`, orgID, fingerprint).Scan(&priorRole)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrUnknownMembership
+			}
+			return fmt.Errorf("server: lock membership: %w", err)
+		}
+		if priorRole == newRole {
+			// No-op; caller can branch on priorRole == newRole
+			// to skip audit emission.
+			return nil
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE org_memberships SET role = $3
+			WHERE  org_id = $1 AND fingerprint = $2
+		`, orgID, fingerprint, newRole); err != nil {
+			return fmt.Errorf("server: update role: %w", err)
+		}
+		return nil
+	})
+	return priorRole, err
+}
+
+// RemoveMember deletes a membership row and returns the role
+// the member held so the caller can audit what access was
+// revoked. Returns ErrUnknownMembership when no row exists.
+func (s *PostgresStore) RemoveMember(ctx context.Context, orgID, fingerprint string) (priorRole string, err error) {
+	if orgID == "" || fingerprint == "" {
+		return "", errors.New("server: RemoveMember requires orgID + fingerprint")
+	}
+	err = s.withOrgScope(ctx, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `
+			DELETE FROM org_memberships
+			WHERE  org_id = $1 AND fingerprint = $2
+			RETURNING role
+		`, orgID, fingerprint).Scan(&priorRole); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrUnknownMembership
+			}
+			return fmt.Errorf("server: delete membership: %w", err)
+		}
+		return nil
+	})
+	return priorRole, err
+}
+
+// ErrUnknownMembership is returned by ChangeMemberRole +
+// RemoveMember when no row matches (orgID, fingerprint).
+var ErrUnknownMembership = errors.New("server: unknown membership")
+
+// isBuiltinRole reports whether s is one of the built-in role
+// strings. Mirrors internal/core/rbac's catalog without an
+// import (the central server already keeps these strings literal
+// in the org_memberships schema's DEFAULT and the v1 carve-out
+// for member-admin only supports the built-in roles).
+func isBuiltinRole(s string) bool {
+	switch s {
+	case "admin", "member", "viewer":
+		return true
+	}
+	return false
+}
+
 // ListMembersForOrg returns the membership rows for orgID,
 // ordered by fingerprint so the list view is deterministic.
 // Returns an empty slice + nil when the org has no members or

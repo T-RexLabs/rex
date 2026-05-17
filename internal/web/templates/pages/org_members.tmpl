@@ -12,15 +12,25 @@
   </div>
 </header>
 
-<section class="section">
-  <div class="callout">
-    <p><strong>Read-only in v1.</strong>
-       Invite issuance, role changes, and removal land with the
-       org/member/role admin REST API tracked under
-       <code>central-node.RBAC-SVR.1</code>. Until then this page
-       surfaces the current membership for review only.</p>
-  </div>
-</section>
+{{if .Flash}}
+  <section class="section">
+    <aside class="banner banner-success" role="status">
+      <span>{{.Flash}}</span>
+    </aside>
+  </section>
+{{end}}
+
+{{if not .ViewerIsAdmin}}
+  <section class="section">
+    <div class="callout">
+      <p><strong>Read-only for this role.</strong>
+         Promote / demote / remove require the <code>admin</code>
+         role in this org. Invite issuance is pending — the
+         org_invites schema is wired but the redeem flow ships
+         in a follow-up under <code>central-node.RBAC-SVR.1</code>.</p>
+    </div>
+  </section>
+{{end}}
 
 <section class="section">
   {{if .Members}}
@@ -31,13 +41,27 @@
             <th data-sort-type="string" data-sort-default="asc">fingerprint</th>
             <th data-sort-type="string">role</th>
             <th data-sort-type="date">joined</th>
+            {{if .ViewerIsAdmin}}<th>actions</th>{{end}}
           </tr>
         </thead>
         <tbody>
           {{range .Members}}
             <tr>
               <td><code>{{.Fingerprint}}</code></td>
-              <td><span class="pill pill-{{.Role}}"><i class="dot"></i>{{.Role}}</span></td>
+              <td>
+                {{if $.ViewerIsAdmin}}
+                  <form method="post" action="/orgs/{{$.OrgID}}/members/{{.Fingerprint}}/role" class="role-form">
+                    <select name="role" aria-label="role">
+                      <option value="admin"  {{if eq .Role "admin"}}selected{{end}}>admin</option>
+                      <option value="member" {{if eq .Role "member"}}selected{{end}}>member</option>
+                      <option value="viewer" {{if eq .Role "viewer"}}selected{{end}}>viewer</option>
+                    </select>
+                    <button class="btn btn-small" type="submit">save</button>
+                  </form>
+                {{else}}
+                  <span class="pill pill-{{.Role}}"><i class="dot"></i>{{.Role}}</span>
+                {{end}}
+              </td>
               <td>
                 {{if not .JoinedAt.IsZero}}
                   <time>{{.JoinedAt.UTC.Format "2006-01-02 15:04 UTC"}}</time>
@@ -45,6 +69,14 @@
                   <span class="dim">—</span>
                 {{end}}
               </td>
+              {{if $.ViewerIsAdmin}}
+                <td>
+                  <form method="post" action="/orgs/{{$.OrgID}}/members/{{.Fingerprint}}/remove" class="remove-form"
+                        onsubmit="return confirm('Remove {{.Fingerprint}} from this org?');">
+                    <button class="btn btn-small btn-danger" type="submit">remove</button>
+                  </form>
+                </td>
+              {{end}}
             </tr>
           {{end}}
         </tbody>

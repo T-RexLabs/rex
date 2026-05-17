@@ -2,21 +2,23 @@ package main
 
 import (
 	"context"
+	"errors"
 
 	"github.com/asabla/rex/internal/central/server"
 	internalweb "github.com/asabla/rex/internal/web"
 )
 
 // postgresOrgsAdapter satisfies internalweb.OrgsProjection by
-// calling the central PostgresStore's read-side org methods.
-// Lives in cmd/rex-central because internal/central/web does not
-// import internal/central/server (the web package stays a leaf).
+// calling the central PostgresStore's org methods. Lives in
+// cmd/rex-central because internal/central/web does not import
+// internal/central/server (the web package stays a leaf).
 //
-// Mutating admin operations (invite, role change, removal) are
-// tracked under central-node.RBAC-SVR.1 and are deliberately
-// absent from this interface — the central org-admin pages
-// surface them as "admin REST API pending" until that work
-// ships.
+// Read methods: LookupOrg, ListMembers, RoleFor.
+// Mutation methods: ChangeMemberRole, RemoveMember. The
+// outstanding admin operation is invite issuance — the
+// org_invites schema is already there but the redeem flow needs
+// its own design pass (token format, /auth/invite endpoint
+// shape, web form) so it ships in a follow-up.
 type postgresOrgsAdapter struct {
 	pg *server.PostgresStore
 }
@@ -63,4 +65,26 @@ func (a *postgresOrgsAdapter) ListMembers(orgID string) ([]internalweb.Membershi
 // requireOrgMember check (identity-and-trust.RBAC.1).
 func (a *postgresOrgsAdapter) RoleFor(orgID, fingerprint string) (string, error) {
 	return a.pg.RoleFor(context.Background(), orgID, fingerprint)
+}
+
+// ChangeMemberRole forwards to the central server's
+// PostgresStore and translates the server-package sentinel into
+// the web-side ErrUnknownMembership so handlers can errors.Is
+// without importing internal/central/server.
+func (a *postgresOrgsAdapter) ChangeMemberRole(orgID, fingerprint, newRole string) (string, error) {
+	prior, err := a.pg.ChangeMemberRole(context.Background(), orgID, fingerprint, newRole)
+	if errors.Is(err, server.ErrUnknownMembership) {
+		return "", internalweb.ErrUnknownMembership
+	}
+	return prior, err
+}
+
+// RemoveMember forwards to the central server's PostgresStore
+// with the same sentinel translation as ChangeMemberRole.
+func (a *postgresOrgsAdapter) RemoveMember(orgID, fingerprint string) (string, error) {
+	prior, err := a.pg.RemoveMember(context.Background(), orgID, fingerprint)
+	if errors.Is(err, server.ErrUnknownMembership) {
+		return "", internalweb.ErrUnknownMembership
+	}
+	return prior, err
 }

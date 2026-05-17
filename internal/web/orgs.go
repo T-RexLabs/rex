@@ -30,11 +30,15 @@ type RoleCatalogRow struct {
 }
 
 // OrgsProjection is the read-side surface the central org-admin
-// handlers query. v1 implementations wrap the central server's
-// PostgresStore methods (LookupOrgByID, ListMembersForOrg,
-// ListOrgs, RoleFor); mutation surfaces (invite, role change,
-// removal) are tracked under central-node.RBAC-SVR.1 and are
-// deliberately out of this interface.
+// handlers query, plus the small mutation surface admins drive
+// from the central web UI. v1 implementations wrap the central
+// server's PostgresStore methods directly.
+//
+// Mutation operations (ChangeMemberRole, RemoveMember) are
+// admin-only on the web side — the handlers gate via RoleFor
+// returning "admin" before invoking — and emit audit events on
+// success. Adding more operations (invite issuance, etc.) is
+// additive to this interface.
 type OrgsProjection interface {
 	// LookupOrg returns the org for the page header. found is
 	// false when the id is unknown; the handler 404s.
@@ -50,4 +54,27 @@ type OrgsProjection interface {
 	// Returns a non-nil error only on storage failures the
 	// handler should surface as 500.
 	RoleFor(orgID, fingerprint string) (string, error)
+	// ChangeMemberRole updates an existing member's role and
+	// returns the prior role so callers can audit the
+	// transition. Returns ErrUnknownMembership when no row
+	// matches; admin-only on the central web side.
+	ChangeMemberRole(orgID, fingerprint, newRole string) (priorRole string, err error)
+	// RemoveMember deletes a membership and returns the prior
+	// role for the audit trail. Returns ErrUnknownMembership
+	// when no row matches.
+	RemoveMember(orgID, fingerprint string) (priorRole string, err error)
 }
+
+// ErrUnknownMembership is the sentinel ChangeMemberRole +
+// RemoveMember return when no row matches (orgID, fingerprint).
+// The web handler maps it to 404.
+var ErrUnknownMembership = errOrgsUnknownMembership
+
+// errOrgsUnknownMembership backs ErrUnknownMembership. Wrapped
+// in a private name so callers compare via errors.Is rather than
+// taking the address of an exported variable.
+var errOrgsUnknownMembership = orgsError("unknown membership")
+
+type orgsError string
+
+func (e orgsError) Error() string { return string(e) }
