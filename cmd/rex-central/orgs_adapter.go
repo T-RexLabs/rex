@@ -54,6 +54,23 @@ func (a *postgresOrgsAdapter) LookupOrg(orgID string) (internalweb.OrgSummary, b
 	}, true, nil
 }
 
+func (a *postgresOrgsAdapter) ListOrgsForFingerprint(fingerprint string) ([]internalweb.OrgSummary, error) {
+	orgs, err := a.pg.ListOrgsForFingerprint(context.Background(), fingerprint)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]internalweb.OrgSummary, 0, len(orgs))
+	for _, o := range orgs {
+		out = append(out, internalweb.OrgSummary{
+			ID:          o.ID,
+			Name:        o.Name,
+			DisplayName: o.DisplayName,
+			CreatedAt:   o.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
 func (a *postgresOrgsAdapter) ListMembers(orgID string) ([]internalweb.MembershipRow, error) {
 	members, err := a.pg.ListMembersForOrg(context.Background(), orgID)
 	if err != nil {

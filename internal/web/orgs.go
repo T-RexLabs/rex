@@ -56,6 +56,11 @@ type OrgsProjection interface {
 	// LookupOrg returns the org for the page header. found is
 	// false when the id is unknown; the handler 404s.
 	LookupOrg(orgID string) (OrgSummary, bool, error)
+	// ListOrgsForFingerprint returns every org the fingerprint
+	// holds a membership in, sorted by name. Backs the GET /
+	// landing page so a freshly-authenticated browser lands on
+	// the right org (or a picker when there's more than one).
+	ListOrgsForFingerprint(fingerprint string) ([]OrgSummary, error)
 	// ListMembers returns membership rows for orgID, sorted by
 	// fingerprint.
 	ListMembers(orgID string) ([]MembershipRow, error)

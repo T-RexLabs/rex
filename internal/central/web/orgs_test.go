@@ -38,6 +38,19 @@ type stubMutationCall struct {
 	Changer     string
 }
 
+func (s *stubOrgs) ListOrgsForFingerprint(fingerprint string) ([]internalweb.OrgSummary, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	out := make([]internalweb.OrgSummary, 0, len(s.orgs))
+	for _, o := range s.orgs {
+		if s.roles[o.ID][fingerprint] != "" {
+			out = append(out, o)
+		}
+	}
+	return out, nil
+}
+
 func (s *stubOrgs) LookupOrg(orgID string) (internalweb.OrgSummary, bool, error) {
 	if s.err != nil {
 		return internalweb.OrgSummary{}, false, s.err

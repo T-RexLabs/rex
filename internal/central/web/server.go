@@ -193,6 +193,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /static/chroma.css", s.handleChromaCSS)
 	s.mux.HandleFunc("GET /_web/health", s.handleHealthPing)
 	s.mux.HandleFunc("GET /login", s.handleLogin)
+	s.mux.HandleFunc("GET /{$}", s.handleHome)
 	s.mux.HandleFunc("GET /orgs/{org}/workspaces/{ws}/specs", s.handleSpecsList)
 	s.mux.HandleFunc("GET /orgs/{org}/workspaces/{ws}/specs/{id}", s.handleSpecDetail)
 	s.mux.HandleFunc("GET /orgs/{org}/workspaces/{ws}/runs", s.handleRunsList)
@@ -373,6 +374,84 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
        for you to paste (headless/SSH fallback).</p>
     <p class="login-meta">You'll land on <code>` + html.EscapeString(redirect) + `</code> after sign-in.</p>
   </main>
+</body>
+</html>
+`
+	_, _ = fmt.Fprint(w, body)
+}
+
+// handleHome is GET / — the post-login landing page. /auth/redeem
+// 303s here by default; without a registered handler the request
+// fell through to ServeMux's 404. Lists the orgs the
+// authenticated identity belongs to; with exactly one membership
+// the page 303s straight on to /orgs/<id>. Falls back to a
+// gentle "no orgs" message when the projection is missing
+// (dev-mode without --db) or when the caller has no
+// memberships yet.
+//
+// Multi-org rendering is deliberately small in v1: a single
+// <ul> of clickable org names. A richer "recent activity"
+// surface lands when CENTRAL.* gets to it.
+func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
+	// Without Orgs bound (e.g. dev-mode in-memory store) we can't
+	// list memberships. Land users on /orgs/default so the existing
+	// dev-mode admin can still click around.
+	if s.opts.Orgs == nil {
+		http.Redirect(w, r, "/orgs/default", http.StatusSeeOther)
+		return
+	}
+	info, ok := SessionFromContext(r.Context())
+	if !ok {
+		// requireSession should have caught this; defensive.
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	memberships, err := s.opts.Orgs.ListOrgsForFingerprint(info.Fingerprint)
+	if err != nil {
+		http.Error(w, "central web: list memberships: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if len(memberships) == 1 {
+		http.Redirect(w, r, "/orgs/"+memberships[0].ID, http.StatusSeeOther)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	body := `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>rex-central</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="login">
+    <h1>rex-central</h1>
+`
+	if len(memberships) == 0 {
+		body += `    <p>You're signed in as <code>` + html.EscapeString(info.Fingerprint) + `</code>
+       but you don't belong to any org yet. Ask an admin to issue you an invite
+       (<code>POST /orgs/&lt;id&gt;/members/invite</code>), then redeem with
+       <code>rex remote join</code>.</p>
+`
+	} else {
+		body += `    <p>Signed in as <code>` + html.EscapeString(info.Fingerprint) + `</code>. Your orgs:</p>
+    <ul>
+`
+		for _, m := range memberships {
+			label := m.DisplayName
+			if label == "" {
+				label = m.Name
+			}
+			body += `      <li><a href="/orgs/` + html.EscapeString(m.ID) + `">` +
+				html.EscapeString(label) + `</a></li>
+`
+		}
+		body += `    </ul>
+`
+	}
+	body += `  </main>
 </body>
 </html>
 `

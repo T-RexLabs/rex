@@ -141,6 +141,35 @@ func (s *PostgresStore) ListMemberships(ctx context.Context, fingerprint string)
 	return out, rows.Err()
 }
 
+// ListOrgsForFingerprint returns every org the fingerprint
+// belongs to, sorted by name, projected as Org rows so the
+// caller renders display_name + created_at without a second
+// query. Backs the central web shell's GET / landing page
+// (which renders a picker for multi-org users / redirects for
+// single-org users).
+func (s *PostgresStore) ListOrgsForFingerprint(ctx context.Context, fingerprint string) ([]Org, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT o.id::text, o.name, o.display_name, o.created_at
+		FROM   org_memberships m
+		JOIN   orgs            o ON o.id = m.org_id
+		WHERE  m.fingerprint = $1
+		ORDER  BY o.name
+	`, fingerprint)
+	if err != nil {
+		return nil, fmt.Errorf("server: list orgs for fingerprint: %w", err)
+	}
+	defer rows.Close()
+	var out []Org
+	for rows.Next() {
+		var o Org
+		if err := rows.Scan(&o.ID, &o.Name, &o.DisplayName, &o.CreatedAt); err != nil {
+			return nil, fmt.Errorf("server: list orgs scan: %w", err)
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
 // RoleFor returns the role string the fingerprint holds in orgID,
 // or "" when no membership exists. Used by the RBAC gate to
 // resolve (org, identity) → role on the request hot path; the
