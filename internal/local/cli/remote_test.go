@@ -212,6 +212,46 @@ func TestRemoteAddDeclinesOnEmptyStdin(t *testing.T) {
 	}
 }
 
+// TestRemoteAddRejectsURLWithPath covers the friendlier
+// fail-fast on a per-page URL like /orgs/<id>: the command
+// errors before any network call, telling the user exactly
+// what to fix (use the base URL).
+func TestRemoteAddRejectsURLWithPath(t *testing.T) {
+	t.Parallel()
+	reg := tempRegistry(t)
+	_, err := executeCommand(t, "remote", "add", "primary",
+		"http://127.0.0.1:8080/orgs/c7d6eb43-22fc-4c8f-9a14-8ba4695d8257",
+		"--remotes-file", reg, "--yes",
+	)
+	if err == nil {
+		t.Fatal("expected URL-with-path to error before handshake")
+	}
+	if !strings.Contains(err.Error(), "use the central node's base URL") {
+		t.Fatalf("error wording missing base-URL hint: %v", err)
+	}
+	if !strings.Contains(err.Error(), `"http://127.0.0.1:8080"`) {
+		t.Fatalf("error didn't suggest the stripped base URL: %v", err)
+	}
+}
+
+// TestRemoteAddRejectsMissingScheme covers the no-scheme
+// branch: a bare host:port fails fast with a clear error
+// instead of "Get : unsupported protocol scheme".
+func TestRemoteAddRejectsMissingScheme(t *testing.T) {
+	t.Parallel()
+	reg := tempRegistry(t)
+	_, err := executeCommand(t, "remote", "add", "primary",
+		"127.0.0.1:8080",
+		"--remotes-file", reg, "--yes",
+	)
+	if err == nil {
+		t.Fatal("expected scheme-less URL to error")
+	}
+	if !strings.Contains(err.Error(), "http:// or https://") {
+		t.Fatalf("error wording missing scheme hint: %v", err)
+	}
+}
+
 // TestRemoteAddNetworkFailureLeavesRegistryUntouched covers the
 // "handshake failed" branch: an unreachable URL errors out and
 // the registry stays empty.

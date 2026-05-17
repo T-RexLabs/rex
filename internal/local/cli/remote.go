@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"fmt"
+	neturl "net/url"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -107,19 +108,22 @@ fingerprint; on rejection or network failure no entry is added.`,
   rex remote add primary https://central.example.invalid --skip-handshake`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name, url := args[0], args[1]
+			name, rawURL := args[0], args[1]
+			if err := validateRemoteURL(rawURL); err != nil {
+				return err
+			}
 			reg, path, err := loadRegistry(cmd)
 			if err != nil {
 				return err
 			}
-			entry := remotes.Remote{Name: name, URL: url}
+			entry := remotes.Remote{Name: name, URL: rawURL}
 
 			if !skipHandshake {
 				ctx := commandContext(cmd)
-				client := syncclient.NewClient(url)
+				client := syncclient.NewClient(rawURL)
 				state, err := client.State(ctx)
 				if err != nil {
-					return fmt.Errorf("contact %q: %w (pass --skip-handshake to register without contacting the server)", url, err)
+					return fmt.Errorf("contact %q: %w (pass --skip-handshake to register without contacting the server)", rawURL, err)
 				}
 				fmt.Fprintf(cmd.OutOrStdout(),
 					"server fingerprint: %s\nprotocol version:   %d\nactor:              %s\n",
@@ -147,9 +151,9 @@ fingerprint; on rejection or network failure no entry is added.`,
 			}
 			emitRemoteAuditIfInWorkspace(cmd, audit.EventTypeRemoteAttached, audit.RemoteAttachedEvent{
 				Name: name,
-				URL:  url,
+				URL:  rawURL,
 			})
-			fmt.Fprintf(cmd.OutOrStdout(), "added remote %q -> %s\n", name, url)
+			fmt.Fprintf(cmd.OutOrStdout(), "added remote %q -> %s\n", name, rawURL)
 			return nil
 		},
 	}
@@ -162,6 +166,33 @@ fingerprint; on rejection or network failure no entry is added.`,
 	cmd.Flags().BoolVar(&skipHandshake, "skip-handshake", false, "do not contact the remote during add; record URL only")
 	addRemoteSharedFlags(cmd)
 	return cmd
+}
+
+// validateRemoteURL catches the two URL-shape mistakes users hit
+// most: copy-pasting a per-page URL like
+// http://central/orgs/<id> as the remote (handshake then fails
+// with a JSON-decode error on HTML), or omitting the scheme.
+// Surfaces a friendlier error before the network call so the
+// user knows exactly what to fix.
+func validateRemoteURL(rawURL string) error {
+	// Catch the no-scheme case (e.g. "127.0.0.1:8080") before
+	// url.Parse fights with the bare-colon shape — Parse's
+	// "first path segment in URL cannot contain colon" error
+	// hides the actual fix.
+	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
+		return fmt.Errorf("url %q must start with http:// or https://", rawURL)
+	}
+	u, err := neturl.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("url %q: %w", rawURL, err)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("url %q is missing a host", rawURL)
+	}
+	if p := strings.TrimSuffix(u.Path, "/"); p != "" {
+		return fmt.Errorf("url %q has a path (%q) — use the central node's base URL like %q, not a per-page URL", rawURL, u.Path, u.Scheme+"://"+u.Host)
+	}
+	return nil
 }
 
 // confirmTrust prompts the user to approve the fingerprint just

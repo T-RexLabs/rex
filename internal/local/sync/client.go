@@ -210,6 +210,16 @@ func (c *Client) State(ctx context.Context) (proto.StateResponse, error) {
 	if resp.StatusCode != http.StatusOK {
 		return proto.StateResponse{}, decodeError(resp)
 	}
+	// Friendlier error when the server returns HTML (the user
+	// likely passed a per-page URL like .../orgs/<id> as the
+	// remote — the web shell answered with the home page, not
+	// the /sync/state JSON).
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		return proto.StateResponse{}, fmt.Errorf(
+			"sync: GET /sync/state returned content-type %q (expected application/json) — make sure the remote URL points at the central node's base (e.g. %q), not a per-page URL",
+			ct, c.baseURL,
+		)
+	}
 	var state proto.StateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&state); err != nil {
 		return proto.StateResponse{}, fmt.Errorf("sync: decode state: %w", err)
