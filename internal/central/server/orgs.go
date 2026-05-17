@@ -141,6 +141,37 @@ func (s *PostgresStore) ListMemberships(ctx context.Context, fingerprint string)
 	return out, rows.Err()
 }
 
+// ListWorkspacesInOrg returns every workspace id bound to
+// orgID, sorted lexicographically. Reads from the workspaces
+// binding table (populated on first-push-wins via Append), NOT
+// the git_entities content table — an events-only push creates
+// the binding but no git rows. The central web shell's
+// /orgs/<id>/workspaces index page relies on this so a fresh
+// `rex push` shows up there even before specs / schedules
+// land via /sync/git.
+func (s *PostgresStore) ListWorkspacesInOrg(ctx context.Context, orgID string) ([]string, error) {
+	if orgID == "" {
+		return nil, errors.New("server: ListWorkspacesInOrg requires orgID")
+	}
+	rows, err := s.pool.Query(ctx,
+		`SELECT id FROM workspaces WHERE org_id = $1 ORDER BY id`,
+		orgID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("server: list workspaces in org: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("server: list workspaces in org scan: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 // ListOrgsForFingerprint returns every org the fingerprint
 // belongs to, sorted by name, projected as Org rows so the
 // caller renders display_name + created_at without a second

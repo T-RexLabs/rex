@@ -81,6 +81,12 @@ type OrgsProjection interface {
 	// ListPendingInvites returns the org's unredeemed
 	// unexpired invites for display on the members page.
 	ListPendingInvites(orgID string) ([]InviteRow, error)
+	// ListWorkspacesInOrg returns every workspace id bound to
+	// orgID, sorted. The /orgs/<id>/workspaces page uses this
+	// as the authoritative list (the GitStore enumeration only
+	// covers workspaces with git-merged content synced, which
+	// misses events-only pushes).
+	ListWorkspacesInOrg(orgID string) ([]string, error)
 	// ChangeMemberRole updates an existing member's role and
 	// returns the prior role so callers can audit the
 	// transition. changerFingerprint is the authenticated

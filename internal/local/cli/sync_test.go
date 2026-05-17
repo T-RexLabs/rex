@@ -40,7 +40,12 @@ func TestPushRequiresURL(t *testing.T) {
 	t.Parallel()
 
 	dir := initSyncWorkspace(t)
-	_, err := executeCommand(t, "push", "--workspace", dir)
+	// Point at an empty per-test remotes file so the test doesn't
+	// read the dev machine's actual ~/.config/rex/remotes.toml —
+	// which on a `make web-dev` host now carries a "primary"
+	// entry that the test would happily try to push to.
+	reg := tempRegistry(t)
+	_, err := executeCommand(t, "push", "--workspace", dir, "--remotes-file", reg)
 	if err == nil {
 		t.Fatal("missing --url should error")
 	}

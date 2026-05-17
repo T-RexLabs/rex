@@ -41,10 +41,20 @@ var nameRE = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
 // IsValidName reports whether s is a usable remote name.
 func IsValidName(s string) bool { return nameRE.MatchString(s) }
 
+// EnvPath is the env var name honoured by DefaultPath as an
+// explicit override. Set by tests + scripts that don't want to
+// touch the platform user-config dir.
+const EnvPath = "REX_REMOTES_FILE"
+
 // DefaultPath resolves the platform user-config-dir's
-// rex/remotes.toml. Returns an error only when the platform lookup
-// fails.
+// rex/remotes.toml. The REX_REMOTES_FILE env var takes
+// precedence when set — same shape as the identity store's
+// REX_IDENTITY_DIR. Returns an error only when both the env
+// override is empty and the platform lookup fails.
 func DefaultPath() (string, error) {
+	if v := os.Getenv(EnvPath); v != "" {
+		return v, nil
+	}
 	cfg, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("remotes: locate user config dir: %w", err)

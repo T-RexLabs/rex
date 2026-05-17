@@ -21,11 +21,12 @@ import (
 // each mutation was called with so audit-emission tests can
 // assert the session gate threaded the right identity through.
 type stubOrgs struct {
-	orgs    map[string]internalweb.OrgSummary
-	members map[string][]internalweb.MembershipRow
-	roles   map[string]map[string]string
-	invites map[string][]internalweb.InviteRow
-	err     error
+	orgs       map[string]internalweb.OrgSummary
+	members    map[string][]internalweb.MembershipRow
+	roles      map[string]map[string]string
+	invites    map[string][]internalweb.InviteRow
+	workspaces map[string][]string
+	err        error
 
 	changes []stubMutationCall
 	removes []stubMutationCall
@@ -113,6 +114,13 @@ func (s *stubOrgs) ListPendingInvites(orgID string) ([]internalweb.InviteRow, er
 		return nil, s.err
 	}
 	return s.invites[orgID], nil
+}
+
+func (s *stubOrgs) ListWorkspacesInOrg(orgID string) ([]string, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.workspaces[orgID], nil
 }
 
 func (s *stubOrgs) RemoveMember(orgID, fingerprint, remover string) (string, error) {

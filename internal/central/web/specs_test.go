@@ -147,10 +147,10 @@ func newSpecsServer(t *testing.T, store GitEntityReader) *httptest.Server {
 func TestCentralSpecsListRendersGitStoreEntries(t *testing.T) {
 	t.Parallel()
 	store := stubGitStore{entries: map[string]string{
-		"specs/alpha.yaml":          validSpecYAML("alpha", "Alpha Spec"),
-		"specs/beta.yaml":           validSpecYAML("beta", "Beta Spec"),
-		"workspace.yaml":            "id: ws-1\nname: Test\nstate: draft\n",
-		"specs/_proposed/foo.yaml":  validSpecYAML("foo", "Should be skipped"),
+		"specs/alpha.yaml":                   validSpecYAML("alpha", "Alpha Spec"),
+		"specs/beta.yaml":                    validSpecYAML("beta", "Beta Spec"),
+		"workspace.yaml":                     "id: ws-1\nname: Test\nstate: draft\n",
+		"specs/_proposed/foo.yaml":           validSpecYAML("foo", "Should be skipped"),
 		"specs/_proposed/_accepted/bar.yaml": validSpecYAML("bar", "Should be skipped"),
 	}}
 	srv := newSpecsServer(t, store)

@@ -54,6 +54,10 @@ func (a *postgresOrgsAdapter) LookupOrg(orgID string) (internalweb.OrgSummary, b
 	}, true, nil
 }
 
+func (a *postgresOrgsAdapter) ListWorkspacesInOrg(orgID string) ([]string, error) {
+	return a.pg.ListWorkspacesInOrg(context.Background(), orgID)
+}
+
 func (a *postgresOrgsAdapter) ListOrgsForFingerprint(fingerprint string) ([]internalweb.OrgSummary, error) {
 	orgs, err := a.pg.ListOrgsForFingerprint(context.Background(), fingerprint)
 	if err != nil {
