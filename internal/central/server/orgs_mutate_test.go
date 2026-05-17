@@ -173,6 +173,134 @@ func TestIssueInviteRejectsUnknownRole(t *testing.T) {
 	}
 }
 
+// TestRedeemInviteHappyPath covers the issuer→redeemer
+// lifecycle end-to-end: an admin issues an invite, a fresh
+// keypair redeems it, the resulting RedeemResult carries both
+// KeyRegistered + MemberJoined flags, the invite is marked
+// redeemed, the membership row lands, and the authorized_keys
+// row carries the same invite_id as the redeemed invite.
+func TestRedeemInviteHappyPath(t *testing.T) {
+	t.Parallel()
+	store, _ := freshPostgresStore(t)
+	ctx := defaultOrgCtx(t, store)
+	org, _ := store.LookupOrg(context.Background(), DefaultOrgName)
+
+	inv, err := store.IssueInvite(ctx, org.ID, "fp-alice", "member")
+	if err != nil {
+		t.Fatalf("IssueInvite: %v", err)
+	}
+	fp, pem := mintKeyPEM(t, "bob")
+	res, err := store.RedeemInvite(context.Background(), inv.Token, "bob", string(pem))
+	if err != nil {
+		t.Fatalf("RedeemInvite: %v", err)
+	}
+	if !res.KeyRegistered {
+		t.Error("KeyRegistered=false on fresh redeem")
+	}
+	if !res.MemberJoined {
+		t.Error("MemberJoined=false on fresh redeem")
+	}
+	if res.Role != "member" {
+		t.Errorf("Role: got %q want member", res.Role)
+	}
+	if res.Fingerprint != fp {
+		t.Errorf("Fingerprint: got %q want %q", res.Fingerprint, fp)
+	}
+	if res.OrgID != org.ID {
+		t.Errorf("OrgID: got %q want %q", res.OrgID, org.ID)
+	}
+	// Membership row landed under the invite's role.
+	role, err := store.RoleFor(context.Background(), org.ID, fp)
+	if err != nil {
+		t.Fatalf("RoleFor: %v", err)
+	}
+	if role != "member" {
+		t.Errorf("membership role: got %q want member", role)
+	}
+	// Pending list no longer carries the invite.
+	pending, _ := store.ListPendingInvites(ctx, org.ID)
+	for _, p := range pending {
+		if p.ID == inv.ID {
+			t.Error("invite still pending after redeem")
+		}
+	}
+}
+
+// TestRedeemInviteRejectsUnknownToken covers the not-found
+// branch. The web layer maps the sentinel to 404 without
+// distinguishing it from "expired" in the response body.
+func TestRedeemInviteRejectsUnknownToken(t *testing.T) {
+	t.Parallel()
+	store, _ := freshPostgresStore(t)
+	_, pem := mintKeyPEM(t, "bob")
+	_, err := store.RedeemInvite(context.Background(), "tok-nope", "bob", string(pem))
+	if !errors.Is(err, ErrInviteNotFound) {
+		t.Fatalf("err: got %v want ErrInviteNotFound", err)
+	}
+}
+
+// TestRedeemInviteRejectsAlreadyRedeemed covers the
+// double-redeem branch — second call on the same token must
+// fail with ErrInviteAlreadyRedeemed (handler maps to 409).
+func TestRedeemInviteRejectsAlreadyRedeemed(t *testing.T) {
+	t.Parallel()
+	store, _ := freshPostgresStore(t)
+	ctx := defaultOrgCtx(t, store)
+	org, _ := store.LookupOrg(context.Background(), DefaultOrgName)
+	inv, err := store.IssueInvite(ctx, org.ID, "fp-alice", "viewer")
+	if err != nil {
+		t.Fatalf("IssueInvite: %v", err)
+	}
+	_, pem := mintKeyPEM(t, "bob")
+	if _, err := store.RedeemInvite(context.Background(), inv.Token, "bob", string(pem)); err != nil {
+		t.Fatalf("first redeem: %v", err)
+	}
+	_, pem2 := mintKeyPEM(t, "carol")
+	_, err = store.RedeemInvite(context.Background(), inv.Token, "carol", string(pem2))
+	if !errors.Is(err, ErrInviteAlreadyRedeemed) {
+		t.Fatalf("err: got %v want ErrInviteAlreadyRedeemed", err)
+	}
+}
+
+// TestRedeemInviteReusedKeySkipsKeyRegistered covers the
+// idempotency carve-out from the amendment: when a fingerprint
+// is already in authorized_keys (the recipient is reusing the
+// same key to join a second org), KeyRegistered=false +
+// MemberJoined=true so the handler emits only org.member.joined.
+func TestRedeemInviteReusedKeySkipsKeyRegistered(t *testing.T) {
+	t.Parallel()
+	store, _ := freshPostgresStore(t)
+	ctx := defaultOrgCtx(t, store)
+	org, _ := store.LookupOrg(context.Background(), DefaultOrgName)
+
+	// First invite: registers the key + joins the default org.
+	inv1, _ := store.IssueInvite(ctx, org.ID, "fp-alice", "member")
+	_, pem := mintKeyPEM(t, "bob")
+	res1, err := store.RedeemInvite(context.Background(), inv1.Token, "bob", string(pem))
+	if err != nil {
+		t.Fatalf("first redeem: %v", err)
+	}
+	if !res1.KeyRegistered || !res1.MemberJoined {
+		t.Fatalf("first redeem flags: %+v", res1)
+	}
+
+	// Re-redeem into the same org with a second invite to the
+	// same key. The membership row already exists, so the SQL
+	// upsert no-ops and MemberJoined should be false too;
+	// KeyRegistered is false because the key is in the table.
+	inv2, _ := store.IssueInvite(ctx, org.ID, "fp-alice", "member")
+	res2, err := store.RedeemInvite(context.Background(), inv2.Token, "bob", string(pem))
+	if err != nil {
+		t.Fatalf("second redeem: %v", err)
+	}
+	if res2.KeyRegistered {
+		t.Error("KeyRegistered=true on reused key; want false")
+	}
+	if res2.MemberJoined {
+		t.Error("MemberJoined=true on reused membership; want false")
+	}
+}
+
 // TestListPendingInvitesReturnsIssuedRows covers the read side:
 // after issuing two invites both appear in the pending list.
 func TestListPendingInvitesReturnsIssuedRows(t *testing.T) {

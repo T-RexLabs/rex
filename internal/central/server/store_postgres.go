@@ -736,6 +736,39 @@ var schemaSteps = []string{
 			GENERATED ALWAYS AS (to_tsvector('english', content)) STORED;
 		CREATE INDEX IF NOT EXISTS git_entities_tsv_idx ON git_entities USING GIN(tsv);
 	`,
+
+	// 8: authorized_keys — runtime-registered public keys
+	//    (identity-and-trust.AUTH.2.2). The TOML --keys file is
+	//    still the bootstrap mechanism for the first admin key
+	//    and the dev-mode fallback; this table is the source of
+	//    truth for keys minted by the invite-redeem flow (and
+	//    future paths like admin-paste via the central web).
+	//
+	// fingerprint is the natural primary key — re-registering an
+	// already-known key is a no-op (the redeem flow uses
+	// ON CONFLICT (fingerprint) DO NOTHING and branches on
+	// the row count to decide whether to emit
+	// identity.key_registered).
+	//
+	// No org scope on this table: per AUTH.2.2 keys are
+	// user-global within a central node, and org membership is
+	// the per-org filter that lives on org_memberships. invite_id
+	// points back to the invite that authorised the registration
+	// (for audit traceability); ON DELETE SET NULL so admin
+	// housekeeping on org_invites doesn't cascade-delete real
+	// authorized keys.
+	`
+		CREATE TABLE IF NOT EXISTS authorized_keys (
+			fingerprint     TEXT PRIMARY KEY,
+			handle          TEXT NOT NULL DEFAULT '',
+			public_key_pem  TEXT NOT NULL,
+			source          TEXT NOT NULL,
+			invite_id       UUID REFERENCES org_invites(id) ON DELETE SET NULL,
+			registered_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+		);
+		CREATE INDEX IF NOT EXISTS authorized_keys_handle_idx
+			ON authorized_keys(handle);
+	`,
 }
 
 // DefaultOrgName is the seeded org's name. Used by

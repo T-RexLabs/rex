@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/asabla/rex/internal/core/identity"
 )
 
 // Org is the read-side projection of one row in the orgs table.
@@ -311,6 +313,144 @@ func (s *PostgresStore) IssueInvite(ctx context.Context, orgID, invitedBy, role 
 		return nil
 	})
 	return inv, err
+}
+
+// RedeemResult captures the side effects of a successful
+// RedeemInvite call. The caller (the redeem handler in
+// cmd/rex-central) uses the *Inserted flags to gate which audit
+// events to emit: a fresh fingerprint triggers
+// identity.key_registered; a fresh membership row triggers
+// org.member.joined. A re-redeem of the same key into a different
+// org sees KeyRegistered=false + MemberJoined=true and emits only
+// org.member.joined.
+type RedeemResult struct {
+	InviteID      string
+	OrgID         string
+	Fingerprint   string
+	Handle        string
+	Role          string
+	KeyRegistered bool
+	MemberJoined  bool
+}
+
+// Sentinel errors RedeemInvite returns. Handlers map these to
+// distinct HTTP statuses (404 for unknown token, 410 for expired,
+// 409 for already-redeemed) without leaking which condition the
+// token tripped beyond the necessary user-facing nudge.
+var (
+	ErrInviteNotFound        = errors.New("server: invite not found")
+	ErrInviteExpired         = errors.New("server: invite expired")
+	ErrInviteAlreadyRedeemed = errors.New("server: invite already redeemed")
+)
+
+// RedeemInvite is the transactional unit behind the
+// POST /invites/redeem flow (identity-and-trust.AUTH.2.1 + ORG.5).
+// In a single Postgres transaction it:
+//
+//  1. Looks up the invite by token + locks the row.
+//  2. Validates the invite is unredeemed and unexpired (sentinel
+//     errors for each so the handler can branch on
+//     errors.Is).
+//  3. Parses the supplied PEM into an ed25519 public key, derives
+//     the fingerprint, and upserts a row into authorized_keys.
+//  4. Inserts an org_memberships row binding the fingerprint to
+//     the invite's org with the invite's role (ON CONFLICT DO
+//     NOTHING — re-redeeming into an org the caller is already a
+//     member of is idempotent on the membership and just marks
+//     the invite redeemed).
+//  5. Stamps redeemed_at / redeemed_by on the invite row.
+//
+// Returns a RedeemResult with the *Inserted flags so the calling
+// handler can emit identity.key_registered + org.member.joined
+// audit events only when the underlying state actually changed.
+func (s *PostgresStore) RedeemInvite(ctx context.Context, token, handle, publicKeyPEM string) (RedeemResult, error) {
+	var res RedeemResult
+	if token == "" {
+		return res, errors.New("server: RedeemInvite requires token")
+	}
+	if publicKeyPEM == "" {
+		return res, errors.New("server: RedeemInvite requires public_key_pem")
+	}
+	pub, err := identity.ParsePublicPEM([]byte(publicKeyPEM))
+	if err != nil {
+		return res, fmt.Errorf("server: parse public key: %w", err)
+	}
+	fp, err := identity.FingerprintOf(pub)
+	if err != nil {
+		return res, fmt.Errorf("server: derive fingerprint: %w", err)
+	}
+	res.Fingerprint = fp.String()
+	res.Handle = handle
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return res, fmt.Errorf("server: begin redeem tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // commit overrides on success
+	err = func(tx pgx.Tx) error {
+		var (
+			expiresAt   time.Time
+			redeemedAt  *time.Time
+			role, orgID string
+			inviteID    string
+		)
+		err := tx.QueryRow(ctx, `
+			SELECT id::text, org_id::text, role, expires_at, redeemed_at
+			FROM   org_invites
+			WHERE  token = $1
+			FOR UPDATE
+		`, token).Scan(&inviteID, &orgID, &role, &expiresAt, &redeemedAt)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ErrInviteNotFound
+			}
+			return fmt.Errorf("server: load invite: %w", err)
+		}
+		if redeemedAt != nil {
+			return ErrInviteAlreadyRedeemed
+		}
+		if !expiresAt.After(time.Now()) {
+			return ErrInviteExpired
+		}
+		res.InviteID = inviteID
+		res.OrgID = orgID
+		res.Role = role
+
+		keyInserted, err := upsertAuthorizedKeyInTx(ctx, tx,
+			res.Fingerprint, handle, publicKeyPEM, "invite-redeem", inviteID,
+		)
+		if err != nil {
+			return err
+		}
+		res.KeyRegistered = keyInserted
+
+		tag, err := tx.Exec(ctx, `
+			INSERT INTO org_memberships (org_id, fingerprint, role)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (org_id, fingerprint) DO NOTHING
+		`, orgID, res.Fingerprint, role)
+		if err != nil {
+			return fmt.Errorf("server: insert membership: %w", err)
+		}
+		res.MemberJoined = tag.RowsAffected() == 1
+
+		if _, err := tx.Exec(ctx, `
+			UPDATE org_invites
+			SET    redeemed_at = now(),
+			       redeemed_by = $2
+			WHERE  id = $1::uuid
+		`, inviteID, res.Fingerprint); err != nil {
+			return fmt.Errorf("server: mark invite redeemed: %w", err)
+		}
+		return nil
+	}(tx)
+	if err != nil {
+		return res, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return res, fmt.Errorf("server: commit redeem tx: %w", err)
+	}
+	return res, nil
 }
 
 // ListPendingInvites returns every unredeemed, unexpired invite
