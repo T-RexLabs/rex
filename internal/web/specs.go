@@ -16,6 +16,13 @@ type SpecRow struct {
 	State          string
 	TaskCount      int
 	ComponentCount int
+	// LinkBase is the URL prefix the row's id-link uses for
+	// /specs/<id>. Empty on the local shell (so the link
+	// resolves to /specs/<id>); set to
+	// "/orgs/<org>/workspaces/<ws>" on the central shell so the
+	// click-through lands on the workspace-scoped spec detail
+	// page instead of the local-only path.
+	LinkBase string
 }
 
 // SpecProjection is the read-side surface the shared spec

@@ -93,7 +93,7 @@ func TestCentralRemotesEmptyWhenWorkspaceHasNone(t *testing.T) {
 		t.Fatalf("status: %d", resp.StatusCode)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "no remotes registered for this workspace") {
+	if !strings.Contains(string(body), "no remotes registered") {
 		t.Errorf("missing empty-state copy: %s", body)
 	}
 }

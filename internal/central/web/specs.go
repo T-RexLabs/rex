@@ -37,7 +37,11 @@ type GitEntityReader interface {
 type centralSpecProjection struct {
 	store       GitEntityReader
 	workspaceID string
-	ctx         context.Context
+	// linkBase is set by handleSpecsList; rows carry it so the
+	// shared spec_row partial renders /orgs/<org>/workspaces/<ws>/
+	// specs/<id> instead of the local /specs/<id> path.
+	linkBase string
+	ctx      context.Context
 }
 
 func newCentralSpecProjection(ctx context.Context, store GitEntityReader, workspaceID string) centralSpecProjection {
@@ -75,6 +79,7 @@ func (p centralSpecProjection) ListSpecs() ([]internalweb.SpecRow, error) {
 			State:          doc.Metadata.State,
 			TaskCount:      len(doc.Tasks),
 			ComponentCount: len(doc.Components),
+			LinkBase:       p.linkBase,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
@@ -271,6 +276,13 @@ func (s *Server) handleSpecsList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "central web: list specs: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+	// Stamp the LinkBase so the shared spec_row partial renders
+	// /orgs/<org>/workspaces/<ws>/specs/<id> instead of the local
+	// /specs/<id> path.
+	base := "/orgs/" + orgID + "/workspaces/" + wsID
+	for i := range rows {
+		rows[i].LinkBase = base
 	}
 	data := centralSpecsListData{
 		centralPageData: s.pageData(orgID, wsID, "specs"),

@@ -6,7 +6,7 @@ table; the row delegates the click target to /specs/<id>. */}}
 
 {{define "spec_row"}}
 <tr>
-  <td><a href="/specs/{{.ID}}"><code>{{.ID}}</code></a></td>
+  <td><a href="{{.LinkBase}}/specs/{{.ID}}"><code>{{.ID}}</code></a></td>
   <td>{{.Name}}</td>
   <td><span class="pill pill-{{.State}}"><i class="dot"></i>{{.State}}</span></td>
   <td class="col-numeric">{{.TaskCount}}</td>

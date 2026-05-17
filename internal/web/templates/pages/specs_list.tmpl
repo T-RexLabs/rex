@@ -9,10 +9,12 @@
 </header>
 
 <section class="section">
-  <div class="toolbar">
-    <a class="btn btn-primary" href="/specs/new">new spec</a>
-    <form method="post" action="/specs/validate"><button type="submit" class="btn">validate all</button></form>
-  </div>
+  {{if ne .Shell "central"}}
+    <div class="toolbar">
+      <a class="btn btn-primary" href="/specs/new">new spec</a>
+      <form method="post" action="/specs/validate"><button type="submit" class="btn">validate all</button></form>
+    </div>
+  {{end}}
 
   {{if .Specs}}
     <div class="card">
@@ -34,7 +36,17 @@
       </table>
     </div>
   {{else}}
-    <p class="muted small">no specs yet — <a href="/specs/new">create the first one</a></p>
+    <div class="empty-state">
+      <h3>no specs yet</h3>
+      {{if eq .Shell "central"}}
+        <p>Specs live in the workspace's <code>.rex/specs/</code> directory and sync via
+           <code>rex sync</code>. Create one locally with <code>rex spec create &lt;id&gt;</code>
+           then sync to push it here.</p>
+      {{else}}
+        <p>Create the first one with <code>rex spec create &lt;id&gt;</code> or
+           <a href="/specs/new">via the browser form</a>.</p>
+      {{end}}
+    </div>
   {{end}}
 </section>
 {{end}}

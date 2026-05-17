@@ -156,9 +156,10 @@ func amendmentMatchesFor(a *specamend.Amendment, for_ string) bool {
 // shared template renders identically.
 type centralAmendmentsListData struct {
 	centralPageData
-	Amendments  []internalweb.AmendmentRow
-	StateFilter string
-	ForFilter   string
+	Amendments     []internalweb.AmendmentRow
+	StateFilter    string
+	ForFilter      string
+	AmendmentsBase string // form action + clear-link base URL
 }
 
 // centralAmendmentDetailData backs amendments_detail.tmpl on the
@@ -210,11 +211,20 @@ func (s *Server) handleAmendmentsList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "central web: list amendments: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Stamp the LinkBase + AmendmentsBase so the shared list
+	// template renders org-scoped URLs (form action +
+	// per-row links). Empty LinkBase keeps local rendering
+	// (/specs/<id>, /amendments/<stem>) unchanged.
+	base := "/orgs/" + orgID + "/workspaces/" + wsID
+	for i := range rows {
+		rows[i].LinkBase = base
+	}
 	data := centralAmendmentsListData{
 		centralPageData: s.pageData(orgID, wsID, "amendments"),
 		Amendments:      rows,
 		StateFilter:     stateFilter,
 		ForFilter:       forFilter,
+		AmendmentsBase:  base + "/amendments",
 	}
 	s.renderer.Render(w, r, "amendments_list.tmpl", data)
 }

@@ -19,6 +19,13 @@ type AmendmentRow struct {
 	AmendmentKind string
 	Multi         bool
 	SummaryFirst  string
+	// LinkBase is the URL prefix the row's stem-link uses for
+	// /amendments/<stem> and the for-spec link for /specs/<id>.
+	// Empty on the local shell; set to
+	// "/orgs/<org>/workspaces/<ws>" on the central shell so the
+	// click-through resolves to the workspace-scoped amendment +
+	// spec detail pages.
+	LinkBase string
 }
 
 // AmendmentDetail is the per-amendment payload the detail page

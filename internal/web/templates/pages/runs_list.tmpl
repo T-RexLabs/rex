@@ -43,11 +43,19 @@
       </table>
     </div>
   {{else}}
-    {{if .CanStartRuns}}
-      <p class="muted small">no runs yet — <a href="/runs/new">start one</a></p>
-    {{else}}
-      <p class="muted small">no runs yet</p>
-    {{end}}
+    <div class="empty-state">
+      <h3>no runs yet</h3>
+      {{if .CanStartRuns}}
+        <p>Start one with <code>rex run start --shell &lt;cmd&gt;</code> or
+           <a href="/runs/new">via the browser form</a>.</p>
+      {{else if eq .Shell "central"}}
+        <p>Runs are recorded when a local node executes them (<code>rex run start ...</code>),
+           then sync to the central via <code>rex sync</code>. Live SSE on central
+           lands with v1.5 (web-ui.central-live-run-watching).</p>
+      {{else}}
+        <p>Start one with <code>rex run start --shell &lt;cmd&gt;</code>.</p>
+      {{end}}
+    </div>
   {{end}}
 </section>
 {{end}}

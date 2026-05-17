@@ -9,7 +9,7 @@
 </header>
 
 <section class="section">
-  <form class="toolbar" method="get" action="/amendments">
+  <form class="toolbar" method="get" action="{{.AmendmentsBase}}">
     <label>state
       <select name="state">
         <option value=""         {{if eq .StateFilter ""}}selected{{end}}>any</option>
@@ -22,7 +22,7 @@
     </label>
     <button type="submit" class="btn">filter</button>
     {{if or .StateFilter .ForFilter}}
-      <a class="btn btn-link" href="/amendments">clear</a>
+      <a class="btn btn-link" href="{{.AmendmentsBase}}">clear</a>
     {{end}}
   </form>
 
@@ -47,12 +47,12 @@
                 {{if .Multi}}
                   <span class="muted">(multi)</span>
                 {{else if .AmendmentFor}}
-                  <a href="/specs/{{.AmendmentFor}}"><code>{{.AmendmentFor}}</code></a>
+                  <a href="{{.LinkBase}}/specs/{{.AmendmentFor}}"><code>{{.AmendmentFor}}</code></a>
                 {{else}}
                   <span class="muted">—</span>
                 {{end}}
               </td>
-              <td><a href="/amendments/{{.Stem}}"><code>{{.Stem}}</code></a></td>
+              <td><a href="{{.LinkBase}}/amendments/{{.Stem}}"><code>{{.Stem}}</code></a></td>
               <td class="summary-col">{{.SummaryFirst}}</td>
             </tr>
           {{end}}
@@ -60,9 +60,15 @@
       </table>
     </div>
   {{else}}
-    <p class="muted small">
-      no amendments {{if or .StateFilter .ForFilter}}match the current filter{{else}}yet — drop a YAML file under <code>.rex/specs/_proposed/</code> or run <code>rex spec amend draft &lt;id&gt; "..."</code> to draft one{{end}}.
-    </p>
+    <div class="empty-state">
+      <h3>no amendments {{if or .StateFilter .ForFilter}}match the filter{{else}}yet{{end}}</h3>
+      {{if not (or .StateFilter .ForFilter)}}
+        <p>Amendments live under <code>.rex/specs/_proposed/</code> (and
+           <code>_accepted/</code> once folded). Draft one locally with
+           <code>rex spec amend draft &lt;id&gt; "..."</code> then
+           <code>rex sync</code> to push it.</p>
+      {{end}}
+    </div>
   {{end}}
 </section>
 {{end}}

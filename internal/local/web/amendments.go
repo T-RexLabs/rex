@@ -23,9 +23,10 @@ type amendmentRow = internalweb.AmendmentRow
 // amendmentsListData backs amendments_list.tmpl.
 type amendmentsListData struct {
 	pageData
-	Amendments  []amendmentRow
-	StateFilter string
-	ForFilter   string
+	Amendments     []amendmentRow
+	StateFilter    string
+	ForFilter      string
+	AmendmentsBase string
 }
 
 // amendmentDetailData backs amendments_detail.tmpl. Embeds the
@@ -90,10 +91,11 @@ func (s *Server) handleAmendmentsList(w http.ResponseWriter, r *http.Request) {
 	base := s.basePageData()
 	base.NavSection = "amendments"
 	s.render(w, r, "amendments_list.tmpl", amendmentsListData{
-		pageData:    base,
-		Amendments:  rows,
-		StateFilter: stateFilter,
-		ForFilter:   forFilter,
+		pageData:       base,
+		Amendments:     rows,
+		StateFilter:    stateFilter,
+		ForFilter:      forFilter,
+		AmendmentsBase: "/amendments",
 	})
 }
 

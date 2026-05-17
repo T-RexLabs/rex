@@ -38,11 +38,15 @@
       </table>
     </div>
   {{else}}
-    {{if .AddCmd}}
-      <p class="muted small">no remotes registered — <code>{{.AddCmd}}</code></p>
-    {{else}}
-      <p class="muted small">no remotes registered for this workspace</p>
-    {{end}}
+    <div class="empty-state">
+      <h3>no remotes registered</h3>
+      {{if .AddCmd}}
+        <p>Register one with <code>{{.AddCmd}}</code>.</p>
+      {{else}}
+        <p>This workspace's local <code>.rex/remotes.toml</code> hasn't been synced yet.
+           Run <code>rex sync</code> on the local node to push it here.</p>
+      {{end}}
+    </div>
   {{end}}
 </section>
 {{end}}
