@@ -1,14 +1,34 @@
 package web
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/asabla/rex/internal/core/sync/proto"
 	internalweb "github.com/asabla/rex/internal/web"
 )
+
+// wantsJSON reports whether r's Accept header asks for JSON.
+// Used by the invite handlers so the same routes serve both the
+// browser-facing HTML form and the CLI-facing JSON API
+// (`rex remote join --invite ...`).
+func wantsJSON(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "application/json")
+}
+
+// writeJSONError emits {"error": "..."} with the supplied
+// status code. Used by the invite JSON path so the CLI can
+// surface the server's reason without HTML scraping.
+func writeJSONError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
 
 // handleInvitePeek is GET /invites/<token>. Renders a
 // paste-your-public-key form pre-stamped with the token, or a
@@ -35,10 +55,46 @@ func (s *Server) handleInvitePeek(w http.ResponseWriter, r *http.Request) {
 	}
 	inv, err := s.opts.Redeemer.PeekInvite(token)
 	if err != nil {
+		if wantsJSON(r) {
+			writeInviteErrorJSON(w, err)
+			return
+		}
 		writeInviteErrorPage(w, err)
 		return
 	}
+	if wantsJSON(r) {
+		writeJSON(w, http.StatusOK, proto.PeekInviteResponse{
+			Token:     inv.Token,
+			OrgID:     inv.OrgID,
+			Role:      inv.Role,
+			InvitedBy: inv.InvitedBy,
+			ExpiresAt: inv.ExpiresAt.UTC().Format(time.RFC3339),
+		})
+		return
+	}
 	writeInviteFormPage(w, inv, "")
+}
+
+// writeJSON is the json.NewEncoder boilerplate centralised.
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+// writeInviteErrorJSON mirrors writeInviteErrorPage but emits
+// JSON + the same status-code mapping (404 / 410 / 409 / 400).
+func writeInviteErrorJSON(w http.ResponseWriter, err error) {
+	status := http.StatusBadRequest
+	switch {
+	case errors.Is(err, internalweb.ErrInviteNotFound):
+		status = http.StatusNotFound
+	case errors.Is(err, internalweb.ErrInviteExpired):
+		status = http.StatusGone
+	case errors.Is(err, internalweb.ErrInviteAlreadyRedeemed):
+		status = http.StatusConflict
+	}
+	writeJSONError(w, status, err.Error())
 }
 
 // handleInviteRedeem is POST /invites/redeem. Parses the form,
@@ -55,14 +111,33 @@ func (s *Server) handleInviteRedeem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "central web: invite redeem not configured (requires --db)", http.StatusServiceUnavailable)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "central web: parse form: "+err.Error(), http.StatusBadRequest)
-		return
+	wantJSON := wantsJSON(r) || strings.Contains(r.Header.Get("Content-Type"), "application/json")
+	var (
+		token, handle, pem string
+	)
+	if wantJSON {
+		var body proto.RedeemInviteRequest
+		if err := decodeJSONBody(r, &body); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "decode body: "+err.Error())
+			return
+		}
+		token = strings.TrimSpace(body.Token)
+		handle = strings.TrimSpace(body.Handle)
+		pem = strings.TrimSpace(body.PublicKeyPEM)
+	} else {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "central web: parse form: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		token = strings.TrimSpace(r.FormValue("token"))
+		handle = strings.TrimSpace(r.FormValue("handle"))
+		pem = strings.TrimSpace(r.FormValue("public_key_pem"))
 	}
-	token := strings.TrimSpace(r.FormValue("token"))
-	handle := strings.TrimSpace(r.FormValue("handle"))
-	pem := strings.TrimSpace(r.FormValue("public_key_pem"))
 	if token == "" || pem == "" {
+		if wantJSON {
+			writeJSONError(w, http.StatusBadRequest, "token and public_key_pem are required")
+			return
+		}
 		http.Error(w, "central web: token and public_key_pem are required", http.StatusBadRequest)
 		return
 	}
@@ -72,17 +147,25 @@ func (s *Server) handleInviteRedeem(w http.ResponseWriter, r *http.Request) {
 		PublicKeyPEM: pem,
 	})
 	if err != nil {
-		// Sentinel errors render the error page; everything
-		// else re-renders the form with an inline message so a
-		// PEM typo doesn't force the user to chase a new
-		// invite link.
+		// Sentinel errors render the error page (or JSON);
+		// everything else re-renders the form with an inline
+		// message so a PEM typo doesn't force the user to chase
+		// a new invite link.
 		switch {
 		case errors.Is(err, internalweb.ErrInviteNotFound),
 			errors.Is(err, internalweb.ErrInviteExpired),
 			errors.Is(err, internalweb.ErrInviteAlreadyRedeemed):
+			if wantJSON {
+				writeInviteErrorJSON(w, err)
+				return
+			}
 			writeInviteErrorPage(w, err)
 			return
 		default:
+			if wantJSON {
+				writeJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 			// Re-render the form with the original invite
 			// summary so the recipient sees the org/role they
 			// were redeeming for, alongside the error. PeekInvite
@@ -98,7 +181,26 @@ func (s *Server) handleInviteRedeem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if wantJSON {
+		writeJSON(w, http.StatusOK, proto.RedeemInviteResponse{
+			OrgID:       out.OrgID,
+			Fingerprint: out.Fingerprint,
+			Role:        out.Role,
+		})
+		return
+	}
 	writeInviteSuccessPage(w, out)
+}
+
+// decodeJSONBody parses r.Body into v with a tight 64 KiB cap
+// (the redeem payload is short — a token + handle + PEM block).
+// Wraps json.Decoder so a stray trailing object surfaces as an
+// error rather than silently parsing the first one.
+func decodeJSONBody(r *http.Request, v any) error {
+	r.Body = http.MaxBytesReader(nil, r.Body, 64*1024)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	return dec.Decode(v)
 }
 
 // writeInviteFormPage renders the GET /invites/<token> body.

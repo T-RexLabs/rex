@@ -260,6 +260,90 @@ func TestInviteRoutesArePublic(t *testing.T) {
 	}
 }
 
+// TestInvitePeekJSONReturnsSummary covers the JSON content-
+// negotiation branch of GET /invites/<token>: Accept:
+// application/json returns proto.PeekInviteResponse instead of
+// HTML. Used by `rex remote join` to fail fast on bad tokens.
+func TestInvitePeekJSONReturnsSummary(t *testing.T) {
+	t.Parallel()
+	r := &stubRedeemer{peekOK: internalweb.InviteSummary{
+		OrgID:     "acme",
+		Role:      "member",
+		InvitedBy: "fp-alice",
+		ExpiresAt: time.Now().Add(48 * time.Hour).UTC(),
+	}}
+	srv := newRedeemerServer(t, r)
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/invites/tok-abc", nil)
+	req.Header.Set("Accept", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.Header.Get("Content-Type") != "application/json" {
+		t.Errorf("content-type: %q", resp.Header.Get("Content-Type"))
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), `"org_id":"acme"`) || !strings.Contains(string(body), `"role":"member"`) {
+		t.Errorf("body missing fields: %s", body)
+	}
+}
+
+// TestInviteRedeemJSONHappyPath covers POST /invites/redeem
+// with a JSON body: handler decodes the request, calls the
+// redeemer, returns proto.RedeemInviteResponse.
+func TestInviteRedeemJSONHappyPath(t *testing.T) {
+	t.Parallel()
+	r := &stubRedeemer{redeemOK: internalweb.RedeemOutcome{
+		OrgID: "acme", Fingerprint: "fp-bob", Role: "member",
+	}}
+	srv := newRedeemerServer(t, r)
+	body := strings.NewReader(`{"token":"tok-abc","handle":"bob","public_key_pem":"-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"}`)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/invites/redeem", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		out, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: %d body: %s", resp.StatusCode, out)
+	}
+	out, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(out), `"fingerprint":"fp-bob"`) || !strings.Contains(string(out), `"role":"member"`) {
+		t.Errorf("body: %s", out)
+	}
+	if len(r.redeemReqs) != 1 || r.redeemReqs[0].Token != "tok-abc" {
+		t.Errorf("redeem call: %+v", r.redeemReqs)
+	}
+}
+
+// TestInviteRedeemJSONSentinelReturnsErrorJSON covers the
+// JSON-mode error path: ErrInviteAlreadyRedeemed yields a 409
+// with a JSON error body instead of the HTML error page.
+func TestInviteRedeemJSONSentinelReturnsErrorJSON(t *testing.T) {
+	t.Parallel()
+	r := &stubRedeemer{redeemErr: internalweb.ErrInviteAlreadyRedeemed}
+	srv := newRedeemerServer(t, r)
+	body := strings.NewReader(`{"token":"tok-old","public_key_pem":"-----BEGIN PUBLIC KEY-----\nx\n-----END PUBLIC KEY-----"}`)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/invites/redeem", body)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status: %d want 409", resp.StatusCode)
+	}
+	out, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(out), `"error"`) {
+		t.Errorf("missing error field: %s", out)
+	}
+}
+
 // TestInviteHandlerUnconfiguredReturns503 covers the
 // dev-deployment branch: when Redeemer is nil (e.g. --db not on),
 // the routes 503 with a clear message.

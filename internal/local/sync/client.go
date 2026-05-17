@@ -480,6 +480,112 @@ func decodeError(resp *http.Response) error {
 	return fmt.Errorf("sync: %s: %s", resp.Status, strings.TrimSpace(string(body)))
 }
 
+// RedeemInvite POSTs to the central's /invites/redeem endpoint
+// with Accept + Content-Type application/json so the handler
+// branches onto the JSON path (the same endpoint serves the
+// browser HTML form by default). Backs the
+// `rex remote join --invite ...` CLI flow
+// (identity-and-trust.AUTH.2.1).
+//
+// No Signer / Bearer token is required: the invite token IS the
+// credential — recipients have not yet registered a key at the
+// time they redeem.
+//
+// Sentinel errors map the server's status codes back so the CLI
+// can branch on the same set without scraping bodies:
+//
+//	404 -> ErrInviteNotFound
+//	410 -> ErrInviteExpired
+//	409 -> ErrInviteAlreadyRedeemed
+//
+// Other errors come through as wrapped sync.* errors.
+func (c *Client) RedeemInvite(ctx context.Context, token, handle, publicKeyPEM string) (proto.RedeemInviteResponse, error) {
+	if token == "" {
+		return proto.RedeemInviteResponse{}, fmt.Errorf("sync: invite token is required")
+	}
+	if publicKeyPEM == "" {
+		return proto.RedeemInviteResponse{}, fmt.Errorf("sync: public_key_pem is required")
+	}
+	body, err := json.Marshal(proto.RedeemInviteRequest{
+		Token: token, Handle: handle, PublicKeyPEM: publicKeyPEM,
+	})
+	if err != nil {
+		return proto.RedeemInviteResponse{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/invites/redeem", bytes.NewReader(body))
+	if err != nil {
+		return proto.RedeemInviteResponse{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return proto.RedeemInviteResponse{}, fmt.Errorf("sync: POST /invites/redeem: %w", err)
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var out proto.RedeemInviteResponse
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			return out, fmt.Errorf("sync: decode /invites/redeem response: %w", err)
+		}
+		return out, nil
+	case http.StatusNotFound:
+		return proto.RedeemInviteResponse{}, ErrInviteNotFound
+	case http.StatusGone:
+		return proto.RedeemInviteResponse{}, ErrInviteExpired
+	case http.StatusConflict:
+		return proto.RedeemInviteResponse{}, ErrInviteAlreadyRedeemed
+	default:
+		return proto.RedeemInviteResponse{}, decodeError(resp)
+	}
+}
+
+// PeekInvite is the GET /invites/<token> JSON path: returns the
+// invite metadata so the CLI can fail fast on bad tokens before
+// generating a keypair. Same sentinel error mapping as
+// RedeemInvite.
+func (c *Client) PeekInvite(ctx context.Context, token string) (proto.PeekInviteResponse, error) {
+	if token == "" {
+		return proto.PeekInviteResponse{}, fmt.Errorf("sync: invite token is required")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/invites/"+token, nil)
+	if err != nil {
+		return proto.PeekInviteResponse{}, err
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return proto.PeekInviteResponse{}, fmt.Errorf("sync: GET /invites/%s: %w", token, err)
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var out proto.PeekInviteResponse
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			return out, fmt.Errorf("sync: decode /invites/%s response: %w", token, err)
+		}
+		return out, nil
+	case http.StatusNotFound:
+		return proto.PeekInviteResponse{}, ErrInviteNotFound
+	case http.StatusGone:
+		return proto.PeekInviteResponse{}, ErrInviteExpired
+	case http.StatusConflict:
+		return proto.PeekInviteResponse{}, ErrInviteAlreadyRedeemed
+	default:
+		return proto.PeekInviteResponse{}, decodeError(resp)
+	}
+}
+
+// Sentinels for the invite-redeem path. Mirror the central
+// server's set (and the internalweb set) so CLI callers can
+// errors.Is without importing either.
+var (
+	ErrInviteNotFound        = errors.New("sync: invite not found")
+	ErrInviteExpired         = errors.New("sync: invite expired")
+	ErrInviteAlreadyRedeemed = errors.New("sync: invite already redeemed")
+)
+
 // Bootstrap redeems the central's one-time admin claim token
 // (central-node.BOOT.2). The flow:
 //

@@ -214,3 +214,36 @@ type BootstrapResponse struct {
 	// authenticated identity for the client's audit log).
 	Fingerprint string `json:"fingerprint"`
 }
+
+// RedeemInviteRequest is the JSON body the central node's
+// /invites/redeem endpoint accepts when the caller sets
+// Accept: application/json (or Content-Type: application/json on
+// the POST). HTML form clients keep the existing
+// x-www-form-urlencoded path; the CLI's `rex remote join` uses
+// this shape (identity-and-trust.AUTH.2.1).
+type RedeemInviteRequest struct {
+	Token        string `json:"token"`
+	Handle       string `json:"handle,omitempty"`
+	PublicKeyPEM string `json:"public_key_pem"`
+}
+
+// RedeemInviteResponse is the JSON 200 body. The fields mirror
+// internalweb.RedeemOutcome so the CLI can render exactly what
+// the web success page renders.
+type RedeemInviteResponse struct {
+	OrgID       string `json:"org_id"`
+	Fingerprint string `json:"fingerprint"`
+	Role        string `json:"role"`
+}
+
+// PeekInviteResponse is the JSON 200 body for
+// GET /invites/<token> when the caller sets Accept:
+// application/json. Lets the CLI fail fast on bad tokens
+// before generating a keypair / asking the user to paste a PEM.
+type PeekInviteResponse struct {
+	Token     string `json:"token"`
+	OrgID     string `json:"org_id"`
+	Role      string `json:"role"`
+	InvitedBy string `json:"invited_by"`
+	ExpiresAt string `json:"expires_at"` // RFC3339
+}
