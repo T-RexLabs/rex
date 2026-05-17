@@ -44,7 +44,7 @@ func newRemoteLoginCmd() *cobra.Command {
 		redirect  string
 	)
 	cmd := &cobra.Command{
-		Use:   "login <name>",
+		Use:   "login <name> [url]",
 		Short: "Authenticate a browser session against a remote central node",
 		Long: `Signs the central's /login challenge with the local keypair and
 opens (or prints) the redeem URL that sets the browser session
@@ -57,20 +57,45 @@ Run rex remote login from a terminal that holds your private key:
 Without --challenge, the CLI fetches a fresh challenge itself and
 the browser is sent to "/" on the central (the post-login
 landing page; central-read-side-pages handles the org/workspace
-picker from there).`,
+picker from there).
+
+Two arg forms:
+
+  rex remote login <name>            uses the URL stored in
+                                     ~/.config/rex/remotes.toml
+                                     for <name>.
+  rex remote login <name> <url>      one-shot mode: uses <url>
+                                     directly without touching
+                                     the registry. Handy for
+                                     ` + "`make web-dev`" + ` where the
+                                     remote hasn't been added
+                                     yet — sign in once to
+                                     verify, then run
+                                     ` + "`rex remote add`" + ` if you
+                                     want persistence.`,
 		Example: `  rex remote login primary --challenge "$(pbpaste)"
+  rex remote login dev http://127.0.0.1:8080
   rex remote login primary --challenge "<token>" --print-url
   rex remote login primary --redirect /orgs/acme`,
-		Args: cobra.ExactArgs(1),
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			reg, _, err := loadRegistry(cmd)
-			if err != nil {
-				return err
-			}
-			r, ok := reg.Get(name)
-			if !ok {
-				return fmt.Errorf("remote %q not registered", name)
+			var remoteURL string
+			if len(args) == 2 {
+				// Inline-URL form: skip the registry lookup so the
+				// user can sign in to a freshly-launched dev
+				// central without `rex remote add` first.
+				remoteURL = args[1]
+			} else {
+				reg, _, err := loadRegistry(cmd)
+				if err != nil {
+					return err
+				}
+				r, ok := reg.Get(name)
+				if !ok {
+					return fmt.Errorf("remote %q not registered (pass the URL as a second arg to skip the registry: `rex remote login %s <url>`)", name, name)
+				}
+				remoteURL = r.URL
 			}
 
 			signer, err := loadOrCreateDefaultSigner(cmd)
@@ -79,7 +104,7 @@ picker from there).`,
 			}
 
 			ctx := commandContext(cmd)
-			result, err := runRemoteLogin(ctx, r.URL, signer, challenge, redirect, scope, http.DefaultClient)
+			result, err := runRemoteLogin(ctx, remoteURL, signer, challenge, redirect, scope, http.DefaultClient)
 			if err != nil {
 				return fmt.Errorf("login %q: %w", name, err)
 			}
@@ -87,8 +112,8 @@ picker from there).`,
 			out := cmd.OutOrStdout()
 			if jsonOutput(cmd) {
 				return writeJSON(cmd, map[string]any{
-					"name":        r.Name,
-					"url":         r.URL,
+					"name":        name,
+					"url":         remoteURL,
 					"redeem_url":  result.RedeemURL,
 					"fingerprint": signer.Fingerprint().String(),
 					"expires_at":  result.AccessTokenExpiresAt,
@@ -100,12 +125,12 @@ picker from there).`,
 				result.Opened = false
 				fmt.Fprintf(out,
 					"%s OK — open this URL in your browser to complete sign-in:\n  %s\n",
-					r.Name, result.RedeemURL)
+					name, result.RedeemURL)
 			} else {
 				result.Opened = true
 				fmt.Fprintf(out,
 					"%s OK — opened the redeem URL in your browser.\n",
-					r.Name)
+					name)
 			}
 			return nil
 		},

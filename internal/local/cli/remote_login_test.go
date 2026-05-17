@@ -292,6 +292,48 @@ func TestRunRemoteLoginPropagatesServerError(t *testing.T) {
 	}
 }
 
+// TestRemoteLoginCobraAcceptsInlineURL covers the cobra layer:
+// the 2-arg form `rex remote login <name> <url>` is accepted
+// (regression — the previous `cobra.ExactArgs(1)` rejected the
+// natural `rex remote login dev http://127.0.0.1:8080` form
+// that `make web-dev` users would type). The test doesn't
+// assert end-to-end success against a stub central — it just
+// pins that the args parse + dispatch into the runRemoteLogin
+// path. A network error against the bogus URL is the expected
+// outcome.
+func TestRemoteLoginCobraAcceptsInlineURL(t *testing.T) {
+	t.Parallel()
+	reg := tempRegistry(t)
+	_, err := executeCommand(t, "remote", "login", "dev", "http://127.0.0.1:1",
+		"--remotes-file", reg,
+		"--print-url",
+	)
+	if err == nil {
+		t.Fatal("expected handshake failure against unreachable URL")
+	}
+	if strings.Contains(err.Error(), "accepts") || strings.Contains(err.Error(), "arg(s)") {
+		t.Fatalf("cobra arg validation rejected the 2-arg form: %v", err)
+	}
+}
+
+// TestRemoteLoginOneArgWithoutRegistrationErrors is the
+// companion: the 1-arg form still requires the remote to be
+// registered, with the error message pointing at the
+// inline-URL escape hatch.
+func TestRemoteLoginOneArgWithoutRegistrationErrors(t *testing.T) {
+	t.Parallel()
+	reg := tempRegistry(t)
+	_, err := executeCommand(t, "remote", "login", "ghost",
+		"--remotes-file", reg,
+	)
+	if err == nil {
+		t.Fatal("login against unregistered remote without inline URL should error")
+	}
+	if !strings.Contains(err.Error(), "not registered") || !strings.Contains(err.Error(), "<url>") {
+		t.Fatalf("error wording missing inline-URL hint: %v", err)
+	}
+}
+
 // TestBuildRedeemURLEdgeCases keeps the URL composer honest: it
 // must reject malformed base URLs and trailing-slash quirks.
 func TestBuildRedeemURLEdgeCases(t *testing.T) {

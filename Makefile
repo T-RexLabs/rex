@@ -57,8 +57,9 @@ web-dev: build ## Start rex-central --dev (pg + web + auto-admin) — open http:
 	@until docker exec rex-pg-dev pg_isready -U postgres >/dev/null 2>&1; do printf '.'; sleep 1; done
 	@echo ' ready.'
 	@echo
-	@echo '  open http://$(WEB_DEV_ADDR)/login in your browser, then in another terminal:'
+	@echo '  In another terminal, sign in (sets the rex_session cookie in your default browser):'
 	@echo '    $(BIN_DIR)/rex remote login dev http://$(WEB_DEV_ADDR)'
+	@echo '  Then click around starting at http://$(WEB_DEV_ADDR)/orgs/default/members'
 	@echo '  (Ctrl-C here tears down rex-central; run `make web-dev-down` to drop the pg container.)'
 	@echo
 	$(BIN_DIR)/rex-central serve --dev --db '$(WEB_DEV_PG_DSN)' --addr $(WEB_DEV_ADDR) --log-format text
