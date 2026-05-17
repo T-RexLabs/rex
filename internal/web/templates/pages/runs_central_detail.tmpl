@@ -2,13 +2,18 @@
 
 {{define "content"}}
 <header class="page-header">
-  <h1>run · <code>{{.Detail.RunID}}</code></h1>
+  <p class="runid-heading">{{.Detail.Name}}</p>
   <div class="meta">
-    <span>{{.Detail.Kind}}</span>
+    <span class="pill pill-{{.Detail.Status}}"><i class="dot"></i>{{.Detail.Status}}</span>
     <span>·</span>
-    <span>status: <code>{{.Detail.Status}}</code></span>
+    <span class="pill pill-{{.Detail.Kind}}">{{.Detail.Kind}}</span>
+    <span>·</span>
+    <code class="muted">{{.Detail.RunID}}</code>
+    <span>·</span>
+    <span>{{len .Detail.Events}} event{{if ne (len .Detail.Events) 1}}s{{end}}</span>
+  </div>
+  <div class="meta">
     {{if .Detail.StartedAt}}
-      <span>·</span>
       <span>started {{.Detail.StartedAt}}</span>
     {{end}}
     {{if .Detail.EndedAt}}

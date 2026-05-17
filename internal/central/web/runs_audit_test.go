@@ -16,6 +16,48 @@ import (
 	internalweb "github.com/asabla/rex/internal/web"
 )
 
+// TestCentralRunDetailHeaderShowsFriendlyName confirms the run
+// detail's <h1> uses the same human-readable slug the runs list
+// already shows (runner.FriendlyName), with the raw HLC demoted
+// to a muted code in the meta row. Prevents a regression to the
+// prior "run · <raw HLC>" heading shape, which made the page
+// look unrelated to the runs list it was reached from.
+func TestCentralRunDetailHeaderShowsFriendlyName(t *testing.T) {
+	t.Parallel()
+	t1 := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	const runID = "1778363847873279000.0"
+	store := stubEventStore{records: []eventlog.Record{
+		runEventRecord(t, "ev-1", t1, runner.RunStartedEvent{RunID: runID, StartedAt: t1}),
+		runEventRecord(t, "ev-2", t1.Add(time.Second), runner.RunCompletedEvent{RunID: runID, CompletedAt: t1.Add(time.Second)}),
+	}}
+	srv := newRunsServer(t, store)
+
+	resp, err := http.Get(srv.URL + "/orgs/acme/workspaces/ws-1/runs/" + runID)
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: %d body: %s", resp.StatusCode, body)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	html := string(body)
+
+	friendly := runner.FriendlyName(runID)
+	if friendly == "" {
+		t.Fatalf("FriendlyName returned empty for %q", runID)
+	}
+	if !strings.Contains(html, `<p class="runid-heading">`+friendly+`</p>`) {
+		t.Errorf("friendly-name heading missing (want %q): %s", friendly, html)
+	}
+	// Raw id stays available, just demoted into the meta row as a
+	// muted code.
+	if !strings.Contains(html, `<code class="muted">`+runID+`</code>`) {
+		t.Errorf("raw run id not surfaced as muted code: %s", html)
+	}
+}
+
 // stubEventStore is the minimal EventReader the central runs +
 // audit projections need in tests. Backed by a fixed []records
 // slice so test setup stays declarative.
