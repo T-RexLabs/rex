@@ -68,6 +68,33 @@ func (s *PostgresStore) EnsureDefaultMembership(ctx context.Context, fingerprint
 	return nil
 }
 
+// EnsureAdminMembership upserts a (default-org, fp, 'admin')
+// row, used by the rex-central --dev flag to make the
+// developer's local identity an admin without going through the
+// bootstrap-token redeem dance. Idempotent: re-running on an
+// already-admin row is a no-op; an existing member/viewer row
+// is upgraded to admin.
+//
+// NEVER call this from a non-dev code path — it silently
+// promotes whatever fingerprint is supplied without the
+// bootstrap-token guard SEC.1 / BOOT.* depend on.
+func (s *PostgresStore) EnsureAdminMembership(ctx context.Context, fingerprint string) error {
+	if fingerprint == "" {
+		return errors.New("server: EnsureAdminMembership requires fingerprint")
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO org_memberships (org_id, fingerprint, role)
+		SELECT id, $1, 'admin'
+		FROM   orgs
+		WHERE  name = $2
+		ON CONFLICT (org_id, fingerprint) DO UPDATE SET role = 'admin'
+	`, fingerprint, DefaultOrgName)
+	if err != nil {
+		return fmt.Errorf("server: ensure admin membership: %w", err)
+	}
+	return nil
+}
+
 // LookupOrg returns the org with the given name, or pgx.ErrNoRows
 // when missing. Used by EnsureDefaultMembership tests and the
 // future tenant-routing middleware. ID is exposed as a string

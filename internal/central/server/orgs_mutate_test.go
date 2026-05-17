@@ -25,6 +25,41 @@ func seedMembership(t *testing.T, s *PostgresStore, orgName, fingerprint, role s
 	}
 }
 
+// TestEnsureAdminMembershipUpsertsToAdmin covers the --dev
+// auto-admin path: a fresh fingerprint lands as admin; an
+// existing member row is upgraded to admin. Idempotent on
+// re-run.
+func TestEnsureAdminMembershipUpsertsToAdmin(t *testing.T) {
+	t.Parallel()
+	store, _ := freshPostgresStore(t)
+	ctx := context.Background()
+	org, _ := store.LookupOrg(ctx, DefaultOrgName)
+
+	// Fresh insert.
+	if err := store.EnsureAdminMembership(ctx, "fp-dev"); err != nil {
+		t.Fatalf("first Ensure: %v", err)
+	}
+	role, _ := store.RoleFor(ctx, org.ID, "fp-dev")
+	if role != "admin" {
+		t.Errorf("after first ensure: role %q want admin", role)
+	}
+
+	// Pre-existing member row gets upgraded.
+	seedMembership(t, store, DefaultOrgName, "fp-other", "member")
+	if err := store.EnsureAdminMembership(ctx, "fp-other"); err != nil {
+		t.Fatalf("second Ensure: %v", err)
+	}
+	role, _ = store.RoleFor(ctx, org.ID, "fp-other")
+	if role != "admin" {
+		t.Errorf("after upgrade: role %q want admin", role)
+	}
+
+	// Idempotent on re-run.
+	if err := store.EnsureAdminMembership(ctx, "fp-dev"); err != nil {
+		t.Fatalf("repeat Ensure: %v", err)
+	}
+}
+
 // TestChangeMemberRolePromotesAndReturnsPrior covers the happy
 // path: a member row exists; ChangeMemberRole flips the role and
 // returns the prior value the audit layer needs.

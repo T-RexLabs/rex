@@ -79,6 +79,8 @@ func newServeCmd() *cobra.Command {
 		logLevel        string
 		logFormat       string
 		webEnabled      bool
+		devMode         bool
+		devIdentityDir  string
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -162,6 +164,43 @@ lost on restart.
 					"count", len(ks.Handles()),
 				)
 			}
+
+			// --dev: register the local default identity (the one
+			// `rex` uses) as an authorized key + flip --web on.
+			// Admin-membership in the default org happens after
+			// pg opens (below). Loud warning so this never lights
+			// up by accident.
+			var devFingerprint identity.Fingerprint
+			if devMode {
+				dir := devIdentityDir
+				if dir == "" {
+					def, derr := identity.DefaultStoreDir()
+					if derr != nil {
+						return fmt.Errorf("dev mode: resolve identity dir: %w", derr)
+					}
+					dir = def
+				}
+				store := identity.NewStore(dir)
+				signer, err := identity.EnsureDefaultStoreSigner(store)
+				if err != nil {
+					return fmt.Errorf("dev mode: ensure identity: %w", err)
+				}
+				if ks == nil {
+					ks = server.NewKeystore()
+					opts.Keystore = ks
+				}
+				fp, err := ks.Add(string(signer.Handle()), signer.PublicKey())
+				if err != nil {
+					return fmt.Errorf("dev mode: register identity in keystore: %w", err)
+				}
+				devFingerprint = fp
+				webEnabled = true
+				logger.Warn("DEV MODE: registered local default identity as authorized key — never use --dev in production",
+					"op", "startup.dev",
+					"identity_dir", dir,
+					"fingerprint", fp.String(),
+				)
+			}
 			var pg *server.PostgresStore
 			if cfg.DB.DSN != "" {
 				var err error
@@ -195,6 +234,19 @@ lost on restart.
 					logger.Info("authorized keys overlaid from db",
 						"op", "startup",
 						"count", n,
+					)
+				}
+				if devMode && !devFingerprint.IsZero() {
+					// Promote the dev identity to admin of the
+					// default org so the web UI's per-page RBAC
+					// checks pass on first request — no need to
+					// run the bootstrap-token redeem dance.
+					if err := pg.EnsureAdminMembership(cmd.Context(), devFingerprint.String()); err != nil {
+						return fmt.Errorf("dev mode: ensure admin membership: %w", err)
+					}
+					logger.Warn("DEV MODE: dev identity promoted to admin of the default org",
+						"op", "startup.dev",
+						"fingerprint", devFingerprint.String(),
 					)
 				}
 			} else {
@@ -377,6 +429,8 @@ lost on restart.
 	cmd.Flags().StringVar(&logLevel, "log-level", "info", "log level: debug | info | warn | error (overrides config + REX_CENTRAL_LOG_LEVEL)")
 	cmd.Flags().StringVar(&logFormat, "log-format", "json", "log format: json | text (overrides config + REX_CENTRAL_LOG_FORMAT)")
 	cmd.Flags().BoolVar(&webEnabled, "web", false, "enable the central web UI shell (off by default until read-side pages land; serves /_web/health + /static/ when on)")
+	cmd.Flags().BoolVar(&devMode, "dev", false, "developer-convenience mode: register the local rex default identity as an authorized key, promote it to admin of the default org (requires --db), and auto-enable --web. NEVER use in production.")
+	cmd.Flags().StringVar(&devIdentityDir, "dev-identity-dir", "", "override identity store path used by --dev (default: identity.DefaultStoreDir() — same dir `rex identity show` uses)")
 	return cmd
 }
 

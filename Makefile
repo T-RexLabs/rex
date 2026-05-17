@@ -1,4 +1,4 @@
-.PHONY: help all build install test test-race test-pg pg-up pg-down lint lint-strict vet fmt tidy clean
+.PHONY: help all build install test test-race test-pg pg-up pg-down web-dev web-dev-down lint lint-strict vet fmt tidy clean
 
 GO       ?= go
 BIN_DIR  ?= bin
@@ -40,6 +40,31 @@ pg-up: ## Start a local Postgres container for test-pg / rex-central --db
 
 pg-down: ## Stop and remove the local Postgres container
 	docker rm -f rex-pg-test >/dev/null 2>&1 && echo "rex-pg-test removed" || echo "rex-pg-test not running"
+
+# web-dev brings up a local rex-central with everything wired
+# (pg, web UI, dev identity registered as admin) so a developer
+# can `open http://127.0.0.1:8080/login` and click around.
+# Separate container + DB from the test pg so a `make test-pg`
+# run never collides with `make web-dev`.
+WEB_DEV_PG_DSN ?= postgres://postgres:dev@127.0.0.1:55433/rex_dev?sslmode=disable
+WEB_DEV_ADDR   ?= 127.0.0.1:8080
+web-dev: build ## Start rex-central --dev (pg + web + auto-admin) — open http://127.0.0.1:8080/login
+	@docker rm -f rex-pg-dev >/dev/null 2>&1 || true
+	docker run -d --name rex-pg-dev \
+		-e POSTGRES_PASSWORD=dev -e POSTGRES_DB=rex_dev \
+		-p 55433:5432 postgres:17-alpine >/dev/null
+	@printf 'rex-pg-dev started; waiting for readiness'
+	@until docker exec rex-pg-dev pg_isready -U postgres >/dev/null 2>&1; do printf '.'; sleep 1; done
+	@echo ' ready.'
+	@echo
+	@echo '  open http://$(WEB_DEV_ADDR)/login in your browser, then in another terminal:'
+	@echo '    $(BIN_DIR)/rex remote login dev http://$(WEB_DEV_ADDR)'
+	@echo '  (Ctrl-C here tears down rex-central; run `make web-dev-down` to drop the pg container.)'
+	@echo
+	$(BIN_DIR)/rex-central serve --dev --db '$(WEB_DEV_PG_DSN)' --addr $(WEB_DEV_ADDR) --log-format text
+
+web-dev-down: ## Stop and remove the web-dev Postgres container
+	docker rm -f rex-pg-dev >/dev/null 2>&1 && echo "rex-pg-dev removed" || echo "rex-pg-dev not running"
 
 vet: ## Run go vet
 	$(GO) vet $(PKGS)
