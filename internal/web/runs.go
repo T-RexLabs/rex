@@ -254,6 +254,58 @@ func isTerminalStatus(s runner.RunStatus) bool {
 	}
 }
 
+// SplitRunsBySpec partitions rows that cite specID into per-task
+// buckets + a "untasked" slice for spec_refs-only matches, plus
+// a deterministic merged slice for the "all runs for this spec"
+// view. Used by the spec detail page's runs tab on both shells
+// (the local shell had its own version against the unaliased
+// runRow; the central side had no implementation at all so the
+// tab rendered empty even when matching runs existed).
+//
+// Each bucket is sorted most-recent-started first (RFC3339
+// timestamps sort lexically). The merged slice mirrors the
+// local shell's prior behaviour: walk byTask in sorted task-id
+// order then append untasked.
+func SplitRunsBySpec(rows []RunRow, specID string) (byTask map[string][]RunRow, untasked, all []RunRow) {
+	byTask = make(map[string][]RunRow)
+	prefix := specID + "."
+	for _, r := range rows {
+		if !MatchesSpecFilter(r, specID) {
+			continue
+		}
+		if strings.HasPrefix(r.FromTask, prefix) {
+			taskID := strings.TrimPrefix(r.FromTask, prefix)
+			byTask[taskID] = append(byTask[taskID], r)
+			continue
+		}
+		untasked = append(untasked, r)
+	}
+	for k, bucket := range byTask {
+		sortRunsDesc(bucket)
+		byTask[k] = bucket
+	}
+	sortRunsDesc(untasked)
+
+	// Merged "all" slice for the runs tab. Walk byTask in
+	// task-id order so the resulting list is deterministic.
+	taskIDs := make([]string, 0, len(byTask))
+	for id := range byTask {
+		taskIDs = append(taskIDs, id)
+	}
+	sort.Strings(taskIDs)
+	for _, id := range taskIDs {
+		all = append(all, byTask[id]...)
+	}
+	all = append(all, untasked...)
+	return byTask, untasked, all
+}
+
+func sortRunsDesc(rows []RunRow) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		return rows[i].StartedAt > rows[j].StartedAt
+	})
+}
+
 // MatchesSpecFilter returns true when r is launched against the
 // supplied filter token. The filter may be:
 //   - a fully-qualified ACID (e.g. `sync.ORDER.3`) — matches when

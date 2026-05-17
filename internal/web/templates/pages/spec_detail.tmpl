@@ -195,13 +195,13 @@
                 <details class="task-runs">
                   <summary>
                     <span class="pill pill-{{$latest.Status}}" title="latest run: {{$latest.Status}}"><i class="dot"></i>{{len $runs}} run{{if ne (len $runs) 1}}s{{end}}</span>
-                    <span class="muted">latest <a href="/runs/{{$latest.RunID}}"><code>{{$latest.Name}}</code></a></span>
+                    <span class="muted">latest <a href="{{$latest.LinkBase}}/runs/{{$latest.RunID}}"><code>{{$latest.Name}}</code></a></span>
                   </summary>
                   <ul class="task-runs-list">
                     {{range $runs}}
                       <li>
                         <span class="pill pill-{{.Status}} pill-sm"><i class="dot"></i>{{.Status}}</span>
-                        <a href="/runs/{{.RunID}}"><code>{{.Name}}</code></a>
+                        <a href="{{.LinkBase}}/runs/{{.RunID}}"><code>{{.Name}}</code></a>
                         <time class="muted small">{{.StartedAt}}</time>
                       </li>
                     {{end}}
@@ -219,7 +219,7 @@
             {{range .UntaskedRuns}}
               <li>
                 <span class="pill pill-{{.Status}} pill-sm"><i class="dot"></i>{{.Status}}</span>
-                <a href="/runs/{{.RunID}}"><code>{{.Name}}</code></a>
+                <a href="{{.LinkBase}}/runs/{{.RunID}}"><code>{{.Name}}</code></a>
                 <time class="muted small">{{.StartedAt}}</time>
               </li>
             {{end}}
@@ -251,7 +251,7 @@
           <tbody>
             {{range .AllRuns}}
               <tr>
-                <td><a href="/runs/{{.RunID}}"><code>{{.Name}}</code></a></td>
+                <td><a href="{{.LinkBase}}/runs/{{.RunID}}"><code>{{.Name}}</code></a></td>
                 <td><span class="pill pill-{{.Kind}}">{{.Kind}}</span></td>
                 <td><span class="pill pill-{{.Status}}"><i class="dot"></i>{{.Status}}</span></td>
                 <td>

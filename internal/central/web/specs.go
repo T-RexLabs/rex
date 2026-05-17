@@ -219,23 +219,22 @@ type centralSpecsListData struct {
 
 // centralSpecDetailData is the central-side envelope for
 // spec_detail.tmpl. Embeds the shared SpecContent so .Spec,
-// .RawYAML, .YAMLPretty resolve in the template; the
-// shell-specific extras (Amendments, RunsByTask, Harnesses,
-// UntaskedRuns, AllRuns, RunCount) are present-as-zero so
-// `{{if .Amendments}}` style guards in the template short-circuit
-// cleanly. Each will be populated in v1 as its own sub-task lifts
-// the corresponding projection (Amendments →
-// central-read-side-search-amendments; runs → central-read-side-runs-audit;
-// Harnesses requires central-side execution and remains empty in v1).
+// .RawYAML, .YAMLPretty resolve in the template. Runs are
+// populated by handleSpecDetail via the workspace's
+// RunsListProjection + the shared SplitRunsBySpec helper, so
+// the runs tab reflects what's synced to the central. Amendments
+// + Harnesses stay empty for now (Amendments — separate
+// projection lift; Harnesses — requires central-side execution
+// which is v1.5).
 type centralSpecDetailData struct {
 	centralPageData
 	internalweb.SpecContent
 	ActiveTab    string
 	Amendments   []emptyRow
 	Harnesses    []emptyRow
-	RunsByTask   map[string][]emptyRow
-	UntaskedRuns []emptyRow
-	AllRuns      []emptyRow
+	RunsByTask   map[string][]internalweb.RunRow
+	UntaskedRuns []internalweb.RunRow
+	AllRuns      []internalweb.RunRow
 	RunCount     int
 }
 
@@ -244,10 +243,6 @@ type centralSpecDetailData struct {
 // v1. The shared spec_detail.tmpl uses `{{if .X}}` / `{{range .X}}`
 // guards — both fire false / iterate zero times against a nil
 // slice — so the page renders cleanly with these all empty.
-//
-// Replaced by the real row types as each lift lands. The dedicated
-// type (rather than `any`) keeps the field signatures
-// self-documenting and the eventual replacement a localised diff.
 type emptyRow struct{}
 
 // handleSpecsList is GET /orgs/<org-id>/workspaces/<ws-id>/specs.
@@ -338,6 +333,34 @@ func (s *Server) handleSpecDetail(w http.ResponseWriter, r *http.Request) {
 		centralPageData: s.pageData(orgID, wsID, "specs"),
 		SpecContent:     content,
 		ActiveTab:       tab,
+	}
+	// Best-effort: pull the workspace's runs from the central
+	// event store and split into the byTask / untasked / all
+	// buckets the spec_detail template's runs tab expects.
+	// LinkBase makes every row click-through resolve to
+	// /orgs/<org>/workspaces/<ws>/runs/<id> rather than the
+	// local /runs/<id> path. A list failure or an unbound runs
+	// projection just leaves the tab empty.
+	if ws.Runs != nil {
+		if rows, err := ws.Runs.ListRuns(); err == nil {
+			base := "/orgs/" + orgID + "/workspaces/" + wsID
+			byTask, untasked, all := internalweb.SplitRunsBySpec(rows, content.Spec.ID)
+			for _, bucket := range byTask {
+				for i := range bucket {
+					bucket[i].LinkBase = base
+				}
+			}
+			for i := range untasked {
+				untasked[i].LinkBase = base
+			}
+			for i := range all {
+				all[i].LinkBase = base
+			}
+			data.RunsByTask = byTask
+			data.UntaskedRuns = untasked
+			data.AllRuns = all
+			data.RunCount = len(all)
+		}
 	}
 	s.renderer.Render(w, r, "spec_detail.tmpl", data)
 }
