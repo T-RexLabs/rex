@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -99,17 +100,33 @@ func (s *testCentralStub) handleVerify(w http.ResponseWriter, r *http.Request) {
 // stubNonces is the table of {challenge id → hex nonce} the stub
 // recognises. Tests register entries via withStubChallenge so the
 // signature-verification path lines up with whatever package the
-// CLI signed.
-var stubNonces = map[string]string{}
+// CLI signed. The mutex guards concurrent access — the writer is
+// the test goroutine calling withStubChallenge; the reader is
+// the stub server's handleVerify goroutine on the httptest server
+// (a CI race-detector flake when several t.Parallel tests share
+// the package's stub).
+var (
+	stubNoncesMu sync.RWMutex
+	stubNonces   = map[string]string{}
+)
 
 func withStubChallenge(t *testing.T, id, nonceHex string) {
 	t.Helper()
+	stubNoncesMu.Lock()
 	stubNonces[id] = nonceHex
-	t.Cleanup(func() { delete(stubNonces, id) })
+	stubNoncesMu.Unlock()
+	t.Cleanup(func() {
+		stubNoncesMu.Lock()
+		delete(stubNonces, id)
+		stubNoncesMu.Unlock()
+	})
 }
 
 func findStubNonceFor(id string) string {
-	if v, ok := stubNonces[id]; ok {
+	stubNoncesMu.RLock()
+	v, ok := stubNonces[id]
+	stubNoncesMu.RUnlock()
+	if ok {
 		return v
 	}
 	// Fall back to the stub server's /auth/challenge default

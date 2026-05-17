@@ -134,7 +134,7 @@ func TestWorkspaceOverviewRendersStatsAndRecentRuns(t *testing.T) {
 		runEventRecord(t, "ev-3", t2, runner.RunStartedEvent{RunID: "run-bbb", StartedAt: t2}),
 	}}
 	git := stubGitStore{entries: map[string]string{
-		"workspace.yaml":  workspaceYAML("ws-1", "Acme Workspace", "active"),
+		"workspace.yaml":   workspaceYAML("ws-1", "Acme Workspace", "active"),
 		"specs/alpha.yaml": validSpecYAML("alpha", "Alpha"),
 		"specs/beta.yaml":  validSpecYAML("beta", "Beta"),
 	}}
