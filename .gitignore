@@ -19,10 +19,13 @@ coverage.html
 # - .playwright, .playwright-cli, .playwright-mcp: playwright session
 #   data, per-machine config, and the screenshot/console log artifacts
 #   it leaves behind while driving a browser.
+# - .rtk: Rust Token Killer per-machine cache (token-savings
+#   analytics + command history). Nothing in here is repo state.
 .claude/
 .playwright/
 .playwright-cli/
 .playwright-mcp/
+.rtk/
 
 # Local config not checked in
 /.rex/
