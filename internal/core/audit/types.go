@@ -100,6 +100,16 @@ const (
 	EventTypeOrgMemberInvited     = "org.member.invited"
 	EventTypeOrgMemberRoleChanged = "org.member.role_changed"
 	EventTypeOrgMemberRemoved     = "org.member.removed"
+	EventTypeOrgMemberJoined      = "org.member.joined"
+
+	// Identity registration (identity-and-trust.AUTH.2.1 +
+	// AUTH.2.2 — the invite-redeem path adds a fresh public key
+	// to the central node's keystore + the Postgres
+	// authorized_keys table). The audit row pairs with the
+	// org.member.joined that fires alongside; together they
+	// reconstruct "a brand-new key arrived and immediately joined
+	// org X with role Y because of invite Z".
+	EventTypeIdentityKeyRegistered = "identity.key_registered"
 )
 
 // EventVersion is the schema version for audit-package event payloads.
@@ -142,6 +152,8 @@ var auditEventTypes = func() map[string]struct{} {
 		EventTypeOrgMemberInvited:      {},
 		EventTypeOrgMemberRoleChanged:  {},
 		EventTypeOrgMemberRemoved:      {},
+		EventTypeOrgMemberJoined:       {},
+		EventTypeIdentityKeyRegistered: {},
 
 		// Runner events are audit-class per TYPES.1 ("every harness
 		// invocation start/end ... every workspace state change").
@@ -490,4 +502,31 @@ type OrgMemberRemovedEvent struct {
 	Fingerprint string `json:"fingerprint"`
 	PriorRole   string `json:"prior_role"`
 	RemovedBy   string `json:"removed_by"`
+}
+
+// OrgMemberJoinedEvent is the payload for
+// EventTypeOrgMemberJoined — fires when an invite is redeemed
+// and a new membership row lands. InviteID cross-references the
+// matching org.member.invited audit row, completing the
+// invite → join lifecycle for reviewers.
+type OrgMemberJoinedEvent struct {
+	OrgID       string `json:"org_id"`
+	Fingerprint string `json:"fingerprint"`
+	Role        string `json:"role"`
+	InviteID    string `json:"invite_id"`
+}
+
+// IdentityKeyRegisteredEvent is the payload for
+// EventTypeIdentityKeyRegistered — fires the first time a
+// fingerprint lands in the central node's authorized_keys
+// table. Source records which path registered it; v1 only
+// emits "invite-redeem" but the field leaves room for an
+// admin-paste / SCIM-imported path later. InviteID is the
+// invite that authorised the registration, so a reviewer can
+// chase the chain back to the issuing admin.
+type IdentityKeyRegisteredEvent struct {
+	Fingerprint string `json:"fingerprint"`
+	Handle      string `json:"handle,omitempty"`
+	Source      string `json:"source"`
+	InviteID    string `json:"invite_id,omitempty"`
 }

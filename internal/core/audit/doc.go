@@ -140,6 +140,14 @@
 //	org.member.removed      payload: OrgMemberRemovedEvent
 //	  fires when an admin removes a member. PriorRole records
 //	  the access that was revoked.
+//	org.member.joined       payload: OrgMemberJoinedEvent
+//	  fires when an invite is redeemed and the recipient
+//	  becomes a member. InviteID cross-references the matching
+//	  org.member.invited row.
+//	identity.key_registered payload: IdentityKeyRegisteredEvent
+//	  fires the first time a fingerprint lands in the central
+//	  node's authorized_keys table. Source is "invite-redeem"
+//	  in v1; InviteID points back to the authorising invite.
 //
 // Git-merged content sync (sync.GIT.1-4 — every rebase outcome
 // counts as a workspace state change for audit purposes):
