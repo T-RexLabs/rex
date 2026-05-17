@@ -7,7 +7,7 @@ metadata:
   owners: []
   related_specs: [overview, sync, central-node, audit]
   created_at: 2026-05-03T00:00:00Z
-  updated_at: 2026-05-09T00:00:00Z
+  updated_at: 2026-05-17T00:00:00Z
 
 description: |
   Identity in Rex follows the Git/SSH spirit: each user has a portable
@@ -84,6 +84,20 @@ tasks:
       - kind: test
         path: internal/central/server/orgs_test.go
 
+  - id: invite-redeem-flow
+    description: |
+      Wire the recipient half of ORG.5: POST /invites/redeem (no auth gate — the
+      invite token is the credential) accepts {token, handle, public_key_pem},
+      validates the invite is unexpired + unredeemed, registers the public key
+      in the Postgres authorized_keys table + in-memory Keystore, inserts the
+      org_memberships row with the invite's role, marks the invite redeemed,
+      and emits both identity.key_registered (if first-time) and org.member.joined.
+      A browser surface at GET /invites/<token> renders a paste-your-public-key
+      form that POSTs to the same endpoint.
+    state: todo
+    references: [AUTH.2, "AUTH.2.1", "AUTH.2.2", ORG.5, SEC.1]
+    note: "Tracked by the 2026-05-17 invite-redeem amendment (specs/_proposed/_accepted/identity-and-trust-amendment-2026-05-17-invite-redeem.yaml). Issuance side already shipped (POST /orgs/<id>/members/invite); this task completes the lifecycle."
+
 components:
 
   KEY:
@@ -103,6 +117,8 @@ components:
       "1.1": The challenge is a random 32-byte value with a server-issued ID and an expiry of 60 seconds
       "1.2": The signed payload includes the challenge bytes, the central node's hostname, and the requested scope; this binds the signature to a specific server and prevents cross-server replay
       "2": Public keys are registered with a central node out-of-band — the user pastes a key (or `rex remote add` does it) and the central admin (or invite flow) approves
+      "2.1": "Invite-redeem is the second registration path: a recipient with a valid unredeemed unexpired invite token submits their public key alongside the token in a single request; the central node registers the key, stamps the `org_memberships` row with the invite's role, and marks the invite redeemed. The invite (issued by an admin with `org.admin` permission) is the explicit approval required by SEC.1 — no further admin action is needed at redeem time."
+      "2.2": "Runtime-registered keys (currently only invite-redeem; future paths join via the same surface) are persisted in a central-side Postgres table (`authorized_keys`, scoped to no org — keys are user-global within a central node; org membership is the per-org filter). The TOML `--keys` file remains the bootstrap mechanism for the first admin key and the dev-mode (`--db` unset) fallback. On startup, both sources load into the same in-memory Keystore; DB entries take precedence on fingerprint conflict."
       "3": 'The handshake fails closed: any signature failure, expired nonce, or unregistered key returns 401 with no other information'
       "4": Every successful authentication writes an `auth.success` audit event; every failed attempt writes an `auth.failure` event
       "5": No password-based authentication path exists in the codebase
@@ -152,6 +168,7 @@ constraints:
     description: Security invariants for identity and access
     requirements:
       "1": Public-key registration on a central node always requires an explicit approval step; auto-trust on first use is forbidden
+      "1-note": "Explicit approval covers both out-of-band paste + admin-approves (the existing path) and invite-issued + recipient-redeems (the new path landed by `AUTH.2.1`/`AUTH.2.2`). The invite issuance audit event (`org.member.invited`) is the auditable approval record for the redeem path; nothing about SEC.1 changes — this note only points out that invite redemption is one of its compliant paths."
       "2": Token rotation must be enforced — reusing a refresh token after rotation revokes the entire token chain and writes a `auth.replay_attempt` audit event
       "3": Central nodes must rate-limit authentication attempts per source IP and per public key, with exponential backoff on repeated failures
       "4": All identity-related cryptographic operations use the platform's standard libraries (Go's `crypto/ed25519`, etc.); custom crypto is forbidden

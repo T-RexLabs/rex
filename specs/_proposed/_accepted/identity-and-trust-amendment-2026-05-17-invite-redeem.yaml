@@ -1,0 +1,161 @@
+# Spec amendment — invite redeem flow (the other half of
+# identity-and-trust.ORG.5). Spans identity-and-trust + audit
+# because the redeem flow lands two new audit event types
+# alongside the new auth path; spec-format.AMEND.6 allows
+# `target: multi` for cross-spec amendments.
+#
+# Context: this session shipped admin invite issuance
+# (POST /orgs/<id>/members/invite). The recipient half — the
+# redeem flow — is the missing piece of ORG.5. Two existing
+# requirements need tightening before the redeem flow is
+# implementable as a single round-trip:
+#
+#   - AUTH.2 today says "Public keys are registered with a
+#     central node out-of-band — the user pastes a key (or
+#     `rex remote add` does it) and the central admin (or
+#     invite flow) approves." The "or invite flow" tail is the
+#     only place the spec acknowledges that redeem can register
+#     a key without a separate out-of-band step. This amendment
+#     promotes that tail into a first-class requirement and
+#     pins what "registered" means at the storage layer.
+#
+#   - SEC.1 today says "Public-key registration on a central
+#     node always requires an explicit approval step;
+#     auto-trust on first use is forbidden." The invite IS the
+#     explicit approval — the admin's act of issuing the token
+#     authorises whichever key arrives at redeem time. The
+#     amendment makes that mapping explicit so reviewers don't
+#     read the redeem flow as a SEC.1 violation.
+#
+# Implementation wrinkle this resolves: today the Keystore is
+# in-memory, populated at startup from a TOML --keys file
+# (internal/central/server/keystore.go). A redeem flow that
+# only calls Keystore.Add() at runtime would lose the new key
+# on restart. The amendment introduces a Postgres-backed
+# authorized_keys table as the source of truth for keys
+# registered via redeem; the TOML file stays as the bootstrap
+# mechanism for the first admin key (and as the dev-mode
+# fallback when --db is not set).
+
+target: multi
+amendment_date: 2026-05-17
+state: accepted
+amendment_kind: additive
+summary: |
+  Land the invite redeem flow (the recipient half of
+  identity-and-trust.ORG.5). Adds two new sub-requirements
+  under AUTH.2 covering invite-as-approval and the
+  Postgres-backed authorized_keys persistence layer, a
+  clarifying note on SEC.1 that maps invite-issuance to the
+  required explicit approval step, two new audit event types
+  (identity.key_registered and org.member.joined), and a new
+  task `invite-redeem-flow` tracking the implementation.
+
+changes:
+
+  - kind: add-requirement
+    affects: identity-and-trust
+    component: AUTH
+    requirement_id: "2.1"
+    text: |
+      Invite-redeem is the second registration path: a
+      recipient with a valid unredeemed unexpired invite token
+      submits their public key alongside the token in a single
+      request; the central node registers the key, stamps the
+      org_memberships row with the invite's role, and marks
+      the invite redeemed. The invite (issued by an admin with
+      org.admin permission) is the explicit approval required
+      by SEC.1 — no further admin action is needed at redeem
+      time.
+
+  - kind: add-requirement
+    affects: identity-and-trust
+    component: AUTH
+    requirement_id: "2.2"
+    text: |
+      Runtime-registered keys (currently only invite-redeem;
+      future paths join via the same surface) are persisted in
+      a central-side Postgres table (authorized_keys, scoped
+      to no org — keys are user-global within a central node;
+      org membership is the per-org filter). The TOML --keys
+      file remains the bootstrap mechanism for the first admin
+      key and the dev-mode (--db unset) fallback. On startup,
+      both sources load into the same in-memory Keystore; DB
+      entries take precedence on fingerprint conflict.
+
+  - kind: clarify-requirement
+    affects: identity-and-trust
+    component: SEC
+    requirement_id: "1"
+    note: |
+      "Explicit approval" covers both out-of-band paste +
+      admin-approves (the existing path) and invite-issued +
+      recipient-redeems (the new path). The invite issuance
+      audit event (org.member.invited) is the auditable
+      approval record for the redeem path; nothing about SEC.1
+      changes — this note only points out that invite
+      redemption is one of its compliant paths.
+
+  - kind: add-audit-event-type
+    affects: audit
+    type: identity.key_registered
+    component: TYPES
+    body_fields:
+      - Fingerprint     # the newly-registered key
+      - Handle          # informational handle the recipient supplied
+      - Source          # "invite-redeem" (room for "admin-paste" later)
+      - InviteID        # cross-references the org.member.invited row
+    note: |
+      Fires once per fresh key registration. A redeem against
+      an already-registered fingerprint (same recipient
+      bringing the same key for a second org) does NOT
+      re-emit — the audit row already exists; the next-of-kin
+      event in that case is org.member.joined only.
+
+  - kind: add-audit-event-type
+    affects: audit
+    type: org.member.joined
+    component: TYPES
+    body_fields:
+      - OrgID
+      - Fingerprint     # the new member
+      - Role            # the invite's role
+      - InviteID        # cross-references the org.member.invited row
+    note: |
+      Fires once per successful redeem. Sibling to
+      org.member.invited / org.member.removed /
+      org.member.role_changed; together they give a complete
+      lifecycle trail per fingerprint per org.
+
+  - kind: add-task
+    affects: identity-and-trust
+    task_id: invite-redeem-flow
+    description: |
+      Wire the recipient half of ORG.5: POST /invites/redeem
+      (no auth gate — the invite token is the credential)
+      accepts { token, handle, public_key_pem }, validates the
+      invite is unexpired + unredeemed, registers the public
+      key in the Postgres authorized_keys table + in-memory
+      Keystore, inserts the org_memberships row with the
+      invite's role, marks the invite redeemed, and emits
+      both identity.key_registered (if first-time) and
+      org.member.joined. A browser surface at GET /invites/
+      <token> renders a paste-your-public-key form that POSTs
+      to the same endpoint.
+    references:
+      - AUTH.2
+      - AUTH.2.1
+      - AUTH.2.2
+      - ORG.5
+      - SEC.1
+    proof:
+      - kind: code
+        path: internal/central/server/orgs.go
+      - kind: code
+        path: internal/central/server/keystore.go
+      - kind: code
+        path: internal/central/web/invites.go
+      - kind: test
+        path: internal/central/server/orgs_mutate_test.go
+      - kind: test
+        path: internal/central/web/invites_test.go
