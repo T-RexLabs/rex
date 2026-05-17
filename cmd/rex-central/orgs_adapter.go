@@ -5,13 +5,17 @@ import (
 	"errors"
 
 	"github.com/asabla/rex/internal/central/server"
+	"github.com/asabla/rex/internal/core/audit"
 	internalweb "github.com/asabla/rex/internal/web"
 )
 
 // postgresOrgsAdapter satisfies internalweb.OrgsProjection by
-// calling the central PostgresStore's org methods. Lives in
-// cmd/rex-central because internal/central/web does not import
-// internal/central/server (the web package stays a leaf).
+// calling the central PostgresStore's org methods, and emits
+// audit events for every mutation through the bound appender
+// (CENTRAL.3 — "every action runs through RBAC and writes audit
+// entries"). Lives in cmd/rex-central because
+// internal/central/web does not import internal/central/server
+// (the web package stays a leaf).
 //
 // Read methods: LookupOrg, ListMembers, RoleFor.
 // Mutation methods: ChangeMemberRole, RemoveMember. The
@@ -20,11 +24,17 @@ import (
 // its own design pass (token format, /auth/invite endpoint
 // shape, web form) so it ships in a follow-up.
 type postgresOrgsAdapter struct {
-	pg *server.PostgresStore
+	pg       *server.PostgresStore
+	appender *server.PostgresAuditAppender
 }
 
-func newPostgresOrgsAdapter(pg *server.PostgresStore) *postgresOrgsAdapter {
-	return &postgresOrgsAdapter{pg: pg}
+// newPostgresOrgsAdapter binds the adapter to a PostgresStore +
+// an audit appender. The appender may be nil — in that case
+// mutations succeed but no audit events are emitted (matches
+// the existing best-effort semantics auth.go's appendAuthAudit
+// uses).
+func newPostgresOrgsAdapter(pg *server.PostgresStore, appender *server.PostgresAuditAppender) *postgresOrgsAdapter {
+	return &postgresOrgsAdapter{pg: pg, appender: appender}
 }
 
 func (a *postgresOrgsAdapter) LookupOrg(orgID string) (internalweb.OrgSummary, bool, error) {
@@ -68,23 +78,66 @@ func (a *postgresOrgsAdapter) RoleFor(orgID, fingerprint string) (string, error)
 }
 
 // ChangeMemberRole forwards to the central server's
-// PostgresStore and translates the server-package sentinel into
-// the web-side ErrUnknownMembership so handlers can errors.Is
-// without importing internal/central/server.
-func (a *postgresOrgsAdapter) ChangeMemberRole(orgID, fingerprint, newRole string) (string, error) {
-	prior, err := a.pg.ChangeMemberRole(context.Background(), orgID, fingerprint, newRole)
+// PostgresStore and emits an org.member.role_changed audit
+// event on a successful role transition. Translates the
+// server-package sentinel into the web-side
+// ErrUnknownMembership so handlers can errors.Is without
+// importing internal/central/server.
+//
+// changerFingerprint carries the authenticated caller's
+// identity (the session gate stamped it on the request
+// context; the handler pulled it back via SessionFromContext
+// and threaded it through here). Empty changerFingerprint still
+// emits — the audit ChangedBy field is just empty in that case
+// (matches the spec's "every action writes an audit entry"
+// intent even when the caller's identity is unknown to the
+// gate, which shouldn't happen in production but the dev
+// pass-through path allows).
+//
+// Audit emission is best-effort: a failure logs but doesn't
+// roll back the role change. PostgresAuditAppender already has
+// the same shape, mirroring the existing appendAuthAudit
+// behaviour on the central server.
+func (a *postgresOrgsAdapter) ChangeMemberRole(orgID, fingerprint, newRole, changerFingerprint string) (string, error) {
+	ctx := server.WithOrgID(context.Background(), orgID)
+	prior, err := a.pg.ChangeMemberRole(ctx, orgID, fingerprint, newRole)
 	if errors.Is(err, server.ErrUnknownMembership) {
 		return "", internalweb.ErrUnknownMembership
 	}
-	return prior, err
+	if err != nil {
+		return "", err
+	}
+	if prior != newRole && a.appender != nil {
+		_ = a.appender.Append(ctx, audit.EventTypeOrgMemberRoleChanged, audit.OrgMemberRoleChangedEvent{
+			OrgID:       orgID,
+			Fingerprint: fingerprint,
+			FromRole:    prior,
+			ToRole:      newRole,
+			ChangedBy:   changerFingerprint,
+		})
+	}
+	return prior, nil
 }
 
 // RemoveMember forwards to the central server's PostgresStore
-// with the same sentinel translation as ChangeMemberRole.
-func (a *postgresOrgsAdapter) RemoveMember(orgID, fingerprint string) (string, error) {
-	prior, err := a.pg.RemoveMember(context.Background(), orgID, fingerprint)
+// with the same sentinel translation as ChangeMemberRole, plus
+// an org.member.removed audit emission on success.
+func (a *postgresOrgsAdapter) RemoveMember(orgID, fingerprint, removerFingerprint string) (string, error) {
+	ctx := server.WithOrgID(context.Background(), orgID)
+	prior, err := a.pg.RemoveMember(ctx, orgID, fingerprint)
 	if errors.Is(err, server.ErrUnknownMembership) {
 		return "", internalweb.ErrUnknownMembership
 	}
-	return prior, err
+	if err != nil {
+		return "", err
+	}
+	if a.appender != nil {
+		_ = a.appender.Append(ctx, audit.EventTypeOrgMemberRemoved, audit.OrgMemberRemovedEvent{
+			OrgID:       orgID,
+			Fingerprint: fingerprint,
+			PriorRole:   prior,
+			RemovedBy:   removerFingerprint,
+		})
+	}
+	return prior, nil
 }

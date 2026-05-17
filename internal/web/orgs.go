@@ -56,13 +56,18 @@ type OrgsProjection interface {
 	RoleFor(orgID, fingerprint string) (string, error)
 	// ChangeMemberRole updates an existing member's role and
 	// returns the prior role so callers can audit the
-	// transition. Returns ErrUnknownMembership when no row
-	// matches; admin-only on the central web side.
-	ChangeMemberRole(orgID, fingerprint, newRole string) (priorRole string, err error)
+	// transition. changerFingerprint is the authenticated
+	// caller's identity (from the session gate) — the adapter
+	// stamps it into the org.member.role_changed audit event so
+	// reviewers can trace who did what. Returns
+	// ErrUnknownMembership when no row matches; admin-only on
+	// the central web side.
+	ChangeMemberRole(orgID, fingerprint, newRole, changerFingerprint string) (priorRole string, err error)
 	// RemoveMember deletes a membership and returns the prior
-	// role for the audit trail. Returns ErrUnknownMembership
-	// when no row matches.
-	RemoveMember(orgID, fingerprint string) (priorRole string, err error)
+	// role for the audit trail. removerFingerprint plays the
+	// same role as changerFingerprint on ChangeMemberRole.
+	// Returns ErrUnknownMembership when no row matches.
+	RemoveMember(orgID, fingerprint, removerFingerprint string) (priorRole string, err error)
 }
 
 // ErrUnknownMembership is the sentinel ChangeMemberRole +

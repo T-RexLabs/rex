@@ -86,6 +86,16 @@ func TestChangeMemberRoleHappyPath(t *testing.T) {
 	if got := orgs.roles["acme"]["fp-bob"]; got != "viewer" {
 		t.Errorf("role: got %q want viewer", got)
 	}
+	if len(orgs.changes) != 1 {
+		t.Fatalf("changes recorded: %d (want 1)", len(orgs.changes))
+	}
+	call := orgs.changes[0]
+	if call.OrgID != "acme" || call.Fingerprint != "fp-bob" || call.NewRole != "viewer" {
+		t.Errorf("change call: %+v", call)
+	}
+	if call.Changer != "fp-alice" {
+		t.Errorf("changer not threaded from session: %q (want fp-alice)", call.Changer)
+	}
 }
 
 // TestChangeMemberRoleRejectsNonAdmin keeps the admin gate
@@ -155,6 +165,12 @@ func TestRemoveMemberHappyPath(t *testing.T) {
 	}
 	if _, present := orgs.roles["acme"]["fp-bob"]; present {
 		t.Error("fp-bob still in roles after remove")
+	}
+	if len(orgs.removes) != 1 {
+		t.Fatalf("removes recorded: %d (want 1)", len(orgs.removes))
+	}
+	if orgs.removes[0].Changer != "fp-alice" {
+		t.Errorf("remover not threaded from session: %q (want fp-alice)", orgs.removes[0].Changer)
 	}
 }
 

@@ -16,11 +16,25 @@ import (
 // roles maps (orgID, fingerprint) → role string; when nil OR no
 // entry exists for the pair, RoleFor returns "" (no membership)
 // which the rbac helper treats as forbidden.
+//
+// changes / removes capture the changer/remover fingerprint
+// each mutation was called with so audit-emission tests can
+// assert the session gate threaded the right identity through.
 type stubOrgs struct {
 	orgs    map[string]internalweb.OrgSummary
 	members map[string][]internalweb.MembershipRow
 	roles   map[string]map[string]string
 	err     error
+
+	changes []stubMutationCall
+	removes []stubMutationCall
+}
+
+type stubMutationCall struct {
+	OrgID       string
+	Fingerprint string
+	NewRole     string
+	Changer     string
 }
 
 func (s *stubOrgs) LookupOrg(orgID string) (internalweb.OrgSummary, bool, error) {
@@ -45,7 +59,7 @@ func (s *stubOrgs) RoleFor(orgID, fingerprint string) (string, error) {
 	return s.roles[orgID][fingerprint], nil
 }
 
-func (s *stubOrgs) ChangeMemberRole(orgID, fingerprint, newRole string) (string, error) {
+func (s *stubOrgs) ChangeMemberRole(orgID, fingerprint, newRole, changer string) (string, error) {
 	if s.err != nil {
 		return "", s.err
 	}
@@ -57,10 +71,13 @@ func (s *stubOrgs) ChangeMemberRole(orgID, fingerprint, newRole string) (string,
 		return "", internalweb.ErrUnknownMembership
 	}
 	s.roles[orgID][fingerprint] = newRole
+	s.changes = append(s.changes, stubMutationCall{
+		OrgID: orgID, Fingerprint: fingerprint, NewRole: newRole, Changer: changer,
+	})
 	return prior, nil
 }
 
-func (s *stubOrgs) RemoveMember(orgID, fingerprint string) (string, error) {
+func (s *stubOrgs) RemoveMember(orgID, fingerprint, remover string) (string, error) {
 	if s.err != nil {
 		return "", s.err
 	}
@@ -72,6 +89,9 @@ func (s *stubOrgs) RemoveMember(orgID, fingerprint string) (string, error) {
 		return "", internalweb.ErrUnknownMembership
 	}
 	delete(s.roles[orgID], fingerprint)
+	s.removes = append(s.removes, stubMutationCall{
+		OrgID: orgID, Fingerprint: fingerprint, Changer: remover,
+	})
 	return prior, nil
 }
 

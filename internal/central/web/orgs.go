@@ -136,7 +136,8 @@ func (s *Server) handleOrgMemberRoleChange(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "central web: role is required", http.StatusBadRequest)
 		return
 	}
-	prior, err := s.opts.Orgs.ChangeMemberRole(orgID, fp, newRole)
+	changer, _ := SessionFromContext(r.Context())
+	prior, err := s.opts.Orgs.ChangeMemberRole(orgID, fp, newRole, changer.Fingerprint)
 	switch {
 	case errors.Is(err, internalweb.ErrUnknownMembership):
 		http.NotFound(w, r)
@@ -169,7 +170,8 @@ func (s *Server) handleOrgMemberRemove(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	prior, err := s.opts.Orgs.RemoveMember(orgID, fp)
+	remover, _ := SessionFromContext(r.Context())
+	prior, err := s.opts.Orgs.RemoveMember(orgID, fp, remover.Fingerprint)
 	switch {
 	case errors.Is(err, internalweb.ErrUnknownMembership):
 		http.NotFound(w, r)

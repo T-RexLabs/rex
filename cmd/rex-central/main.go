@@ -23,6 +23,7 @@ import (
 	"github.com/asabla/rex/internal/central/server"
 	centralweb "github.com/asabla/rex/internal/central/web"
 	"github.com/asabla/rex/internal/cmdhelp"
+	"github.com/asabla/rex/internal/core/identity"
 	internalweb "github.com/asabla/rex/internal/web"
 )
 
@@ -182,9 +183,41 @@ lost on restart.
 					"store", "memory",
 				)
 			}
+			// Build the audit appender before constructing the
+			// server so opts.AuthAudit can carry it through.
+			// Without this the auth.go appendAuthAudit calls
+			// silently dropped every auth event in production
+			// (the field was wired but always nil). The
+			// appender targets the same PostgresStore the events
+			// flow already uses; in-memory mode (no --db) gets
+			// nil and auth events continue to drop silently —
+			// that's the dev/test path.
+			var auditAppender *server.PostgresAuditAppender
+			if pg != nil {
+				auditAppender = server.NewPostgresAuditAppender(pg, identity.Actor{
+					Role: identity.RoleCentral,
+					// Fingerprint stamps below once we have a
+					// server.Server (its Actor() includes the
+					// generated keypair's fingerprint).
+				})
+			}
+			if auditAppender != nil {
+				opts.AuthAudit = auditAppender
+			}
 			s, err := server.New(opts)
 			if err != nil {
 				return fmt.Errorf("build server: %w", err)
+			}
+			if auditAppender != nil {
+				// Restamp the appender's actor now that the
+				// server has minted its keypair. The first
+				// appender construction above was needed to
+				// satisfy opts.AuthAudit; this swap aligns
+				// audit entries with the central node's true
+				// actor string before the listener accepts
+				// traffic.
+				auditAppender = server.NewPostgresAuditAppender(pg, s.Actor())
+				opts.AuthAudit = auditAppender
 			}
 
 			// Mount the web shell as a fallback handler when --web
@@ -222,10 +255,11 @@ lost on restart.
 					// Org-admin pages need a workspace-id-independent
 					// read against the org / membership tables. The
 					// memory store has no org concept, so wire the
-					// adapter only when --db (Postgres) is on.
-					// Mutation surfaces (invite, role change, removal)
-					// are still pending central-node.RBAC-SVR.1.
-					webOpts.Orgs = newPostgresOrgsAdapter(pg)
+					// adapter only when --db (Postgres) is on. The
+					// adapter also takes the audit appender so
+					// mutations emit org.member.* audit events on
+					// success (CENTRAL.3).
+					webOpts.Orgs = newPostgresOrgsAdapter(pg, auditAppender)
 				}
 				webShell, err := centralweb.New(webOpts)
 				if err != nil {
