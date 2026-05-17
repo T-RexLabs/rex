@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -221,6 +222,81 @@ func TestCentralSearchRendersNoticeWithoutProjection(t *testing.T) {
 	// The query echoes back so the URL is shareable.
 	if !strings.Contains(html, `value="hello"`) {
 		t.Errorf("query value not preserved on the form: %s", html)
+	}
+}
+
+// stubSearchBackend lets the central search projection be
+// exercised without a real Postgres FTS index. Returns whatever
+// hits the test seeds; tracks the last call so assertions can
+// verify the projection passed workspaceID / query / limit
+// through unchanged.
+type stubSearchBackend struct {
+	hits  []SearchHit
+	calls []stubSearchCall
+}
+
+type stubSearchCall struct {
+	workspaceID string
+	query       string
+	limit       int
+}
+
+func (b *stubSearchBackend) Search(_ context.Context, workspaceID, query string, limit int) ([]SearchHit, error) {
+	b.calls = append(b.calls, stubSearchCall{workspaceID, query, limit})
+	return b.hits, nil
+}
+
+// TestCentralSearchRendersHitsWhenBackendWired covers the
+// happy path: Postgres FTS surface is bound, search returns
+// hits, and the page renders them via the shared template + the
+// MarkupSnippet helper.
+func TestCentralSearchRendersHitsWhenBackendWired(t *testing.T) {
+	t.Parallel()
+	backend := &stubSearchBackend{hits: []SearchHit{
+		{EntityType: "spec", EntityID: "sync", Title: "sync", Snippet: "...<<replication>> semantics...", Score: 0.42},
+		{EntityType: "event", EntityID: "ev-1", Title: "test.event", Snippet: "<<replication>> completed", Score: 0.1},
+	}}
+	resolver := NewGitStoreResolverWithSearch(stubGitStore{entries: map[string]string{}}, nil, backend)
+	s, err := New(Options{Version: "test", Resolver: resolver})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/orgs/acme/workspaces/ws-1/search?q=replication&n=15")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: %d body: %s", resp.StatusCode, body)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	html := string(body)
+	if !strings.Contains(html, "<mark>replication</mark>") {
+		t.Errorf("snippet markup not applied; body=%s", html)
+	}
+	if !strings.Contains(html, "sync") || !strings.Contains(html, "ev-1") {
+		t.Errorf("missing hit ids; body=%s", html)
+	}
+	if strings.Contains(html, "central search backend not yet wired") {
+		t.Errorf("notice should NOT render when backend is bound: %s", html)
+	}
+	// Verify the backend got the right scoping + limit.
+	if len(backend.calls) != 1 {
+		t.Fatalf("backend calls: %d (want 1)", len(backend.calls))
+	}
+	got := backend.calls[0]
+	if got.workspaceID != "ws-1" {
+		t.Errorf("workspaceID: got %q want ws-1", got.workspaceID)
+	}
+	if got.query != "replication" {
+		t.Errorf("query: got %q want replication", got.query)
+	}
+	if got.limit != 15 {
+		t.Errorf("limit: got %d want 15", got.limit)
 	}
 }
 

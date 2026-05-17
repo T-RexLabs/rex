@@ -112,6 +112,18 @@ func NewGitStoreResolver(git GitEntityReader, events EventReader) internalweb.Wo
 	return centralWorkspaceResolver{git: git, events: events}
 }
 
+// NewGitStoreResolverWithSearch is NewGitStoreResolver plus a
+// Postgres-backed search surface (central-node.DB.4). Wired by
+// cmd/rex-central when --db is set so the /search page can
+// dispatch real queries instead of rendering the v1 "not yet
+// wired" notice. Any of git / events / search may be nil; the
+// corresponding projection on the returned Workspace will then
+// be nil and the page falls back to its respective empty / 503
+// behaviour.
+func NewGitStoreResolverWithSearch(git GitEntityReader, events EventReader, search SearchHitReader) internalweb.WorkspaceResolver {
+	return centralWorkspaceResolver{git: git, events: events, search: search}
+}
+
 // Server is the central node's web UI handler. It owns a small
 // http.ServeMux and a shared *internalweb.Renderer; routes register
 // on the mux. Construction is the wiring test — if internal/web is

@@ -1,11 +1,72 @@
 package web
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
 	internalweb "github.com/asabla/rex/internal/web"
 )
+
+// SearchHitReader is the central-side surface the web shell's
+// search projection queries. The central server's PostgresSearch
+// satisfies it directly; cmd/rex-central binds the concrete
+// instance via NewGitStoreResolverWithSearch. v1 dev mode (no
+// --db) leaves the projection nil and the handler renders the
+// "not yet wired" notice unchanged.
+type SearchHitReader interface {
+	Search(ctx context.Context, workspaceID, query string, limit int) ([]SearchHit, error)
+}
+
+// SearchHit is the web-shell-side mirror of
+// server.SearchHit. Kept independent so internal/central/web
+// stays free of an internal/central/server import.
+type SearchHit struct {
+	EntityType string
+	EntityID   string
+	Title      string
+	Snippet    string
+	Score      float32
+}
+
+// centralSearchProjection satisfies internalweb.SearchProjection
+// by dispatching against a workspace-scoped SearchHitReader
+// (typically *server.PostgresSearch from cmd/rex-central).
+type centralSearchProjection struct {
+	backend     SearchHitReader
+	workspaceID string
+	ctx         context.Context
+}
+
+func newCentralSearchProjection(ctx context.Context, backend SearchHitReader, workspaceID string) centralSearchProjection {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return centralSearchProjection{backend: backend, workspaceID: workspaceID, ctx: ctx}
+}
+
+func (p centralSearchProjection) Search(query string, opts internalweb.SearchOptions) ([]internalweb.SearchResultRow, error) {
+	if p.backend == nil || p.workspaceID == "" {
+		return nil, nil
+	}
+	hits, err := p.backend.Search(p.ctx, p.workspaceID, query, opts.Limit)
+	if err != nil {
+		return nil, fmt.Errorf("central search: %w", err)
+	}
+	rows := make([]internalweb.SearchResultRow, 0, len(hits))
+	for _, h := range hits {
+		rows = append(rows, internalweb.SearchResultRow{
+			Type:    h.EntityType,
+			ID:      h.EntityID,
+			Title:   h.Title,
+			Snippet: internalweb.MarkupSnippet(h.Snippet),
+			Score:   float64(h.Score),
+			Href:    internalweb.HrefForEntity(h.EntityType, h.EntityID),
+		})
+	}
+	return rows, nil
+}
 
 // centralSearchData backs search.tmpl on the central shell. The
 // envelope mirrors the local one's field names so the shared

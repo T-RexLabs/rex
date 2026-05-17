@@ -692,6 +692,50 @@ var schemaSteps = []string{
 			USING      (org_id::text = current_setting('app.current_org_id', true))
 			WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
 	`,
+
+	// 7: Postgres FTS over events + git_entities
+	//    (central-node.DB.4 — "Postgres FTS (built-in) handles
+	//    the search index"). Wires the central /search page's
+	//    backend; the web shell consumed a "not yet wired"
+	//    notice until this step ships.
+	//
+	// Two parallel surfaces mirror the local SQLite FTS shape
+	// (events_fts + specs_fts):
+	//
+	//   events.tsv         — generated from payload::text. JSONB
+	//                        stringifies for lexing; English
+	//                        dictionary is fine for v1 (typed-
+	//                        by-humans payloads). Per-locale
+	//                        tuning can land in a parallel
+	//                        column later.
+	//   git_entities.tsv   — generated from content. The /search
+	//                        spec-side reads from this via WHERE
+	//                        path LIKE 'specs/%.yaml' AND
+	//                        path NOT LIKE 'specs/_proposed/%'
+	//                        so amendments don't surface on the
+	//                        main specs results.
+	//
+	// GENERATED ALWAYS AS ... STORED keeps the column in sync
+	// without a trigger (Postgres 12+). GIN indexes give @@
+	// sub-linear lookups — fine for the v1 single-central-per-
+	// tenant scale.
+	//
+	// Org + workspace isolation rides through the application
+	// WHERE org_id = $1 AND workspace_id = $2 the search
+	// projection always adds; the underlying RLS policy on
+	// events / git_entities continues to enforce defense-in-
+	// depth for non-owner roles.
+	`
+		ALTER TABLE events
+			ADD COLUMN IF NOT EXISTS tsv tsvector
+			GENERATED ALWAYS AS (to_tsvector('english', payload::text)) STORED;
+		CREATE INDEX IF NOT EXISTS events_tsv_idx ON events USING GIN(tsv);
+
+		ALTER TABLE git_entities
+			ADD COLUMN IF NOT EXISTS tsv tsvector
+			GENERATED ALWAYS AS (to_tsvector('english', content)) STORED;
+		CREATE INDEX IF NOT EXISTS git_entities_tsv_idx ON git_entities USING GIN(tsv);
+	`,
 }
 
 // DefaultOrgName is the seeded org's name. Used by

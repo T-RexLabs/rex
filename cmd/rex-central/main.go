@@ -23,6 +23,7 @@ import (
 	"github.com/asabla/rex/internal/central/server"
 	centralweb "github.com/asabla/rex/internal/central/web"
 	"github.com/asabla/rex/internal/cmdhelp"
+	internalweb "github.com/asabla/rex/internal/web"
 )
 
 // version is set at build time via -ldflags. Defaults to "dev" for
@@ -201,11 +202,21 @@ lost on restart.
 					// centralweb.GitEntityReader subset (Get + List);
 					// the event Store satisfies centralweb.EventReader
 					// (Since). The workspace resolver maps a ws-id to
-					// projections backed by both. v1 limitation: both
-					// stores are single-workspace today, so the
-					// resolver returns the same projections regardless
-					// of ws-id until the multi-workspace refactor lands.
-					Resolver: centralweb.NewGitStoreResolver(s.GitStore(), s.Store()),
+					// projections backed by both. When pg is wired
+					// (--db Postgres), the resolver also carries a
+					// PostgresSearch backend so /search runs real
+					// queries; in-memory dev mode falls back to the
+					// "search backend not yet wired" notice.
+					Resolver: func() internalweb.WorkspaceResolver {
+						if pg != nil {
+							return centralweb.NewGitStoreResolverWithSearch(
+								s.GitStore(),
+								s.Store(),
+								searchAdapter{search: server.NewPostgresSearch(pg)},
+							)
+						}
+						return centralweb.NewGitStoreResolver(s.GitStore(), s.Store())
+					}(),
 				}
 				if pg != nil {
 					// Org-admin pages need a workspace-id-independent

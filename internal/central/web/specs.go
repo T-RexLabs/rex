@@ -136,6 +136,7 @@ func isSpecPath(path string) bool {
 type centralWorkspaceResolver struct {
 	git    GitEntityReader
 	events EventReader
+	search SearchHitReader
 }
 
 func newCentralWorkspaceResolver(store GitEntityReader) centralWorkspaceResolver {
@@ -158,8 +159,9 @@ func (r centralWorkspaceResolver) Resolve(workspaceID string) (internalweb.Works
 		ws.RunDetail = newCentralRunDetailProjection(ctx, r.events, workspaceID)
 		ws.Audit = newCentralAuditProjection(ctx, r.events, workspaceID)
 	}
-	// ws.Search stays nil in v1; the central search handler
-	// renders the notice when the projection is unbound.
+	if r.search != nil {
+		ws.Search = newCentralSearchProjection(ctx, r.search, workspaceID)
+	}
 	return ws, nil
 }
 
