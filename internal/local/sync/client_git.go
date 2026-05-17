@@ -138,6 +138,69 @@ func (c *Client) GitPush(ctx context.Context, workspaceID, entity, baseRevision,
 // pass already-hex-encoded signatures, kept here for symmetry.
 var _ = hex.EncodeToString
 
+// GitSyncReport summarises a GitSyncOnly run: which entries
+// were freshly pushed, which were already up to date, which
+// conflicted. Conflict surfaces an entry list rather than
+// aborting the whole sync so a partial batch isn't lost.
+type GitSyncReport struct {
+	Pushed     []string // entries the server accepted (created or updated)
+	Unchanged  []string // entries whose local revision matched the server's
+	Conflicted []string // entries the server rejected with a revision conflict
+}
+
+// GitSyncOnly walks the workspace's git-merged files and pushes
+// each to the central via /sync/git. For each entry:
+//
+//   - GitPull to learn the server's current revision (404 = new).
+//   - Skip when the local content's revision already matches.
+//   - Otherwise GitPush with baseRevision = server's current
+//     (or empty when the entry is new). Conflicts go into the
+//     report rather than aborting — the user can fix the
+//     diverged file and re-run.
+//
+// A configured Signer is required: each push canonical-signs
+// the (workspaceID, path, baseRevision, content) tuple per
+// sync.SEC.1.
+func (c *Client) GitSyncOnly(ctx context.Context, workspaceID string, entries []GitEntry) (GitSyncReport, error) {
+	if workspaceID == "" {
+		return GitSyncReport{}, errors.New("sync: GitSyncOnly requires a workspace id")
+	}
+	if c.signer == nil {
+		return GitSyncReport{}, errors.New("sync: GitSyncOnly requires a Signer (pass via WithSigner)")
+	}
+	var report GitSyncReport
+	for _, entry := range entries {
+		baseRev := ""
+		newRev := proto.GitContentRevision(entry.Content)
+		if current, err := c.GitPull(ctx, workspaceID, entry.Path); err == nil {
+			if current.Revision == newRev {
+				report.Unchanged = append(report.Unchanged, entry.Path)
+				continue
+			}
+			baseRev = current.Revision
+		} else if !errors.Is(err, ErrUnknownGitEntity) {
+			return report, fmt.Errorf("git pull %q: %w", entry.Path, err)
+		}
+		canonical, err := proto.GitSigningBytes(workspaceID, entry.Path, baseRev, entry.Content)
+		if err != nil {
+			return report, fmt.Errorf("canonical %q: %w", entry.Path, err)
+		}
+		sig, err := c.signer.Sign(ctx, canonical)
+		if err != nil {
+			return report, fmt.Errorf("sign %q: %w", entry.Path, err)
+		}
+		if _, err := c.GitPush(ctx, workspaceID, entry.Path, baseRev, entry.Content, hex.EncodeToString(sig)); err != nil {
+			if IsGitConflict(err) {
+				report.Conflicted = append(report.Conflicted, entry.Path)
+				continue
+			}
+			return report, fmt.Errorf("git push %q: %w", entry.Path, err)
+		}
+		report.Pushed = append(report.Pushed, entry.Path)
+	}
+	return report, nil
+}
+
 // url2PathEscape escapes a single path segment (no slashes). The
 // alias keeps the import-renaming optional at the call site.
 var url2PathEscape = url.PathEscape

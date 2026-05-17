@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -254,18 +255,61 @@ func runSyncFn(cmd *cobra.Command, _ []string) error {
 		return formatSyncError(err)
 	}
 
+	// Push git-merged content (specs / workspace.yaml / amendments
+	// / etc) alongside the event push. Best-effort — a git failure
+	// surfaces but doesn't roll back the event push; the
+	// (workspace_id, path) PK on the central makes re-runs
+	// idempotent so the user can fix and re-sync.
+	gitReport, gitErr := syncWorkspaceGit(cmd, c, root)
+
 	if jsonOutput(cmd) {
-		return writeJSON(cmd, map[string]any{
+		out := map[string]any{
 			"pulled":     res.Pulled,
 			"head_id":    res.Push.HeadID,
 			"pushed":     res.Push.Accepted,
 			"duplicates": res.Push.Duplicates,
-		})
+		}
+		if gitErr != nil {
+			out["git_error"] = gitErr.Error()
+		}
+		out["git_pushed"] = gitReport.Pushed
+		out["git_unchanged"] = gitReport.Unchanged
+		out["git_conflicted"] = gitReport.Conflicted
+		return writeJSON(cmd, out)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(),
-		"sync ok: pulled=%d pushed=%d duplicates=%d head=%s\n",
-		res.Pulled, res.Push.Accepted, res.Push.Duplicates, res.Push.HeadID)
+		"sync ok: pulled=%d pushed=%d duplicates=%d head=%s; git pushed=%d unchanged=%d conflicted=%d\n",
+		res.Pulled, res.Push.Accepted, res.Push.Duplicates, res.Push.HeadID,
+		len(gitReport.Pushed), len(gitReport.Unchanged), len(gitReport.Conflicted))
+	if len(gitReport.Conflicted) > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(),
+			"  conflicted (resolve locally then re-sync): %s\n",
+			strings.Join(gitReport.Conflicted, ", "))
+	}
+	if gitErr != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: git sync surfaced an error: %v\n", gitErr)
+	}
 	return nil
+}
+
+// syncWorkspaceGit walks the workspace's git-merged files and
+// pushes them via /sync/git. Returns the (possibly partial)
+// report alongside any error. The caller decides whether the
+// error is fatal — `rex sync` treats it as best-effort and
+// just surfaces it.
+func syncWorkspaceGit(cmd *cobra.Command, c *syncclient.Client, root string) (syncclient.GitSyncReport, error) {
+	entries, err := syncclient.WalkWorkspaceGit(root)
+	if err != nil {
+		return syncclient.GitSyncReport{}, fmt.Errorf("walk workspace git: %w", err)
+	}
+	if len(entries) == 0 {
+		return syncclient.GitSyncReport{}, nil
+	}
+	wsID, err := workspaceID(root)
+	if err != nil {
+		return syncclient.GitSyncReport{}, fmt.Errorf("resolve workspace id: %w", err)
+	}
+	return c.GitSyncOnly(cmd.Context(), wsID, entries)
 }
 
 // formatSyncError dresses the typed *ConflictError so the CLI says

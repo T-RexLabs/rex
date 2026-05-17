@@ -65,6 +65,26 @@ func (s *Server) handleGitPush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Tenant routing: same path /sync/events takes. The git store's
+	// withOrgScope reads OrgIDFromContext on every Put/Get, and the
+	// RBAC permission check below needs the org id too. Without
+	// this, both would 500 with "missing org id on context".
+	if pusher != (identity.Fingerprint{}) {
+		orgID, _, err := s.resolveOrgForRequest(r, pusher.String())
+		if err != nil {
+			var te *tenantStatusError
+			if errors.As(err, &te) {
+				writeError(w, te.status, te.code, te.msg)
+			} else {
+				writeError(w, http.StatusInternalServerError, proto.ErrCodeServerError, err.Error())
+			}
+			return
+		}
+		if orgID != "" {
+			r = r.WithContext(WithOrgID(r.Context(), orgID))
+		}
+	}
+
 	// RBAC gate (identity-and-trust.RBAC.1). Skipped in dev mode
 	// (no keystore → no fingerprint to authorize against).
 	if pusher != (identity.Fingerprint{}) {
@@ -182,7 +202,20 @@ func (s *Server) handleGitPull(w http.ResponseWriter, r *http.Request) {
 		// membership (or X-Rex-Org for multi-org identities, set
 		// by the same middleware that handles /sync/events).
 		orgID, _, err := s.resolveOrgForRequest(r, puller.String())
-		if err == nil && orgID != "" {
+		if err != nil {
+			var te *tenantStatusError
+			if errors.As(err, &te) {
+				writeError(w, te.status, te.code, te.msg)
+			} else {
+				writeError(w, http.StatusInternalServerError, proto.ErrCodeServerError, err.Error())
+			}
+			return
+		}
+		if orgID != "" {
+			// Stamp WithOrgID so gitStore.Get's withOrgScope finds
+			// the scope it needs; the same context flows into the
+			// Get call below.
+			r = r.WithContext(WithOrgID(r.Context(), orgID))
 			if err := s.requirePermission(r.Context(), puller.String(), orgID, rbac.PermGitPull, "", "", ""); err != nil {
 				s.writeRBACDenied(w, r, err)
 				return
