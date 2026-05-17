@@ -16,7 +16,46 @@
       <span>created {{.WorkspaceCreatedAt}}</span>
     {{end}}
   </div>
+  <div class="meta meta-spread">
+    <span>{{.SpecCount}} spec{{if ne .SpecCount 1}}s{{end}}</span>
+    <span>{{.RunCount}} run{{if ne .RunCount 1}}s{{end}}</span>
+  </div>
 </header>
+
+<section class="section">
+  <div class="section-head">
+    <h2>recent runs</h2>
+    <a class="section-meta" href="/orgs/{{.OrgID}}/workspaces/{{.Workspace.ID}}/runs">all runs <span aria-hidden="true">&rarr;</span></a>
+  </div>
+  {{if .RecentRuns}}
+    <div class="card">
+      <table class="table sortable">
+        <thead>
+          <tr>
+            <th data-sort-type="string">name</th>
+            <th data-sort-type="string">kind</th>
+            <th data-sort-type="string">status</th>
+            <th data-sort-type="date" data-sort-default="desc" aria-sort="descending">started</th>
+            <th data-sort-type="number" class="col-numeric">duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .RecentRuns}}
+          <tr>
+            <td><a href="{{.LinkBase}}/runs/{{.RunID}}"><code>{{.Name}}</code></a></td>
+            <td><span class="pill pill-{{.Kind}}">{{.Kind}}</span></td>
+            <td><span class="pill pill-{{.Status}}"><i class="dot"></i>{{.Status}}</span></td>
+            <td><time>{{.StartedAt}}</time></td>
+            <td class="col-numeric">{{if .Duration}}{{.Duration}}{{else}}<span class="dim">&mdash;</span>{{end}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  {{else}}
+    <p class="muted small">no runs synced yet &mdash; <code>rex push</code> from a local workspace to populate.</p>
+  {{end}}
+</section>
 
 <section class="section">
   <div class="section-head">

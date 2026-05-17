@@ -3,19 +3,25 @@ package web
 import (
 	"context"
 	"net/http"
+
+	internalweb "github.com/asabla/rex/internal/web"
 )
 
 // workspaceOverviewData backs workspace_overview.tmpl. Carries
-// just the metadata fields the dashboard header renders plus
-// whatever centralPageData the shared base.tmpl expects. Card
-// links in the template are static — derived from .OrgID +
-// .WorkspaceID at render time, so the handler doesn't pass a
-// per-card list.
+// the workspace.yaml metadata the dashboard header renders, plus
+// the at-a-glance stat row + recent-runs preview the local home
+// has had since v1 (parity gap closed here so central's
+// workspace landing isn't just a sitemap of cards). Card links
+// stay static — derived from .OrgID + .WorkspaceID at render
+// time, so the handler doesn't pass a per-card list.
 type workspaceOverviewData struct {
 	centralPageData
 	WorkspaceName      string
 	WorkspaceState     string
 	WorkspaceCreatedAt string
+	SpecCount          int
+	RunCount           int
+	RecentRuns         []internalweb.RunRow
 }
 
 // handleWorkspaceOverview is GET /orgs/<org>/workspaces/<ws>.
@@ -59,6 +65,27 @@ func (s *Server) handleWorkspaceOverview(w http.ResponseWriter, r *http.Request)
 			data.WorkspaceName = fields.Name
 			data.WorkspaceState = fields.State
 			data.WorkspaceCreatedAt = fields.CreatedAt
+		}
+	}
+	// At-a-glance stats + recent runs. Best-effort: a failing or
+	// unbound projection just leaves its counter / table empty so
+	// a fresh deployment with no synced content still 200s.
+	if ws.Specs != nil {
+		if rows, err := ws.Specs.ListSpecs(); err == nil {
+			data.SpecCount = len(rows)
+		}
+	}
+	if ws.Runs != nil {
+		if rows, err := ws.Runs.ListRuns(); err == nil {
+			data.RunCount = len(rows)
+			base := "/orgs/" + orgID + "/workspaces/" + wsID
+			for i := range rows {
+				rows[i].LinkBase = base
+			}
+			if len(rows) > 5 {
+				rows = rows[:5]
+			}
+			data.RecentRuns = rows
 		}
 	}
 	s.renderer.Render(w, r, "workspace_overview.tmpl", data)
