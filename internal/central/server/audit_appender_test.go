@@ -105,3 +105,69 @@ func TestPostgresStoreSinceIsOrgScoped(t *testing.T) {
 		}
 	}
 }
+
+// TestPostgresAuditAppenderAppendManyBatchedWrite covers the
+// bulk path: a single AppendMany call lands every event in one
+// underlying store transaction. Mirrors how a future caller that
+// fans out (bulk member changes, multi-amendment import) would
+// drive the appender — without this path each emission would
+// open its own tx and the wins from Store.AppendBatch would be
+// lost in the audit layer.
+func TestPostgresAuditAppenderAppendManyBatchedWrite(t *testing.T) {
+	t.Parallel()
+	store, _ := freshPostgresStore(t)
+	ctx := defaultOrgCtx(t, store)
+	actor := identity.Actor{Role: identity.RoleCentral, Fingerprint: identity.Fingerprint{}}
+	appender := NewPostgresAuditAppender(store, actor)
+	orgID := OrgIDFromContext(ctx)
+
+	events := []AuditEvent{
+		{Type: audit.EventTypeOrgMemberRoleChanged, Payload: audit.OrgMemberRoleChangedEvent{
+			OrgID: orgID, Fingerprint: "fp-1", FromRole: "member", ToRole: "admin", ChangedBy: "fp-alice",
+		}},
+		{Type: audit.EventTypeOrgMemberRoleChanged, Payload: audit.OrgMemberRoleChangedEvent{
+			OrgID: orgID, Fingerprint: "fp-2", FromRole: "member", ToRole: "admin", ChangedBy: "fp-alice",
+		}},
+		{Type: audit.EventTypeOrgMemberRoleChanged, Payload: audit.OrgMemberRoleChangedEvent{
+			OrgID: orgID, Fingerprint: "fp-3", FromRole: "admin", ToRole: "member", ChangedBy: "fp-alice",
+		}},
+	}
+	if err := appender.AppendMany(ctx, events); err != nil {
+		t.Fatalf("AppendMany: %v", err)
+	}
+
+	got, err := store.Since(ctx, "")
+	if err != nil {
+		t.Fatalf("Since: %v", err)
+	}
+	var seen int
+	for _, r := range got {
+		if r.Type == audit.EventTypeOrgMemberRoleChanged {
+			seen++
+		}
+	}
+	if seen != 3 {
+		t.Fatalf("audit rows: got %d want 3", seen)
+	}
+}
+
+// TestPostgresAuditAppenderAppendManyEmptyIsNoop confirms an
+// empty AppendMany returns nil + writes nothing — callers that
+// build the batch dynamically don't need to guard the call site.
+func TestPostgresAuditAppenderAppendManyEmptyIsNoop(t *testing.T) {
+	t.Parallel()
+	store, _ := freshPostgresStore(t)
+	ctx := defaultOrgCtx(t, store)
+	actor := identity.Actor{Role: identity.RoleCentral, Fingerprint: identity.Fingerprint{}}
+	appender := NewPostgresAuditAppender(store, actor)
+	if err := appender.AppendMany(ctx, nil); err != nil {
+		t.Errorf("nil: %v", err)
+	}
+	if err := appender.AppendMany(ctx, []AuditEvent{}); err != nil {
+		t.Errorf("empty slice: %v", err)
+	}
+	n, _ := store.Len(ctx)
+	if n != 0 {
+		t.Fatalf("len after empty AppendMany: got %d want 0", n)
+	}
+}

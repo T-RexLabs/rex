@@ -147,3 +147,79 @@ func TestStoreSinceLatestReturnsEmpty(t *testing.T) {
 		t.Fatalf("expected empty tail, got %d records", len(got))
 	}
 }
+
+func TestStoreAppendBatchEmptyIsNoop(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	s := NewStore()
+	added, err := s.AppendBatch(ctx, nil)
+	if err != nil {
+		t.Fatalf("AppendBatch: %v", err)
+	}
+	if len(added) != 0 {
+		t.Fatalf("empty input should add nothing: %v", added)
+	}
+}
+
+func TestStoreAppendBatchHappyPath(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	s := NewStore()
+	in := []eventlog.Record{mkRec("a"), mkRec("b"), mkRec("c")}
+	added, err := s.AppendBatch(ctx, in)
+	if err != nil {
+		t.Fatalf("AppendBatch: %v", err)
+	}
+	if len(added) != 3 {
+		t.Fatalf("added: got %d want 3", len(added))
+	}
+	for i, want := range []string{"a", "b", "c"} {
+		if added[i] != want {
+			t.Errorf("added[%d]: got %q want %q", i, added[i], want)
+		}
+	}
+	n, _ := s.Len(ctx)
+	if n != 3 {
+		t.Fatalf("len after batch: got %d want 3", n)
+	}
+}
+
+func TestStoreAppendBatchSkipsDuplicates(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	s := NewStore()
+	if _, err := s.AppendBatch(ctx, []eventlog.Record{mkRec("a"), mkRec("b")}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// Second batch has one new ("c") + two dupes ("a", "b").
+	added, err := s.AppendBatch(ctx, []eventlog.Record{mkRec("a"), mkRec("c"), mkRec("b")})
+	if err != nil {
+		t.Fatalf("AppendBatch: %v", err)
+	}
+	if len(added) != 1 || added[0] != "c" {
+		t.Fatalf("added: got %v want [c]", added)
+	}
+	n, _ := s.Len(ctx)
+	if n != 3 {
+		t.Fatalf("len after dup batch: got %d want 3", n)
+	}
+}
+
+func TestStoreAppendBatchRejectsEmptyID(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	s := NewStore()
+	in := []eventlog.Record{mkRec("a"), {}, mkRec("c")}
+	if _, err := s.AppendBatch(ctx, in); err == nil {
+		t.Fatal("expected error for empty id in batch")
+	}
+	// All-or-nothing: nothing should have landed.
+	n, _ := s.Len(ctx)
+	if n != 0 {
+		t.Fatalf("partial write on validation failure: len=%d", n)
+	}
+}

@@ -259,6 +259,144 @@ func (s *PostgresStore) Append(ctx context.Context, rec eventlog.Record) (bool, 
 	return added, nil
 }
 
+// AppendBatch is the bulk path: one transaction, one workspace
+// upsert per distinct workspace id in the batch, one multi-row
+// event INSERT. Returns (addedCount, duplicateCount). Atomic:
+// either every fresh record lands or none, so a partial-success
+// failure mode never leaks to the wire (the per-request response
+// only ever reports one accepted / duplicates pair).
+//
+// Why batch matters: the per-record Append path was the central's
+// dominant push cost — each record cost a BEGIN + set_config +
+// workspace upsert + event insert + COMMIT round-trip, so a
+// 4000-event push burned ~20 000 RTTs against the database before
+// any real work. AppendBatch collapses that to ~5 RTTs total
+// (workspaces upsert + events insert + commit), independent of N.
+// The same path benefits anything that fans out audit emissions
+// — see PostgresAuditAppender.AppendMany.
+//
+// pgx encodes multi-row INSERTs efficiently when we pass each
+// column as a parallel slice and use unnest() on the server side
+// — this also keeps the prepared-statement plan stable regardless
+// of batch size (a literal VALUES (...),(...) would re-prepare
+// per N).
+func (s *PostgresStore) AppendBatch(ctx context.Context, recs []eventlog.Record) ([]string, error) {
+	if len(recs) == 0 {
+		return nil, nil
+	}
+	for _, rec := range recs {
+		if rec.ID == "" {
+			return nil, errors.New("server: append requires a non-empty record id")
+		}
+	}
+
+	// Column slices for the unnest() insert. Pre-sized so we
+	// don't realloc inside the loop.
+	n := len(recs)
+	ids := make([]string, n)
+	walls := make([]int64, n)
+	logicals := make([]int64, n)
+	types := make([]string, n)
+	versions := make([]int64, n)
+	actors := make([]string, n)
+	workspaceIDs := make([]string, n)
+	payloads := make([]string, n)
+	signatures := make([]string, n)
+
+	// Distinct workspaces — one upsert each so we don't re-issue
+	// the same INSERT for every record citing the same workspace.
+	workspaceActors := map[string]string{}
+	distinctWorkspaces := make([]string, 0)
+
+	for i, rec := range recs {
+		payload := rec.Payload
+		if len(payload) == 0 {
+			payload = json.RawMessage("null")
+		}
+		ids[i] = rec.ID
+		walls[i] = rec.Timestamp.Wall
+		logicals[i] = int64(rec.Timestamp.Logical)
+		types[i] = rec.Type
+		versions[i] = int64(rec.Version)
+		actors[i] = rec.Actor
+		workspaceIDs[i] = rec.WorkspaceID
+		payloads[i] = string(payload)
+		signatures[i] = rec.Signature
+
+		if rec.WorkspaceID != "" {
+			if _, seen := workspaceActors[rec.WorkspaceID]; !seen {
+				workspaceActors[rec.WorkspaceID] = rec.Actor
+				distinctWorkspaces = append(distinctWorkspaces, rec.WorkspaceID)
+			}
+		}
+	}
+
+	added := make([]string, 0, n)
+	err := s.withOrgScope(ctx, func(tx pgx.Tx) error {
+		orgID := OrgIDFromContext(ctx)
+
+		// Workspace bindings: one row per distinct workspace.
+		// Same ON CONFLICT DO NOTHING semantics as the
+		// per-record path (sync.ORG.6-note first-push-wins).
+		if len(distinctWorkspaces) > 0 {
+			wsActors := make([]string, len(distinctWorkspaces))
+			for i, id := range distinctWorkspaces {
+				wsActors[i] = workspaceActors[id]
+			}
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO workspaces (id, org_id, first_actor)
+				SELECT id, $2, first_actor
+				FROM unnest($1::text[], $3::text[]) AS t(id, first_actor)
+				ON CONFLICT (id) DO NOTHING
+			`, distinctWorkspaces, orgID, wsActors); err != nil {
+				return fmt.Errorf("server: bind workspaces: %w", err)
+			}
+		}
+
+		// Multi-row event insert. The RETURNING id rows give us
+		// exactly the records that landed; duplicates are silently
+		// skipped by the ON CONFLICT clause and excluded from the
+		// returned slice.
+		rows, err := tx.Query(ctx, `
+			INSERT INTO events (
+				id, hlc_wall, hlc_logical,
+				type, version, actor, workspace_id, payload, signature, org_id
+			)
+			SELECT id, hlc_wall, hlc_logical, type, version, actor, workspace_id, payload::jsonb, signature, $10
+			FROM unnest(
+				$1::text[], $2::bigint[], $3::bigint[],
+				$4::text[], $5::bigint[], $6::text[],
+				$7::text[], $8::text[], $9::text[]
+			) AS t(id, hlc_wall, hlc_logical, type, version, actor, workspace_id, payload, signature)
+			ON CONFLICT (id) DO NOTHING
+			RETURNING id
+		`,
+			ids, walls, logicals,
+			types, versions, actors,
+			workspaceIDs, payloads, signatures, orgID,
+		)
+		if err != nil {
+			return fmt.Errorf("server: append batch: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return fmt.Errorf("server: append batch scan: %w", err)
+			}
+			added = append(added, id)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("server: append batch rows: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return added, nil
+}
+
 // WorkspaceOrg returns the org id bound to a workspace_id, or
 // empty + false when no binding exists. Used by the
 // tenant-routing middleware to enforce ORG.6-note

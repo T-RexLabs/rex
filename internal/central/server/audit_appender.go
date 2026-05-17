@@ -59,24 +59,61 @@ func NewPostgresAuditAppender(store *PostgresStore, actor identity.Actor) *Postg
 // Best-effort: the appender's callers (auth handlers, org-admin
 // adapters) treat failure as a log line, not a request error.
 // Audit correctness must not gate user-visible operations.
+//
+// Implemented on top of AppendMany so the single-record path and
+// the bulk path share one tx shape — that way any future caller
+// that fans out (bulk member changes, multi-amendment imports,
+// audit replay) inherits the same round-trip amortisation the
+// push handler now gets from Store.AppendBatch.
 func (a *PostgresAuditAppender) Append(ctx context.Context, eventType string, payload any) error {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("server: marshal audit payload: %w", err)
+	return a.AppendMany(ctx, []AuditEvent{{Type: eventType, Payload: payload}})
+}
+
+// AuditEvent is one entry in a batched audit emission. Type
+// names the event class (must satisfy audit.IsAuditEvent for the
+// metric tick to fire). Payload is marshalled once per event.
+type AuditEvent struct {
+	Type    string
+	Payload any
+}
+
+// AppendMany synthesises one eventlog.Record per AuditEvent and
+// hands the whole slice to the underlying Store.AppendBatch.
+// IDs are stamped from the appender's internal HLC under the
+// same mutex Append uses, so monotonicity holds across mixed
+// single + bulk callers. Empty input is a no-op (no error,
+// nothing emitted).
+//
+// Failure semantics match Append: best-effort. If the batch
+// fails the caller logs and continues — audit must never gate a
+// user-visible mutation. On partial failure the all-or-nothing
+// tx guarantee means no records land, so a retry on the same
+// batch is idempotent.
+func (a *PostgresAuditAppender) AppendMany(ctx context.Context, events []AuditEvent) error {
+	if len(events) == 0 {
+		return nil
 	}
+	recs := make([]eventlog.Record, len(events))
 	a.mu.Lock()
-	ts := a.clock.Now()
-	a.mu.Unlock()
-	rec := eventlog.Record{
-		ID:        ts.String(),
-		Type:      eventType,
-		Version:   1,
-		Timestamp: ts,
-		Actor:     a.actor,
-		Payload:   body,
+	for i, ev := range events {
+		body, err := json.Marshal(ev.Payload)
+		if err != nil {
+			a.mu.Unlock()
+			return fmt.Errorf("server: marshal audit payload %q: %w", ev.Type, err)
+		}
+		ts := a.clock.Now()
+		recs[i] = eventlog.Record{
+			ID:        ts.String(),
+			Type:      ev.Type,
+			Version:   1,
+			Timestamp: ts,
+			Actor:     a.actor,
+			Payload:   body,
+		}
 	}
-	if _, err := a.store.Append(ctx, rec); err != nil {
-		return fmt.Errorf("server: append audit event %q: %w", eventType, err)
+	a.mu.Unlock()
+	if _, err := a.store.AppendBatch(ctx, recs); err != nil {
+		return fmt.Errorf("server: append audit batch (%d event(s)): %w", len(recs), err)
 	}
 	return nil
 }

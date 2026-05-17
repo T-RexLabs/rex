@@ -394,19 +394,34 @@ func (s *Server) handleEventsPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res := proto.PushResponse{}
+	// Validation pre-pass: a malformed record poisons the whole
+	// batch (atomic insert below), so reject 400 before we ever
+	// touch the database.
 	for _, rec := range req.Events {
 		if err := validatePushRecord(rec); err != nil {
 			writeError(w, http.StatusBadRequest, proto.ErrCodeBadRequest, err.Error())
 			return
 		}
-		added, err := s.store.Append(r.Context(), rec)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, proto.ErrCodeServerError, err.Error())
-			return
-		}
-		s.recordEvent(rec.Type, added)
-		if added {
+	}
+
+	// One transaction collapses N×(BEGIN + INSERT + COMMIT) into
+	// one workspace upsert + one multi-row event INSERT + one
+	// commit, independent of batch size — the dominant cost of a
+	// large push at v1's central scale.
+	addedIDs, err := s.store.AppendBatch(r.Context(), req.Events)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, proto.ErrCodeServerError, err.Error())
+		return
+	}
+	addedSet := make(map[string]struct{}, len(addedIDs))
+	for _, id := range addedIDs {
+		addedSet[id] = struct{}{}
+	}
+	res := proto.PushResponse{}
+	for _, rec := range req.Events {
+		_, was := addedSet[rec.ID]
+		s.recordEvent(rec.Type, was)
+		if was {
 			res.Accepted++
 		} else {
 			res.Duplicates++

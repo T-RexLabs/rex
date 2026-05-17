@@ -360,3 +360,137 @@ func TestPostgresStoreSurvivesPoolReopen(t *testing.T) {
 		t.Fatalf("len after reopen: got %d want 3", len(tail))
 	}
 }
+
+func TestPostgresStoreAppendBatchHappyPath(t *testing.T) {
+	t.Parallel()
+
+	s, _ := freshPostgresStore(t)
+	ctx := defaultOrgCtx(t, s)
+	in := []eventlog.Record{
+		mkRec("b1"), mkRec("b2"), mkRec("b3"),
+	}
+	added, err := s.AppendBatch(ctx, in)
+	if err != nil {
+		t.Fatalf("AppendBatch: %v", err)
+	}
+	if len(added) != 3 {
+		t.Fatalf("added: got %d want 3 (%v)", len(added), added)
+	}
+	// Per-record insertion-order isn't part of the contract for
+	// the returned ids — the multi-row INSERT may RETURNING in
+	// any order — but the set must match.
+	gotSet := map[string]bool{}
+	for _, id := range added {
+		gotSet[id] = true
+	}
+	for _, want := range []string{"b1", "b2", "b3"} {
+		if !gotSet[want] {
+			t.Errorf("added missing %q (got=%v)", want, added)
+		}
+	}
+	n, _ := s.Len(ctx)
+	if n != 3 {
+		t.Fatalf("len after batch: got %d want 3", n)
+	}
+	tail, _ := s.Since(ctx, "")
+	if len(tail) != 3 {
+		t.Fatalf("Since after batch: got %d want 3", len(tail))
+	}
+}
+
+func TestPostgresStoreAppendBatchIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	s, _ := freshPostgresStore(t)
+	ctx := defaultOrgCtx(t, s)
+	in := []eventlog.Record{mkRec("x"), mkRec("y"), mkRec("z")}
+	if _, err := s.AppendBatch(ctx, in); err != nil {
+		t.Fatalf("first AppendBatch: %v", err)
+	}
+	// Re-send: every id is a duplicate -> no fresh inserts.
+	added, err := s.AppendBatch(ctx, in)
+	if err != nil {
+		t.Fatalf("re-send AppendBatch: %v", err)
+	}
+	if len(added) != 0 {
+		t.Fatalf("re-send should add zero, got %v", added)
+	}
+	n, _ := s.Len(ctx)
+	if n != 3 {
+		t.Fatalf("len after re-send: got %d want 3", n)
+	}
+}
+
+func TestPostgresStoreAppendBatchMixedDuplicates(t *testing.T) {
+	t.Parallel()
+
+	s, _ := freshPostgresStore(t)
+	ctx := defaultOrgCtx(t, s)
+	if _, err := s.AppendBatch(ctx, []eventlog.Record{mkRec("a"), mkRec("b")}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// Batch with one fresh (c) + two duplicates (a, b).
+	added, err := s.AppendBatch(ctx, []eventlog.Record{mkRec("a"), mkRec("c"), mkRec("b")})
+	if err != nil {
+		t.Fatalf("AppendBatch: %v", err)
+	}
+	if len(added) != 1 || added[0] != "c" {
+		t.Fatalf("added: got %v want [c]", added)
+	}
+	n, _ := s.Len(ctx)
+	if n != 3 {
+		t.Fatalf("len: got %d want 3", n)
+	}
+}
+
+// TestPostgresStoreAppendBatchBindsDistinctWorkspaces confirms
+// the workspace-binding upsert in AppendBatch fires once per
+// distinct workspace id, not per-record — fresh workspaces
+// referenced across multiple events all land bound to the
+// caller's org (first-push-wins, sync.ORG.6-note).
+func TestPostgresStoreAppendBatchBindsDistinctWorkspaces(t *testing.T) {
+	t.Parallel()
+
+	s, _ := freshPostgresStore(t)
+	ctx := defaultOrgCtx(t, s)
+	a := mkRec("e-1")
+	a.WorkspaceID = "ws-alpha"
+	b := mkRec("e-2")
+	b.WorkspaceID = "ws-alpha"
+	c := mkRec("e-3")
+	c.WorkspaceID = "ws-beta"
+	if _, err := s.AppendBatch(ctx, []eventlog.Record{a, b, c}); err != nil {
+		t.Fatalf("AppendBatch: %v", err)
+	}
+	// Both workspaces are bound to the default org now.
+	for _, ws := range []string{"ws-alpha", "ws-beta"} {
+		orgID, ok, err := s.WorkspaceOrg(context.Background(), ws)
+		if err != nil {
+			t.Fatalf("WorkspaceOrg(%s): %v", ws, err)
+		}
+		if !ok {
+			t.Fatalf("workspace %s not bound", ws)
+		}
+		if orgID == "" {
+			t.Fatalf("workspace %s bound to empty org", ws)
+		}
+	}
+}
+
+func TestPostgresStoreAppendBatchEmptyIsNoop(t *testing.T) {
+	t.Parallel()
+
+	s, _ := freshPostgresStore(t)
+	ctx := defaultOrgCtx(t, s)
+	added, err := s.AppendBatch(ctx, nil)
+	if err != nil {
+		t.Fatalf("AppendBatch(nil): %v", err)
+	}
+	if len(added) != 0 {
+		t.Fatalf("nil input should add nothing: %v", added)
+	}
+	n, _ := s.Len(ctx)
+	if n != 0 {
+		t.Fatalf("len after nil batch: got %d want 0", n)
+	}
+}

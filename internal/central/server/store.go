@@ -23,17 +23,34 @@ var ErrUnknownCursor = errors.New("server: unknown cursor")
 //
 // Method semantics match the existing in-memory contract:
 //
-//	Head:   id of the latest record in insertion order, or "" empty.
-//	Append: idempotent; (added=true) on a fresh id, (added=false)
-//	        on a duplicate. Used to enable sync.API.6 (push is
-//	        safe to retry).
-//	Since:  records strictly after the cursor in insertion order.
-//	        Empty cursor = everything; unknown cursor =
-//	        ErrUnknownCursor (hard divergence).
-//	Len:    total record count; informational.
+//	Head:        id of the latest record in insertion order, or "" empty.
+//	Append:      idempotent; (added=true) on a fresh id, (added=false)
+//	             on a duplicate. Used to enable sync.API.6 (push is
+//	             safe to retry).
+//	AppendBatch: bulk-path equivalent of Append: returns the ids of
+//	             the records that landed as fresh inserts (length =
+//	             accepted count; duplicates = len(recs) - len(added)).
+//	             Returning IDs (not just a count) lets the handler
+//	             keep per-type metrics precise even when the
+//	             database call is collapsed into a single round
+//	             trip. Implementations MUST be atomic — either every
+//	             fresh record lands or none, so a partial-success
+//	             failure mode never leaks (the per-request response
+//	             only reports one accepted / duplicates pair
+//	             anyway). Push hot-path and the audit appender both
+//	             call through here so any multi-event operation
+//	             amortises the per-record round-trip cost (Postgres
+//	             impl in particular: one tx + one workspace upsert
+//	             per distinct id + one multi-row INSERT instead of
+//	             N×(BEGIN + INSERT + COMMIT)).
+//	Since:       records strictly after the cursor in insertion order.
+//	             Empty cursor = everything; unknown cursor =
+//	             ErrUnknownCursor (hard divergence).
+//	Len:         total record count; informational.
 type Store interface {
 	Head(ctx context.Context) (string, error)
 	Append(ctx context.Context, rec eventlog.Record) (added bool, err error)
+	AppendBatch(ctx context.Context, recs []eventlog.Record) (addedIDs []string, err error)
 	Since(ctx context.Context, cursor string) ([]eventlog.Record, error)
 	Len(ctx context.Context) (int, error)
 }
@@ -85,6 +102,35 @@ func (s *MemoryStore) Append(_ context.Context, rec eventlog.Record) (bool, erro
 	s.byID[rec.ID] = len(s.records)
 	s.records = append(s.records, rec)
 	return true, nil
+}
+
+// AppendBatch is the memory store's bulk path: a single lock
+// covers the whole slice so all-or-nothing atomicity matches the
+// Postgres impl's transactional guarantee. Duplicates (records
+// whose id already exists) are skipped silently and excluded
+// from the returned slice, so idempotent re-pushes work the
+// same as the per-record path.
+func (s *MemoryStore) AppendBatch(_ context.Context, recs []eventlog.Record) ([]string, error) {
+	if len(recs) == 0 {
+		return nil, nil
+	}
+	for _, rec := range recs {
+		if rec.ID == "" {
+			return nil, errors.New("server: append requires a non-empty record id")
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	added := make([]string, 0, len(recs))
+	for _, rec := range recs {
+		if _, dup := s.byID[rec.ID]; dup {
+			continue
+		}
+		s.byID[rec.ID] = len(s.records)
+		s.records = append(s.records, rec)
+		added = append(added, rec.ID)
+	}
+	return added, nil
 }
 
 // Since returns the slice of records strictly after cursor in
