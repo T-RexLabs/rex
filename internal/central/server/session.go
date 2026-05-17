@@ -52,6 +52,33 @@ func (s *Server) ResolveBearer(value string) (identity.Fingerprint, time.Time, e
 	return tok.fingerprint, tok.expiresAt, nil
 }
 
+// ValidatedSession is the minimal session shape callers outside
+// this package consume — the central web shell's session gate is
+// the primary user. Mirrors the fields ResolveBearer surfaces but
+// in string form so consumers do not need to import
+// internal/core/identity.
+type ValidatedSession struct {
+	Fingerprint string
+	ExpiresAt   time.Time
+}
+
+// ValidateSession is the package-free shape ResolveBearer behind a
+// stringly-typed adapter. The central web shell's Auth interface
+// calls this directly so the web package stays free of the
+// identity import; the underlying check is the same one
+// requireToken uses, so cookie + Authorization-header callers
+// share a single resolution path.
+func (s *Server) ValidateSession(value string) (ValidatedSession, error) {
+	tok, err := s.auth.resolveAccessToken(value)
+	if err != nil {
+		return ValidatedSession{}, err
+	}
+	return ValidatedSession{
+		Fingerprint: tok.fingerprint.String(),
+		ExpiresAt:   tok.expiresAt,
+	}, nil
+}
+
 // RevokeBearer invalidates the token presented at logout. Returns
 // nil on success (including the idempotent "already revoked" path),
 // non-nil on internal failures.

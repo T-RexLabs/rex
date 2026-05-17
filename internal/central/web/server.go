@@ -1,19 +1,23 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"html"
 	"io/fs"
 	"net/http"
+	"net/url"
+	"strings"
+	"time"
 
 	"github.com/asabla/rex/internal/core/sync/proto"
 	internalweb "github.com/asabla/rex/internal/web"
 )
 
 // Auth is the subset of central-node auth surface the web shell
-// needs to power /login (web-ui.CENTRAL-AUTH.2). cmd/rex-central
-// satisfies it by passing the *server.Server through; tests inject
-// a stub.
+// needs to power /login + the session gate (web-ui.CENTRAL-AUTH.*).
+// cmd/rex-central satisfies it by passing the *server.Server
+// through; tests inject a stub.
 type Auth interface {
 	// IssueLoginChallenge mints a fresh challenge for browser
 	// login. The returned package carries the challenge id, the
@@ -21,7 +25,29 @@ type Auth interface {
 	// expiry. The web handler stamps Redirect on top before
 	// rendering.
 	IssueLoginChallenge(hostname string) (proto.LoginChallengePackage, error)
+
+	// ValidateSession resolves a bearer/cookie token. Returns a
+	// non-nil SessionInfo on success; a non-nil error means the
+	// token is unknown, expired, or revoked. The middleware uses
+	// only the existence of a successful return — fingerprint
+	// rides through SessionInfo for future RBAC hooks the
+	// per-page handlers can call.
+	ValidateSession(token string) (SessionInfo, error)
 }
+
+// SessionInfo is the minimal shape ValidateSession returns. Lets
+// the web shell stay free of an internal/core/identity import.
+type SessionInfo struct {
+	Fingerprint string
+	ExpiresAt   time.Time
+}
+
+// ErrSessionRequired is the sentinel ValidateSession returns when
+// no token was presented at all (as distinct from "token was
+// presented but doesn't resolve"). Both branches gate the same
+// middleware response; surfacing the difference lets future logs
+// distinguish a missing-cookie request from a stolen-token one.
+var ErrSessionRequired = errors.New("central web: no session token presented")
 
 // Options configure New.
 type Options struct {
@@ -103,8 +129,13 @@ func New(opts Options) (*Server, error) {
 }
 
 // Handler returns the http.Handler the central binary mounts as
-// the fallback for non-API paths.
-func (s *Server) Handler() http.Handler { return s.mux }
+// the fallback for non-API paths. Wrapped in the session gate so
+// the auth check fires before the mux's path/method routing —
+// unauthed POSTs against a GET-only route therefore 401 (or
+// 303 → /login) instead of 405-on-method-mismatch.
+func (s *Server) Handler() http.Handler {
+	return s.requireSession(s.mux)
+}
 
 // HasPage reports whether the shared renderer parsed the named
 // page. Surfaced so the central-web-shell wiring test can confirm
@@ -134,6 +165,85 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /orgs/{org}", s.handleOrgOverview)
 	s.mux.HandleFunc("GET /orgs/{org}/members", s.handleOrgMembers)
 	s.mux.HandleFunc("GET /orgs/{org}/roles", s.handleOrgRoles)
+}
+
+// requireSession wraps the whole central web mux with a session
+// check that fires before path/method routing — so unauthed
+// requests get a uniform 303-to-/login (GET) or 401 (other
+// methods) regardless of whether the underlying route exists or
+// matches the request method. The publicly-reachable surfaces
+// (/static/, /login, /_web/health) are listed in isPublicWebPath
+// and pass straight through.
+//
+// When Auth is nil the wrapper is a no-op pass-through. This is
+// the dev-mode path: `rex-central serve --web` without --keys /
+// --db never validates anything anyway. Production deployments
+// always set --keys + --db so Auth is wired and the gate fires.
+func (s *Server) requireSession(next http.Handler) http.Handler {
+	if s.opts.Auth == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isPublicWebPath(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		token, ok := cookieOrBearer(r)
+		if !ok {
+			s.failSession(w, r)
+			return
+		}
+		if _, err := s.opts.Auth.ValidateSession(token); err != nil {
+			s.failSession(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// isPublicWebPath reports whether a request path is reachable
+// without a session. Kept exhaustive on purpose — every entry
+// here is a deliberate carve-out from CENTRAL-AUTH.3's gate.
+func isPublicWebPath(path string) bool {
+	switch {
+	case path == "/login":
+		return true
+	case path == "/_web/health":
+		return true
+	case strings.HasPrefix(path, "/static/"):
+		return true
+	}
+	return false
+}
+
+// cookieOrBearer pulls the bearer value from either an
+// Authorization header or the rex_session cookie, mirroring the
+// API server's tokenFromRequest. Defined here so the web shell
+// doesn't import internal/central/server.
+func cookieOrBearer(r *http.Request) (string, bool) {
+	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+		return strings.TrimPrefix(h, "Bearer "), true
+	}
+	if c, err := r.Cookie("rex_session"); err == nil && c.Value != "" {
+		return c.Value, true
+	}
+	return "", false
+}
+
+// failSession is the unauthenticated-request response. GET
+// requests bounce to /login with the original request URI
+// preserved so /auth/redeem can land them back on the page they
+// asked for after the cookie is set. Mutations (POST / PUT / etc)
+// 401 because a redirect would silently drop the request body —
+// the browser would resubmit only after the user manually replays
+// the action, which is worse than a clean failure.
+func (s *Server) failSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	target := "/login?redirect=" + url.QueryEscape(r.URL.RequestURI())
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 // handleChromaCSS serves the chroma stylesheet generated at

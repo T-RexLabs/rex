@@ -196,7 +196,7 @@ lost on restart.
 				webOpts := centralweb.Options{
 					Version:  version,
 					BindAddr: cfg.Server.Addr,
-					Auth:     s, // *server.Server implements the Auth interface via IssueLoginChallenge
+					Auth:     centralAuthAdapter{s}, // bridges *server.Server's ValidatedSession to centralweb.SessionInfo
 					// The central GitStore satisfies the
 					// centralweb.GitEntityReader subset (Get + List);
 					// the event Store satisfies centralweb.EventReader

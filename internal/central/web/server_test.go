@@ -12,12 +12,18 @@ import (
 	"github.com/asabla/rex/internal/core/sync/proto"
 )
 
-// stubAuth is a deterministic Auth used in /login tests so coverage
-// doesn't depend on the real central server's auth state.
+// stubAuth is a deterministic Auth used in /login tests + the
+// session-gate tests so coverage doesn't depend on the real
+// central server's auth state. validTokens lists every token
+// ValidateSession should accept; any other token returns
+// errStubInvalidToken.
 type stubAuth struct {
-	pkg proto.LoginChallengePackage
-	err error
+	pkg         proto.LoginChallengePackage
+	err         error
+	validTokens map[string]SessionInfo
 }
+
+var errStubInvalidToken = errors.New("stub: invalid token")
 
 func (a *stubAuth) IssueLoginChallenge(hostname string) (proto.LoginChallengePackage, error) {
 	if a.err != nil {
@@ -26,6 +32,13 @@ func (a *stubAuth) IssueLoginChallenge(hostname string) (proto.LoginChallengePac
 	p := a.pkg
 	p.Hostname = hostname
 	return p, nil
+}
+
+func (a *stubAuth) ValidateSession(token string) (SessionInfo, error) {
+	if info, ok := a.validTokens[token]; ok {
+		return info, nil
+	}
+	return SessionInfo{}, errStubInvalidToken
 }
 
 // TestNewParsesSharedRenderer confirms the central shell's
