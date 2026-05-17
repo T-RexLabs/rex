@@ -13,31 +13,18 @@
     <div class="topbar-inner">
       <a class="brand" href="/">rex{{if eq .Shell "central"}} <span class="brand-suffix">central</span>{{end}}</a>
       {{if eq .Shell "central"}}
-        <nav class="nav" aria-label="primary">
+        <nav class="breadcrumb" aria-label="breadcrumb">
           <a href="/" {{if eq .NavSection "home"}}aria-current="page"{{end}}>home</a>
           {{if and .OrgID .WorkspaceID}}
             <span class="nav-sep">/</span>
-            <a href="/orgs/{{.OrgID}}" class="muted">org</a>
+            <a href="/orgs/{{.OrgID}}">org</a>
             <span class="nav-sep">/</span>
-            <a href="/orgs/{{.OrgID}}/workspaces" class="muted">workspaces</a>
+            <a href="/orgs/{{.OrgID}}/workspaces">workspaces</a>
             <span class="nav-sep">/</span>
-            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}"           {{if eq .NavSection "workspace"}}aria-current="page"{{end}}>overview</a>
-            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/specs"     {{if eq .NavSection "specs"}}aria-current="page"{{end}}>specs</a>
-            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/runs"      {{if eq .NavSection "runs"}}aria-current="page"{{end}}>runs</a>
-            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/audit"     {{if eq .NavSection "audit"}}aria-current="page"{{end}}>audit</a>
-            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/amendments" {{if eq .NavSection "amendments"}}aria-current="page"{{end}}>amendments</a>
-            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/search"    {{if eq .NavSection "search"}}aria-current="page"{{end}}>search</a>
-            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/remotes"   {{if eq .NavSection "remotes"}}aria-current="page"{{end}}>remotes</a>
-            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/settings"  {{if eq .NavSection "settings"}}aria-current="page"{{end}}>settings</a>
+            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}"><code>{{.WorkspaceID}}</code></a>
           {{else if .OrgID}}
             <span class="nav-sep">/</span>
-            <a href="/orgs/{{.OrgID}}"                {{if eq .NavSection "org"}}aria-current="page"{{end}}>overview</a>
-            <a href="/orgs/{{.OrgID}}/members"        {{if eq .NavSection "members"}}aria-current="page"{{end}}>members</a>
-            <a href="/orgs/{{.OrgID}}/roles"          {{if eq .NavSection "roles"}}aria-current="page"{{end}}>roles</a>
-            <a href="/orgs/{{.OrgID}}/audit"          {{if eq .NavSection "audit"}}aria-current="page"{{end}}>audit</a>
-            <a href="/orgs/{{.OrgID}}/workspaces"     {{if eq .NavSection "workspaces"}}aria-current="page"{{end}}>workspaces</a>
-            <a href="/orgs/{{.OrgID}}/idp"            {{if eq .NavSection "idp"}}aria-current="page"{{end}}>identity</a>
-            <a href="/orgs/{{.OrgID}}/encryption-keys" {{if eq .NavSection "encryption-keys"}}aria-current="page"{{end}}>encryption</a>
+            <a href="/orgs/{{.OrgID}}"><code>{{.OrgID}}</code></a>
           {{end}}
         </nav>
         <form class="topbar-signout" method="post" action="/auth/logout">
@@ -69,6 +56,34 @@
         {{end}}
       {{end}}
     </div>
+    {{if eq .Shell "central"}}
+      {{if and .OrgID .WorkspaceID}}
+        <div class="subnav-inner">
+          <nav class="nav" aria-label="primary">
+            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}"           {{if eq .NavSection "workspace"}}aria-current="page"{{end}}>overview</a>
+            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/specs"     {{if eq .NavSection "specs"}}aria-current="page"{{end}}>specs</a>
+            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/runs"      {{if eq .NavSection "runs"}}aria-current="page"{{end}}>runs</a>
+            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/audit"     {{if eq .NavSection "audit"}}aria-current="page"{{end}}>audit</a>
+            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/amendments" {{if eq .NavSection "amendments"}}aria-current="page"{{end}}>amendments</a>
+            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/search"    {{if eq .NavSection "search"}}aria-current="page"{{end}}>search</a>
+            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/remotes"   {{if eq .NavSection "remotes"}}aria-current="page"{{end}}>remotes</a>
+            <a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/settings"  {{if eq .NavSection "settings"}}aria-current="page"{{end}}>settings</a>
+          </nav>
+        </div>
+      {{else if .OrgID}}
+        <div class="subnav-inner">
+          <nav class="nav" aria-label="primary">
+            <a href="/orgs/{{.OrgID}}"                {{if eq .NavSection "org"}}aria-current="page"{{end}}>overview</a>
+            <a href="/orgs/{{.OrgID}}/members"        {{if eq .NavSection "members"}}aria-current="page"{{end}}>members</a>
+            <a href="/orgs/{{.OrgID}}/roles"          {{if eq .NavSection "roles"}}aria-current="page"{{end}}>roles</a>
+            <a href="/orgs/{{.OrgID}}/audit"          {{if eq .NavSection "audit"}}aria-current="page"{{end}}>audit</a>
+            <a href="/orgs/{{.OrgID}}/workspaces"     {{if eq .NavSection "workspaces"}}aria-current="page"{{end}}>workspaces</a>
+            <a href="/orgs/{{.OrgID}}/idp"            {{if eq .NavSection "idp"}}aria-current="page"{{end}}>identity</a>
+            <a href="/orgs/{{.OrgID}}/encryption-keys" {{if eq .NavSection "encryption-keys"}}aria-current="page"{{end}}>encryption</a>
+          </nav>
+        </div>
+      {{end}}
+    {{end}}
   </header>
   <main class="main">
     {{if .CentralOnly}}

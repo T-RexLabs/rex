@@ -226,6 +226,48 @@ hr {
 .topbar-signout {
   margin-left: auto;
 }
+
+/* Breadcrumb: sits inline with the brand in the topbar's first
+ * row on the central shell. Keeps the path-to-current-page in
+ * view at all times without crowding the page-section tabs,
+ * which live in the subnav row below. */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 1;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+.breadcrumb a {
+  color: var(--text-2);
+  text-decoration: none;
+}
+.breadcrumb a:hover { color: var(--text); }
+.breadcrumb a[aria-current="page"] { color: var(--text); }
+.breadcrumb code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  background: var(--surface-sunk);
+  padding: 1px 6px;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+}
+
+/* Subnav row: the per-context tab nav (workspace / org tabs).
+ * Sits under the topbar with its own border so the section
+ * structure reads as "where am I" (topbar) -> "what tabs are
+ * here" (subnav). */
+.subnav-inner {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 0 var(--sp-5);
+  border-top: 1px solid var(--border);
+}
+.subnav-inner .nav {
+  padding: var(--sp-2) 0;
+  flex: 0 1 auto;
+}
 .nav {
   display: flex;
   gap: var(--sp-5);

@@ -195,20 +195,49 @@ func runPushFn(cmd *cobra.Command, _ []string) error {
 		return formatSyncError(err)
 	}
 
+	// Push git-merged content (specs / workspace.yaml / amendments
+	// / etc) alongside events. Without this, `rex push` would
+	// upload only the event log and the central's /specs +
+	// /amendments + /settings pages would stay empty even after a
+	// "successful" push. Best-effort: a git failure surfaces but
+	// doesn't roll back the event push.
+	gitReport, gitErr := syncWorkspaceGit(cmd, c, root)
+
 	if jsonOutput(cmd) {
-		return writeJSON(cmd, map[string]any{
+		out := map[string]any{
 			"head_id":    res.HeadID,
 			"accepted":   res.Accepted,
 			"duplicates": res.Duplicates,
-		})
+		}
+		if gitErr != nil {
+			out["git_error"] = gitErr.Error()
+		}
+		out["git_pushed"] = gitReport.Pushed
+		out["git_unchanged"] = gitReport.Unchanged
+		out["git_conflicted"] = gitReport.Conflicted
+		return writeJSON(cmd, out)
 	}
-	if res.Accepted == 0 && res.Duplicates == 0 {
+	// "Nothing to push" means no new events landed AND no fresh
+	// git entries went up. Unchanged git entries don't count —
+	// they're already-synced files we re-verified; reporting
+	// "nothing to push" stays truthful from the user's
+	// perspective ("did anything change on the central?").
+	if res.Accepted == 0 && res.Duplicates == 0 && len(gitReport.Pushed) == 0 && len(gitReport.Conflicted) == 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "nothing to push")
 		return nil
 	}
 	fmt.Fprintf(cmd.OutOrStdout(),
-		"pushed %d event(s) (%d duplicate); head=%s\n",
-		res.Accepted, res.Duplicates, res.HeadID)
+		"pushed %d event(s) (%d duplicate); head=%s; git pushed=%d unchanged=%d conflicted=%d\n",
+		res.Accepted, res.Duplicates, res.HeadID,
+		len(gitReport.Pushed), len(gitReport.Unchanged), len(gitReport.Conflicted))
+	if len(gitReport.Conflicted) > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(),
+			"  conflicted (resolve locally then re-push): %s\n",
+			strings.Join(gitReport.Conflicted, ", "))
+	}
+	if gitErr != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: git push surfaced an error: %v\n", gitErr)
+	}
 	return nil
 }
 
