@@ -106,7 +106,7 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "web: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	data.NavSection = "audit"
+	data.NavSection = "settings"
 	s.render(w, r, "audit.tmpl", data)
 }
 
@@ -117,7 +117,7 @@ func (s *Server) handleRemotes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "web: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	data.NavSection = "remotes"
+	data.NavSection = "settings"
 	s.render(w, r, "remotes.tmpl", data)
 }
 

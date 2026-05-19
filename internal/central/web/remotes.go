@@ -110,7 +110,7 @@ func (s *Server) handleRemotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := centralRemotesData{
-		centralPageData: s.pageData(orgID, wsID, "remotes"),
+		centralPageData: s.pageData(orgID, wsID, "settings"),
 		Rows:            rows,
 		Source:          "the workspace's synced .rex/remotes.toml",
 	}

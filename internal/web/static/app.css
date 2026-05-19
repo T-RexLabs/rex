@@ -286,26 +286,6 @@ hr {
   border-bottom-color: var(--accent);
 }
 
-.ws-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  color: var(--text-2);
-  padding: 3px 8px;
-  background: var(--surface-sunk);
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-}
-.ws-badge::before {
-  content: "";
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-}
 
 /* Topbar search input — quiet by default; expands its emerald
  * focus ring when active so it pulls visual weight only when the

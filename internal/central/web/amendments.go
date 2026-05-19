@@ -220,7 +220,7 @@ func (s *Server) handleAmendmentsList(w http.ResponseWriter, r *http.Request) {
 		rows[i].LinkBase = base
 	}
 	data := centralAmendmentsListData{
-		centralPageData: s.pageData(orgID, wsID, "amendments"),
+		centralPageData: s.pageData(orgID, wsID, "settings"),
 		Amendments:      rows,
 		StateFilter:     stateFilter,
 		ForFilter:       forFilter,
@@ -279,7 +279,7 @@ func (s *Server) handleAmendmentDetail(w http.ResponseWriter, r *http.Request) {
 		detail.State = specamend.State("proposed (read-only on central)")
 	}
 	data := centralAmendmentDetailData{
-		centralPageData: s.pageData(orgID, wsID, "amendments"),
+		centralPageData: s.pageData(orgID, wsID, "settings"),
 		AmendmentDetail: detail,
 	}
 	s.renderer.Render(w, r, "amendments_detail.tmpl", data)

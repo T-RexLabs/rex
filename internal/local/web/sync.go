@@ -42,7 +42,7 @@ type syncRemoteRow struct {
 // rather than rendering an empty form.
 func (s *Server) handleSyncPage(w http.ResponseWriter, r *http.Request) {
 	d := s.loadSyncBase()
-	d.NavSection = "remotes"
+	d.NavSection = "settings"
 	s.render(w, r, "sync.tmpl", d)
 }
 
@@ -63,7 +63,7 @@ func (s *Server) handleSyncRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	d := s.loadSyncBase()
-	d.NavSection = "remotes"
+	d.NavSection = "settings"
 	d.Remote = remote
 
 	rerender := func(msg string) {

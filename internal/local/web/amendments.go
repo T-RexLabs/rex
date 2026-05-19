@@ -89,7 +89,7 @@ func (s *Server) handleAmendmentsList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	base := s.basePageData()
-	base.NavSection = "amendments"
+	base.NavSection = "settings"
 	s.render(w, r, "amendments_list.tmpl", amendmentsListData{
 		pageData:       base,
 		Amendments:     rows,
@@ -126,7 +126,7 @@ func (s *Server) renderAmendmentDetail(w http.ResponseWriter, r *http.Request, s
 	}
 
 	base := s.basePageData()
-	base.NavSection = "amendments"
+	base.NavSection = "settings"
 	d := amendmentDetailData{
 		pageData:        base,
 		AmendmentDetail: detail,

@@ -55,4 +55,34 @@
     <p class="muted small">no workspace.yaml synced</p>
   {{end}}
 </section>
+
+<section class="section">
+  <div class="section-head">
+    <h2>audit</h2>
+    <span class="section-meta">append-only log of identity-stamped operations</span>
+  </div>
+  <div class="card">
+    <p class="muted small"><a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/audit">browse audit log <span aria-hidden="true">→</span></a></p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <h2>amendments</h2>
+    <span class="section-meta">proposed + accepted spec amendments synced from <code>.rex/specs/_proposed/</code></span>
+  </div>
+  <div class="card">
+    <p class="muted small"><a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/amendments">browse amendments <span aria-hidden="true">→</span></a></p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <h2>remotes</h2>
+    <span class="section-meta">workspace-scoped sync remotes</span>
+  </div>
+  <div class="card">
+    <p class="muted small"><a href="/orgs/{{.OrgID}}/workspaces/{{.WorkspaceID}}/remotes">browse remotes <span aria-hidden="true">→</span></a></p>
+  </div>
+</section>
 {{end}}

@@ -81,7 +81,7 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := centralAuditData{
-		centralPageData: s.pageData(orgID, wsID, "audit"),
+		centralPageData: s.pageData(orgID, wsID, "settings"),
 		Rows:            rows,
 		Limit:           limit,
 		Source:          "the central event store",
