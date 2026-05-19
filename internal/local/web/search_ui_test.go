@@ -132,10 +132,11 @@ func TestSearchSaveRejectsInvalidName(t *testing.T) {
 	}
 }
 
-// TestSearchScopeRoundTripsInForm covers SEARCH.1 round-trip: the
-// ?scope= param echoes into the page form's scope_picker as the
-// selected option.
-func TestSearchScopeRoundTripsInForm(t *testing.T) {
+// TestSearchScopeHiddenWithoutRemotes covers the new behaviour:
+// the scope picker only appears when at least one remote is
+// registered. The /search page form should still POST/GET cleanly
+// even when no picker is rendered (?scope= echoes as a no-op).
+func TestSearchScopeHiddenWithoutRemotes(t *testing.T) {
 	t.Parallel()
 
 	root := initWorkspace(t, "scope")
@@ -147,11 +148,11 @@ func TestSearchScopeRoundTripsInForm(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	body := mustReadBody(t, resp)
-	// The base topbar picker reflects Selected="*"; without a
-	// registered remote there's no "all remotes" option, so the
-	// only stable assertion is that the form keeps name="scope".
-	if !strings.Contains(body, `name="scope"`) {
-		t.Errorf("scope select missing from page form:\n%s", body[:minIntLocal(len(body), 2000)])
+	if strings.Contains(body, `class="scope-picker"`) {
+		t.Errorf("scope picker unexpectedly rendered without remotes:\n%s", body[:minIntLocal(len(body), 2000)])
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: %d", resp.StatusCode)
 	}
 }
 

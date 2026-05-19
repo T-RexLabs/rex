@@ -10,6 +10,7 @@ joins the list. The form-element name is `scope` so the search
 handler reads it consistently. */}}
 
 {{define "scope_picker"}}
+{{- if .Remotes -}}
 <label class="scope-picker">
   <span class="scope-picker-label" aria-hidden="true">in</span>
   <select name="scope" class="scope-picker-select" aria-label="search scope">
@@ -17,9 +18,8 @@ handler reads it consistently. */}}
     {{- range .Remotes -}}
       <option value="{{.Value}}" {{if eq $.Selected .Value}}selected{{end}}>{{.Label}}</option>
     {{- end -}}
-    {{- if .Remotes -}}
-      <option value="*" {{if eq .Selected "*"}}selected{{end}}>all remotes</option>
-    {{- end -}}
+    <option value="*" {{if eq .Selected "*"}}selected{{end}}>all remotes</option>
   </select>
 </label>
+{{- end -}}
 {{end}}

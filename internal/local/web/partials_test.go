@@ -36,11 +36,12 @@ func TestSharedPartialsLoaded(t *testing.T) {
 	}
 }
 
-// TestScopePickerRendersOnEveryReadPage covers the topbar component:
-// every page that renders base.tmpl gets the scope picker's HTML in
-// the response. The picker itself only has the "current workspace"
-// option when the registry is empty, which is the test scenario.
-func TestScopePickerRendersOnEveryReadPage(t *testing.T) {
+// TestScopePickerHiddenWithoutRemotes covers the topbar component:
+// when no remotes are registered the picker has nothing meaningful
+// to choose from (only "current workspace"), so it is omitted from
+// every page that renders base.tmpl. The pages themselves must
+// still return 200.
+func TestScopePickerHiddenWithoutRemotes(t *testing.T) {
 	t.Parallel()
 
 	root := initWorkspace(t, "spw")
@@ -55,14 +56,8 @@ func TestScopePickerRendersOnEveryReadPage(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("%s status: %d body: %s", path, resp.StatusCode, body)
 		}
-		if !strings.Contains(string(body), `class="scope-picker"`) {
-			t.Errorf("%s missing scope-picker markup", path)
-		}
-		if !strings.Contains(string(body), `name="scope"`) {
-			t.Errorf("%s missing scope select element", path)
-		}
-		if !strings.Contains(string(body), `>current workspace</option>`) {
-			t.Errorf("%s missing current-workspace default option", path)
+		if strings.Contains(string(body), `class="scope-picker"`) {
+			t.Errorf("%s unexpectedly renders scope-picker without remotes", path)
 		}
 	}
 }
