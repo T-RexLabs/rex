@@ -16,7 +16,7 @@ import (
 // already-populated payload (including any per-event-type fields
 // like workspace_id); the helper does no payload-shape introspection.
 //
-// Every state-changing CLI command (workspace init / archive /
+// Every state-changing CLI command (init / workspace archive /
 // unarchive / delete, repo add / link / remove, schedule add /
 // remove, spec create / edit, remote add / remove, run cancel)
 // routes through this single function so the

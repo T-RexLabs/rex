@@ -30,7 +30,7 @@ func startCentral(t *testing.T) (*server.Server, *httptest.Server) {
 func initSyncWorkspace(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "demo", "--name", "Demo"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "demo", "--name", "Demo"); err != nil {
 		t.Fatalf("workspace init: %v", err)
 	}
 	return dir

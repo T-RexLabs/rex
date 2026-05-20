@@ -111,13 +111,13 @@ components:
     name: Overall CLI shape
     requirements:
       "1": "The CLI is verb-noun, deeply nested: `rex <noun> <verb> [args] [flags]`"
-      "2": "Top-level shortcuts exist only for the highest-frequency operations: `rex sync`, `rex push`, `rex pull`, `rex status`, `rex search`, `rex log`"
+      "2": "Top-level shortcuts exist for the highest-frequency operations and for workspace creation: `rex init`, `rex sync`, `rex push`, `rex pull`, `rex status`, `rex search`, `rex log`. `rex init` is the only shortcut that runs before a workspace exists; the rest operate within an existing workspace."
       "3": "Every command supports `--help`; help text includes a one-line synopsis, a longer description, examples, and a list of related commands"
 
   WS:
     name: Workspace subcommands
     requirements:
-      "1": "`rex workspace init [path]` — create a new workspace with `.rex/` at the given path (default: cwd)"
+      "1": "`rex init [path]` — create a new workspace with `.rex/` at the given path (default: cwd). Mirrors `git init`. `rex workspace init` is retained as a hidden, deprecated alias for one release; downstream code should migrate."
       "2": "`rex workspace clone <remote-url> [path]` — clone an existing workspace from a remote"
       "3": "`rex workspace list` — list locally-known workspaces from the registry"
       "4": "`rex workspace show [<id>]` — show full workspace details"

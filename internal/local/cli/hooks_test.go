@@ -12,7 +12,7 @@ func TestHooksListEmptyWorkspace(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir); err != nil {
+	if _, err := executeCommand(t, "init", dir); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	out, err := executeCommand(t, "hooks", "list",
@@ -31,7 +31,7 @@ func TestHooksListReportsExecutableAndNonExecutable(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir); err != nil {
+	if _, err := executeCommand(t, "init", dir); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	hooksDir := filepath.Join(dir, ".rex", "hooks")
@@ -71,7 +71,7 @@ func TestHooksListGlobalScope(t *testing.T) {
 	t.Parallel()
 
 	wsDir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", wsDir); err != nil {
+	if _, err := executeCommand(t, "init", wsDir); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	globalDir := t.TempDir()
@@ -98,7 +98,7 @@ func TestHooksListJSON(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir); err != nil {
+	if _, err := executeCommand(t, "init", dir); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	hooksDir := filepath.Join(dir, ".rex", "hooks")

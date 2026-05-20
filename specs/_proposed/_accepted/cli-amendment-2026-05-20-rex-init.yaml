@@ -1,0 +1,77 @@
+# Proposed amendment to specs/cli.yaml.
+#
+# Surfaced by:
+#   - `rex workspace init` is the only verb under `rex workspace`
+#     that maps one-to-one onto a `git` top-level command
+#     (`git init`). The rest of `rex workspace *` (show, list,
+#     archive, etc.) sits comfortably under a noun parent because
+#     it's plumbing the user reaches for occasionally. `init` is
+#     the first command anyone runs in a new directory — the
+#     same role `git init` plays — and the deep nesting hides it.
+#   - SHAPE.2 already carves out top-level shortcuts for the
+#     highest-frequency operations (sync/push/pull/status/search/
+#     log). `init` is the only command that someone runs *before*
+#     a workspace exists; SHAPE.2's "highest frequency" framing
+#     applies, even though it isn't a within-workspace op.
+#   - Mirroring `git init` / `git clone` is the canonical mental
+#     model for workspace lifecycle and is already invoked
+#     verbatim in workspace.LIFE/SETTINGS prose and in the
+#     workspace-init-cli task description.
+#
+# Scope:
+#   - This amendment promotes `rex init` to a top-level shortcut
+#     and updates WS.1 to reflect the new canonical form. The
+#     existing nested form (`rex workspace init`) is retained as
+#     a hidden, undocumented back-compat alias so existing
+#     scripts and the test corpus keep working through the
+#     transition; the alias is not added to the public CLI
+#     surface enumerated by WS.* (it's an implementation
+#     concession, not a spec'd entry point).
+#   - `rex workspace clone` is intentionally NOT renamed in this
+#     amendment. The parallel with `git clone` is real, but
+#     workspace clone is exercised far less often than init and
+#     the verbose form keeps clone discoverable next to its
+#     sibling workspace commands. Reopen the question if real
+#     usage data shows otherwise.
+
+target: cli
+amendment_for: cli
+amendment_date: 2026-05-20
+state: accepted
+amendment_kind: breaking
+summary: |
+  Rename `rex workspace init` to `rex init` to mirror `git
+  init`. The nested form is kept as a hidden, undocumented
+  back-compat alias for one release window. WS.1 moves to a
+  new top-level shortcut requirement; the rest of WS.* is
+  unchanged.
+
+migration_impact: |
+  Public CLI rename. Scripts that invoke `rex workspace init`
+  continue to work via the hidden alias, but the alias is
+  deprecated on landing and slated for removal one release
+  later. Help text, examples, docs, and the embedded web UI
+  references all flip to `rex init`. The existing test corpus
+  uses `executeCommand(t, "workspace", "init", ...)`; tests
+  will be migrated to `"init"` in the same PR — the alias
+  keeps the door open for downstream consumers, not for the
+  in-tree tests.
+
+changes:
+  - kind: update-requirement
+    component: SHAPE
+    requirement_id: "2"
+    from: "Top-level shortcuts exist only for the highest-frequency operations: `rex sync`, `rex push`, `rex pull`, `rex status`, `rex search`, `rex log`"
+    to: "Top-level shortcuts exist for the highest-frequency operations and for workspace creation: `rex init`, `rex sync`, `rex push`, `rex pull`, `rex status`, `rex search`, `rex log`. `rex init` is the only shortcut that runs before a workspace exists; the rest operate within an existing workspace."
+
+  - kind: update-requirement
+    component: WS
+    requirement_id: "1"
+    from: "`rex workspace init [path]` — create a new workspace with `.rex/` at the given path (default: cwd)"
+    to: "`rex init [path]` — create a new workspace with `.rex/` at the given path (default: cwd). Mirrors `git init`. `rex workspace init` is retained as a hidden, deprecated alias for one release; downstream code should migrate."
+
+verification:
+  - "`rex init --help` and `rex --help` both surface `init` as a top-level command"
+  - "`rex workspace init --help` still works but is marked deprecated and is not listed in `rex workspace --help`"
+  - "All `executeCommand(t, \"workspace\", \"init\", …)` test sites are migrated to `\"init\"`; a single alias-coverage test exercises the hidden form so the deprecation path doesn't rot silently"
+  - "`go run ./cmd/rex spec validate specs/*.yaml` reports zero errors and zero warnings after the fold-in"

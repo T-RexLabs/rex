@@ -1,0 +1,44 @@
+# Proposed amendment to specs/storage.yaml.
+#
+# storage.yaml cites `rex workspace init` in two places:
+#   - the workspace-dir-layout task description (the `.rex/`
+#     skeleton creator)
+#   - GLOBAL.4 (the registry that init populates on creation)
+#
+# Both are surface-level references to the same command being
+# renamed by the cli companion amendment. Folding here keeps
+# storage's prose consistent with the new CLI shape; no on-disk
+# layout, registry schema, or audit-event payload changes.
+
+target: storage
+amendment_for: storage
+amendment_date: 2026-05-20
+state: accepted
+amendment_kind: clarifying
+summary: |
+  Reword the `rex workspace init` mentions in storage.yaml to
+  match the renamed top-level `rex init` command. Touches the
+  workspace-dir-layout task description and the GLOBAL.4
+  requirement.
+
+migration_impact: |
+  Spec prose only. The `.rex/` skeleton, registry.toml layout,
+  registry-entry fields, and audit events (including
+  EventTypeWorkspaceCreated) are unchanged — this amendment
+  does not introduce, remove, or rename any persisted field.
+
+changes:
+  - kind: update-task-description
+    task_id: workspace-dir-layout
+    from: "Create the `.rex/` skeleton on workspace init and validate it on every command"
+    to: "Create the `.rex/` skeleton on `rex init` (and the back-compat alias `rex workspace init`) and validate it on every command"
+
+  - kind: update-requirement
+    component: GLOBAL
+    requirement_id: "4"
+    from: "`registry.toml` is the only global index of workspaces on this machine; entries are added by `rex workspace init` and `rex workspace clone`"
+    to: "`registry.toml` is the only global index of workspaces on this machine; entries are added by `rex init` (and its `rex workspace init` back-compat alias) and `rex workspace clone`"
+
+verification:
+  - "`go run ./cmd/rex spec validate specs/storage.yaml` reports zero errors and zero warnings after the fold-in"
+  - "GLOBAL.4.1's registry-entry shape (workspace ID, on-disk path, originating remote, last-seen-active) is unchanged — confirmed by no edits to registry.toml writers in internal/local/registry/"

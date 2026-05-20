@@ -13,7 +13,7 @@ import (
 // real ~/.config/rex/registry.toml.
 func initWorkspaceWithRegistry(t *testing.T, dir, registryPath string) {
 	t.Helper()
-	if _, err := executeCommand(t, "workspace", "init", dir,
+	if _, err := executeCommand(t, "init", dir,
 		"--registry-file", registryPath,
 	); err != nil {
 		t.Fatalf("workspace init: %v", err)
@@ -47,12 +47,12 @@ func TestWorkspaceListReadsRegistry(t *testing.T) {
 	dir2 := t.TempDir()
 	registryPath := filepath.Join(t.TempDir(), "registry.toml")
 
-	if _, err := executeCommand(t, "workspace", "init", dir1,
+	if _, err := executeCommand(t, "init", dir1,
 		"--id", "alpha", "--registry-file", registryPath,
 	); err != nil {
 		t.Fatalf("init alpha: %v", err)
 	}
-	if _, err := executeCommand(t, "workspace", "init", dir2,
+	if _, err := executeCommand(t, "init", dir2,
 		"--id", "beta", "--registry-file", registryPath,
 	); err != nil {
 		t.Fatalf("init beta: %v", err)

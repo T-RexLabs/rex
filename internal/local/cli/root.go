@@ -45,7 +45,7 @@ func NewRootCmd(version string) *cobra.Command {
 OpenCode, ...) over a local-first, optionally-replicated workspace
 model. The CLI is verb-noun and deeply nested; see "rex help <noun>"
 for each command group.`,
-		Example: `  rex workspace init
+		Example: `  rex init
   rex spec --workspace /path/to/ws list
   rex run --workspace /path/to/ws start --shell "echo hello rex"
   rex serve --workspace /path/to/ws`,
@@ -72,6 +72,11 @@ for each command group.`,
 	// Subcommand groups. Leaves are wired in their own files; the
 	// parents are introduced here so the tree shape is visible at a
 	// glance and `rex --help` lists them in a stable order.
+	// `rex init` — top-level shortcut for workspace creation, mirroring
+	// `git init` (cli.SHAPE.2, cli.WS.1, workspace.LIFE.1). The same
+	// command is also wired under `rex workspace` as a hidden,
+	// deprecated alias for one release.
+	root.AddCommand(newInitCmd(false))
 	root.AddCommand(newWorkspaceCmd())
 	root.AddCommand(newRepoCmd())
 	root.AddCommand(newScheduleCmd())

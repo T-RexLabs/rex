@@ -12,7 +12,7 @@ import (
 func initAmendWorkspace(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir,
+	if _, err := executeCommand(t, "init", dir,
 		"--id", "amendws", "--name", "AmendWS",
 		"--registry-file", filepath.Join(t.TempDir(), "reg.toml")); err != nil {
 		t.Fatalf("workspace init: %v", err)

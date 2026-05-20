@@ -19,7 +19,7 @@ func TestWorkspaceInitCreatesSkeleton(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	out, err := executeCommand(t, "workspace", "init", dir)
+	out, err := executeCommand(t, "init", dir)
 	if err != nil {
 		t.Fatalf("init: %v\n%s", err, out)
 	}
@@ -50,14 +50,45 @@ func TestWorkspaceInitCreatesSkeleton(t *testing.T) {
 	}
 }
 
+// TestWorkspaceInitDeprecatedAliasStillWorks pins the back-compat
+// surface promised by cli-amendment-2026-05-20-rex-init.yaml: the
+// hidden `rex workspace init` form is wired to the same RunE as the
+// canonical `rex init` and produces the same skeleton. The form is
+// hidden from `rex workspace --help` and is slated for removal, but
+// it must keep working for one release.
+func TestWorkspaceInitDeprecatedAliasStillWorks(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	out, err := executeCommand(t, "workspace", "init", dir)
+	if err != nil {
+		t.Fatalf("workspace init alias: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Initialized rex workspace") {
+		t.Fatalf("alias output missing confirmation: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".rex", "workspace.yaml")); err != nil {
+		t.Fatalf("alias did not create workspace.yaml: %v", err)
+	}
+
+	// The alias is hidden from `rex workspace --help`.
+	help, err := executeCommand(t, "workspace", "--help")
+	if err != nil {
+		t.Fatalf("workspace --help: %v", err)
+	}
+	if strings.Contains(help, "init [path]") {
+		t.Fatalf("workspace --help should not list the hidden init alias:\n%s", help)
+	}
+}
+
 func TestWorkspaceInitRefusesExistingWithoutForce(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir); err != nil {
+	if _, err := executeCommand(t, "init", dir); err != nil {
 		t.Fatalf("first init: %v", err)
 	}
-	_, err := executeCommand(t, "workspace", "init", dir)
+	_, err := executeCommand(t, "init", dir)
 	if err == nil {
 		t.Fatal("second init without --force should fail")
 	}
@@ -70,10 +101,10 @@ func TestWorkspaceInitForceOverwrites(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir); err != nil {
+	if _, err := executeCommand(t, "init", dir); err != nil {
 		t.Fatalf("first init: %v", err)
 	}
-	if _, err := executeCommand(t, "workspace", "init", dir, "--force", "--name", "renamed"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--force", "--name", "renamed"); err != nil {
 		t.Fatalf("force init: %v", err)
 	}
 	body, _ := os.ReadFile(filepath.Join(dir, ".rex", "workspace.yaml"))
@@ -86,7 +117,7 @@ func TestWorkspaceInitRejectsBadID(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	_, err := executeCommand(t, "workspace", "init", dir, "--id", "Not Kebab")
+	_, err := executeCommand(t, "init", dir, "--id", "Not Kebab")
 	if err == nil {
 		t.Fatal("expected kebab-case rejection")
 	}
@@ -100,7 +131,7 @@ func TestWorkspaceInitDerivesIDFromBasename(t *testing.T) {
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if _, err := executeCommand(t, "workspace", "init", dir); err != nil {
+	if _, err := executeCommand(t, "init", dir); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	body, _ := os.ReadFile(filepath.Join(dir, ".rex", "workspace.yaml"))
@@ -115,7 +146,7 @@ func TestWorkspaceShowReadsBack(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "demo", "--name", "Demo"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "demo", "--name", "Demo"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	out, err := executeCommand(t, "workspace", "show", dir)
@@ -133,7 +164,7 @@ func TestWorkspaceShowJSON(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "j", "--name", "J"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "j", "--name", "J"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	out, err := executeCommand(t, "workspace", "show", dir, "--json")
@@ -168,7 +199,7 @@ func TestWorkspaceShowAcceptsWorkspaceFlag(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "f", "--name", "Flag"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "f", "--name", "Flag"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	out, err := executeCommand(t, "workspace", "show", "--workspace", dir)
@@ -184,7 +215,7 @@ func TestWorkspaceInitEmitsWorkspaceCreatedAuditEvent(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "demo", "--name", "Demo Workspace"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "demo", "--name", "Demo Workspace"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 
@@ -234,7 +265,7 @@ func TestWorkspaceInitFiresInstalledHook(t *testing.T) {
 	// the hook, then re-init with --force which fires
 	// workspace.created again.
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "hk", "--name", "HK"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "hk", "--name", "HK"); err != nil {
 		t.Fatalf("first init: %v", err)
 	}
 
@@ -244,7 +275,7 @@ func TestWorkspaceInitFiresInstalledHook(t *testing.T) {
 		t.Fatalf("write hook: %v", err)
 	}
 
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "hk", "--name", "HK", "--force"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "hk", "--name", "HK", "--force"); err != nil {
 		t.Fatalf("second init --force: %v", err)
 	}
 

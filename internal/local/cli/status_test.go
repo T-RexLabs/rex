@@ -25,7 +25,7 @@ func TestStatusReportsWorkspace(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "demo", "--name", "Demo"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "demo", "--name", "Demo"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	// Drop a fake spec, hook, and schedule so the counts are non-zero.
@@ -57,7 +57,7 @@ func TestStatusJSON(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "j", "--name", "J"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "j", "--name", "J"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	out, err := executeCommand(t, "status", "--workspace", dir, "--json")
@@ -77,7 +77,7 @@ func TestStatusReportsZeroRemotesByDefault(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "wr", "--name", "WR"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "wr", "--name", "WR"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	out, err := executeCommand(t, "status", "--workspace", dir)
@@ -94,7 +94,7 @@ func TestStatusListsRemotesWithDraftCounts(t *testing.T) {
 
 	_, hs := startCentral(t)
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "rs", "--name", "RS"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "rs", "--name", "RS"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	// Push the workspace.created event to seed a watermark.
@@ -132,7 +132,7 @@ func TestStatusJSONRemotesIsArray(t *testing.T) {
 
 	_, hs := startCentral(t)
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "rj", "--name", "RJ"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "rj", "--name", "RJ"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	if _, err := executeCommand(t, "push",
@@ -179,7 +179,7 @@ func TestStatusFlagsRebaseNeeded(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "rb", "--name", "RB"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "rb", "--name", "RB"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	// Push diverges. The CLI returns the formatted error; ignore

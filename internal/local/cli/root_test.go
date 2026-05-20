@@ -49,7 +49,7 @@ func TestRootHelpListsTopLevelCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute --help: %v", err)
 	}
-	for _, want := range []string{"workspace", "spec", "run", "hooks", "status"} {
+	for _, want := range []string{"init", "workspace", "spec", "run", "hooks", "status"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--help missing %q\n%s", want, out)
 		}

@@ -48,7 +48,7 @@ func TestSpecRunsListsRunsByFromTask(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir,
+	if _, err := executeCommand(t, "init", dir,
 		"--registry-file", filepath.Join(t.TempDir(), "reg.toml")); err != nil {
 		t.Fatalf("init: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestSpecRunsTaskFilter(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir,
+	if _, err := executeCommand(t, "init", dir,
 		"--registry-file", filepath.Join(t.TempDir(), "reg.toml")); err != nil {
 		t.Fatalf("init: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestSpecRunsJSONOutput(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir,
+	if _, err := executeCommand(t, "init", dir,
 		"--registry-file", filepath.Join(t.TempDir(), "reg.toml")); err != nil {
 		t.Fatalf("init: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestSpecRunsMatchesSpecRefsPrefix(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir,
+	if _, err := executeCommand(t, "init", dir,
 		"--registry-file", filepath.Join(t.TempDir(), "reg.toml")); err != nil {
 		t.Fatalf("init: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestSpecRunsEmptyResult(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir,
+	if _, err := executeCommand(t, "init", dir,
 		"--registry-file", filepath.Join(t.TempDir(), "reg.toml")); err != nil {
 		t.Fatalf("init: %v", err)
 	}

@@ -13,7 +13,7 @@ import (
 func initWorkspaceForRunTest(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "runs", "--name", "Runs"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "runs", "--name", "Runs"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	return dir

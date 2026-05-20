@@ -1,0 +1,47 @@
+# Proposed amendment to specs/workspace.yaml.
+#
+# Companion to cli-amendment-2026-05-20-rex-init.yaml. workspace
+# is the spec that owns the data-model side of the rename:
+# LIFE.1 names the exact command that brings a workspace into
+# existence, and the workspace-init-cli task description does
+# too. Both have to flip together with the CLI shape change so
+# nobody reading the workspace contract is left thinking the
+# canonical form is still `rex workspace init`.
+#
+# Note: LIFE.2 (`rex workspace clone`) is intentionally NOT
+# touched. The clone command stays nested for now; see the cli
+# companion amendment for the reasoning.
+
+target: workspace
+amendment_for: workspace
+amendment_date: 2026-05-20
+state: accepted
+amendment_kind: breaking
+summary: |
+  Update LIFE.1 and the workspace-init-cli task description so
+  they refer to `rex init` rather than `rex workspace init`.
+  Pairs with cli.WS.1 / cli.SHAPE.2 changes in the cli
+  companion amendment.
+
+migration_impact: |
+  Spec prose only — no on-disk format change. The CLI rename
+  itself is the behavioural change; this amendment keeps
+  workspace.yaml's prose aligned with the new canonical
+  command name so future readers don't end up implementing or
+  documenting the wrong form.
+
+changes:
+  - kind: update-requirement
+    component: LIFE
+    requirement_id: "1"
+    from: "A workspace is created by `rex workspace init [path]` which creates `.rex/` in the given path (default: cwd)"
+    to: "A workspace is created by `rex init [path]` which creates `.rex/` in the given path (default: cwd). Mirrors `git init`. `rex workspace init` is retained as a hidden, deprecated alias for one release; see cli.WS.1."
+
+  - kind: update-task-description
+    task_id: workspace-init-cli
+    from: "Implement `rex workspace init` and `rex workspace clone`, mirroring `git init` / `git clone`"
+    to: "Implement `rex init` (the top-level shortcut) and `rex workspace clone`, mirroring `git init` / `git clone`. `rex workspace init` is kept as a hidden, deprecated alias."
+
+verification:
+  - "`go run ./cmd/rex spec validate specs/workspace.yaml` reports zero errors and zero warnings after the fold-in"
+  - "The workspace-init-cli task's `proof[]` entry still points at internal/local/cli/workspace.go (the constructor lives there before and after the move)"

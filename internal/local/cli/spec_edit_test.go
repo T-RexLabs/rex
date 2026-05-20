@@ -47,7 +47,7 @@ func TestSpecEditAppliesEditAndValidates(t *testing.T) {
 	// running them concurrently would let one test race the other's
 	// fake editor script.
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir); err != nil {
+	if _, err := executeCommand(t, "init", dir); err != nil {
 		t.Fatalf("workspace init: %v", err)
 	}
 	if _, err := executeCommand(t, "spec", "create", "--workspace", dir, "demo"); err != nil {
@@ -82,7 +82,7 @@ func TestSpecEditFailsValidationOnBadEdit(t *testing.T) {
 	// running them concurrently would let one test race the other's
 	// fake editor script.
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir); err != nil {
+	if _, err := executeCommand(t, "init", dir); err != nil {
 		t.Fatalf("workspace init: %v", err)
 	}
 	if _, err := executeCommand(t, "spec", "create", "--workspace", dir, "demo"); err != nil {
@@ -107,7 +107,7 @@ func TestSpecEditUnknownIDErrors(t *testing.T) {
 	// running them concurrently would let one test race the other's
 	// fake editor script.
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir); err != nil {
+	if _, err := executeCommand(t, "init", dir); err != nil {
 		t.Fatalf("workspace init: %v", err)
 	}
 	_, err := executeCommand(t, "spec", "edit", "--workspace", dir, "ghost")

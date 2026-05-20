@@ -17,7 +17,7 @@ const DefaultHandle Handle = "default"
 // goroutines in the same process, so two concurrent callers don't
 // both generate-and-save (one succeeds with overwrite=false, the
 // other fails with "already exists"). Cross-process races are
-// outside scope; concurrent `rex workspace init` against the same
+// outside scope; concurrent `rex init` against the same
 // identity store from two processes is exotic enough to leave
 // unspecified.
 var ensureDefaultMu sync.Mutex

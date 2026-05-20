@@ -295,7 +295,7 @@ func TestPushUsesNamedRemoteFromRegistry(t *testing.T) {
 		t.Fatalf("add: %v", err)
 	}
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "ru", "--name", "RU"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "ru", "--name", "RU"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	out, err := executeCommand(t, "push",
@@ -316,7 +316,7 @@ func TestPushUnknownRemoteWithoutURL(t *testing.T) {
 
 	reg := tempRegistry(t)
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "rn", "--name", "RN"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "rn", "--name", "RN"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	_, err := executeCommand(t, "push",
@@ -344,7 +344,7 @@ func TestPushURLOverridesRegistry(t *testing.T) {
 		t.Fatalf("add: %v", err)
 	}
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "ov", "--name", "OV"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "ov", "--name", "OV"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	out, err := executeCommand(t, "push",

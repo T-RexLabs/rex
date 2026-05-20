@@ -220,11 +220,11 @@ Steps:
 	cmd.Flags().StringVar(&identityFlag, "identity-dir", "", "override identity store path (default: platform user-config dir/rex/identity/)")
 	cmd.Flags().String(remotesPathFlag, "", "override registry path (default: platform user-config dir)")
 	addRegistryFlag(cmd)
-	setRelated(cmd, "rex workspace init", "rex remote add", "rex pull")
+	setRelated(cmd, "rex init", "rex remote add", "rex pull")
 	return cmd
 }
 
-// initWorkspaceSkeleton mirrors `rex workspace init`'s on-disk
+// initWorkspaceSkeleton mirrors `rex init`'s on-disk
 // layout step but stops short of writing workspace.yaml +
 // emitting workspace.created. Clone reconstructs both from the
 // pulled events.

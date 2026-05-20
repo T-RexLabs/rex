@@ -39,7 +39,7 @@ tasks:
         path: internal/local/remotes/
 
   - id: workspace-dir-layout
-    description: "Create the `.rex/` skeleton on workspace init and validate it on every command"
+    description: "Create the `.rex/` skeleton on `rex init` (and the back-compat alias `rex workspace init`) and validate it on every command"
     state: done
     references: [WS.1, WS.2, WS.3]
     proof:
@@ -90,7 +90,7 @@ components:
       "1": "User-level files live under `~/.config/rex/` on Linux; `~/Library/Application Support/rex/` on macOS; `%APPDATA%/rex/` on Windows"
       "2": "`config.toml` holds defaults: active identity, default remote, log levels, hook search paths"
       "3": "`identity/` holds ed25519 keypairs as `<handle>.key` (private) and `<handle>.pub` (public); private keys are mode 0600"
-      "4": "`registry.toml` is the only global index of workspaces on this machine; entries are added by `rex workspace init` and `rex workspace clone`"
+      "4": "`registry.toml` is the only global index of workspaces on this machine; entries are added by `rex init` (and its `rex workspace init` back-compat alias) and `rex workspace clone`"
       "4.1": "Registry entries hold workspace ID, on-disk path, originating remote (if any), and last-seen-active timestamp"
       "5": "`remotes.toml` holds named remote shortcuts (URL, alias, token reference) so users don't paste tokens repeatedly"
       "6": "`hooks/<event-name>` is the global hook directory; hooks here fire for every workspace on this machine (see `hooks.yaml`)"

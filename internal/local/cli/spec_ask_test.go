@@ -31,7 +31,7 @@ func TestSpecAskRequiresPrompt(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir,
+	if _, err := executeCommand(t, "init", dir,
 		"--registry-file", filepath.Join(t.TempDir(), "reg.toml")); err != nil {
 		t.Fatalf("init: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestSpecAskRejectsUnknownSpec(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir,
+	if _, err := executeCommand(t, "init", dir,
 		"--registry-file", filepath.Join(t.TempDir(), "reg.toml")); err != nil {
 		t.Fatalf("init: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestSpecAskRejectsBadID(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir,
+	if _, err := executeCommand(t, "init", dir,
 		"--registry-file", filepath.Join(t.TempDir(), "reg.toml")); err != nil {
 		t.Fatalf("init: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestSpecAmendRejectsBadHarness(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir,
+	if _, err := executeCommand(t, "init", dir,
 		"--registry-file", filepath.Join(t.TempDir(), "reg.toml")); err != nil {
 		t.Fatalf("init: %v", err)
 	}

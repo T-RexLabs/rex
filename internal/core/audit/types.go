@@ -17,7 +17,7 @@ import (
 //     registry has a single source of truth)
 //   - future producers: spec.edit, sync.push, auth.success, etc.
 const (
-	// EventTypeWorkspaceCreated fires from `rex workspace init`.
+	// EventTypeWorkspaceCreated fires from `rex init`.
 	EventTypeWorkspaceCreated = "workspace.created"
 
 	// Repo-attach lifecycle (workspace.REPO.4.1). All audit-class
@@ -200,7 +200,7 @@ type WorkspaceCreatedEvent struct {
 	// CreatedBy is the actor string of the identity that ran the
 	// init command (`<role>-<fingerprint>` per
 	// identity.Actor.String). May be empty until a default identity
-	// is auto-created on workspace init; the field is the place for
+	// is auto-created on `rex init`; the field is the place for
 	// that to land additively.
 	CreatedBy string `json:"created_by,omitempty"`
 }

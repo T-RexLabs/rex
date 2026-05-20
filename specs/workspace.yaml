@@ -28,7 +28,7 @@ description: |
 
 tasks:
   - id: workspace-init-cli
-    description: "Implement `rex workspace init` and `rex workspace clone`, mirroring `git init` / `git clone`"
+    description: "Implement `rex init` (the top-level shortcut) and `rex workspace clone`, mirroring `git init` / `git clone`. `rex workspace init` is kept as a hidden, deprecated alias."
     state: done
     note: "init shipped earlier; clone shipped 2026-05-08 in internal/local/cli/workspace_clone.go (event-sourced clone via sync.Pull; git-merged content follows when sync.GIT.* lands)."
     references: [LIFE.1, LIFE.2, LIFE.3]
@@ -72,7 +72,7 @@ components:
   LIFE:
     name: Workspace lifecycle
     requirements:
-      "1": "A workspace is created by `rex workspace init [path]` which creates `.rex/` in the given path (default: cwd)"
+      "1": "A workspace is created by `rex init [path]` which creates `.rex/` in the given path (default: cwd). Mirrors `git init`. `rex workspace init` is retained as a hidden, deprecated alias for one release; see cli.WS.1."
       "2": "A workspace can be cloned from a remote by `rex workspace clone <remote-url> [path]`; this fetches the workspace metadata and registers it locally"
       "3": "A workspace has three states: `active`, `archived`, `deleted`; transitions are recorded as events"
       "3.1": Archive is reversible (`rex workspace unarchive`); delete is reversible only via snapshot restore

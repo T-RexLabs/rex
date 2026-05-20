@@ -1,7 +1,7 @@
 // Package registry is the file-backed list of workspaces the local
 // machine knows about (storage.GLOBAL.4 / workspace.LIFE.4). One
 // registry.toml at ~/.config/rex/registry.toml; entries land via
-// `rex workspace init` and `rex workspace clone`.
+// `rex init` and `rex workspace clone`.
 //
 // workspace.LIFE.5 allows two entries to share metadata.id when
 // they originate from different remotes — the (id, remote) pair is

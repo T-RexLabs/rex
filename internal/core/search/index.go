@@ -63,7 +63,7 @@ type Index struct {
 
 // Open returns an Index backed by .rex/index.sqlite under the
 // supplied workspace root. The file is created on first call. The
-// directory ".rex/" must already exist (workspace init handles this).
+// directory ".rex/" must already exist (`rex init` handles this).
 func Open(workspaceRoot string) (*Index, error) {
 	rexDir := filepath.Join(workspaceRoot, ".rex")
 	if _, err := os.Stat(rexDir); err != nil {

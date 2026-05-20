@@ -29,7 +29,7 @@
 // Workspace lifecycle:
 //
 //	workspace.created       payload: WorkspaceCreatedEvent
-//	  fires from `rex workspace init` after .rex/ is written.
+//	  fires from `rex init` after .rex/ is written.
 //	workspace.archived      payload: WorkspaceStateChangedEvent
 //	workspace.unarchived    payload: WorkspaceStateChangedEvent
 //	workspace.deleted       payload: WorkspaceStateChangedEvent

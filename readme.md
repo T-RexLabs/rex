@@ -54,7 +54,7 @@ Requires Go 1.25+. Local persistence is SQLite via `modernc.org/sqlite` (no syst
 
 ```sh
 # 1. Bootstrap a workspace at the current directory.
-rex workspace init
+rex init
 
 # 2. Author a spec from the template, then validate it.
 rex spec create my-feature

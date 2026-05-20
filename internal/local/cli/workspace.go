@@ -77,16 +77,19 @@ func newWorkspaceCmd() *cobra.Command {
 		Long: `A workspace is a container of intent — repositories, specs, scheduled
 work, hooks, and connected tools that share one identity and one
 event log. See specs/workspace.yaml for the data model.`,
-		Example: `  rex workspace init ./demo --id demo --name Demo
+		Example: `  rex init ./demo --id demo --name Demo
   rex workspace show
   rex workspace reindex --workspace /path/to/ws`,
 	}
 	setRelated(cmd,
-		"rex workspace init",
+		"rex init",
 		"rex workspace show",
 		"rex workspace reindex",
 	)
-	cmd.AddCommand(newWorkspaceInitCmd())
+	// Hidden back-compat alias for `rex init` (cli.WS.1). Slated for
+	// removal one release after 2026-05-20 — see
+	// specs/_proposed/_accepted/cli-amendment-2026-05-20-rex-init.yaml.
+	cmd.AddCommand(newInitCmd(true))
 	cmd.AddCommand(newWorkspaceCloneCmd())
 	cmd.AddCommand(newWorkspaceShowCmd())
 	cmd.AddCommand(newWorkspaceListCmd())
@@ -417,7 +420,7 @@ type workspaceSettings struct {
 	Description string `yaml:"description,omitempty"`
 }
 
-// initSubdirs are the directories `rex workspace init` creates inside
+// initSubdirs are the directories `rex init` creates inside
 // .rex/. Files (events.log, index.sqlite) are created lazily by the
 // subsystems that own them; init only ensures the directory skeleton
 // exists per storage.WS.2.
@@ -428,7 +431,12 @@ var initSubdirs = []string{
 	"hooks",
 }
 
-func newWorkspaceInitCmd() *cobra.Command {
+// newInitCmd builds the workspace-init command. The canonical surface
+// is `rex init` (cli.WS.1, workspace.LIFE.1); when hiddenAlias is
+// true, the same command is wired under `rex workspace` as a hidden,
+// deprecated alias for one release per
+// specs/_proposed/_accepted/cli-amendment-2026-05-20-rex-init.yaml.
+func newInitCmd(hiddenAlias bool) *cobra.Command {
 	var (
 		idFlag   string
 		nameFlag string
@@ -443,9 +451,9 @@ target path; --id and --name override.
 
 Refuses to clobber an existing .rex/ directory; use --force when you
 mean it.`,
-		Example: `  rex workspace init
-  rex workspace init ./demo --id demo --name Demo
-  rex workspace init ./demo --force`,
+		Example: `  rex init
+  rex init ./demo --id demo --name Demo
+  rex init ./demo --force`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := "."
@@ -543,6 +551,10 @@ mean it.`,
 	cmd.Flags().Bool("force", false, "overwrite an existing .rex/ directory at the target")
 	cmd.Flags().String("identity-dir", "", "override identity store path (default: platform user-config dir/rex/identity/)")
 	addRegistryFlag(cmd)
+	if hiddenAlias {
+		cmd.Hidden = true
+		cmd.Deprecated = "use `rex init` instead; this alias will be removed in a future release."
+	}
 	return cmd
 }
 

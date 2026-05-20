@@ -10,7 +10,7 @@ import (
 func initSpecCreateWorkspace(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "scw", "--name", "SCW"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "scw", "--name", "SCW"); err != nil {
 		t.Fatalf("workspace init: %v", err)
 	}
 	return dir

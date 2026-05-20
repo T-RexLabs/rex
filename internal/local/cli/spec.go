@@ -364,7 +364,7 @@ events.log, and the local git repo. Per spec-format.VAL.5: exit
 			// them; the per-proof checks emit warnings, not errors).
 			// requiring .rex/ at the workspace root would block
 			// running verify against a fresh clone of a repo that
-			// hasn't been `rex workspace init`'d, which is exactly
+			// hasn't been `rex init`'d, which is exactly
 			// the regression-guard use case this command exists for.
 			root, err := requiredWorkspaceRoot(cmd)
 			if err != nil {

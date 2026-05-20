@@ -11,7 +11,7 @@ import (
 func initSnapshotWorkspace(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "snap", "--name", "Snap"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "snap", "--name", "Snap"); err != nil {
 		t.Fatalf("workspace init: %v", err)
 	}
 	// Drop a spec into specs/ so create has something interesting

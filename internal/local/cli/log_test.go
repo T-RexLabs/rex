@@ -12,7 +12,7 @@ import (
 func initLogWorkspace(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir, "--id", "lt", "--name", "LT"); err != nil {
+	if _, err := executeCommand(t, "init", dir, "--id", "lt", "--name", "LT"); err != nil {
 		t.Fatalf("workspace init: %v", err)
 	}
 	return dir

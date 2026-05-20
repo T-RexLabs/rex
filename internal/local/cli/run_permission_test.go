@@ -72,7 +72,7 @@ func TestRunApproveResolvesPendingRequest(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir,
+	if _, err := executeCommand(t, "init", dir,
 		"--registry-file", filepath.Join(t.TempDir(), "reg.toml")); err != nil {
 		t.Fatalf("init: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestRunDenyResolvesPendingRequest(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir,
+	if _, err := executeCommand(t, "init", dir,
 		"--registry-file", filepath.Join(t.TempDir(), "reg.toml")); err != nil {
 		t.Fatalf("init: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestRunApproveErrorsWhenNoPending(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir,
+	if _, err := executeCommand(t, "init", dir,
 		"--registry-file", filepath.Join(t.TempDir(), "reg.toml")); err != nil {
 		t.Fatalf("init: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestRunApprovePicksMostRecentPending(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir,
+	if _, err := executeCommand(t, "init", dir,
 		"--registry-file", filepath.Join(t.TempDir(), "reg.toml")); err != nil {
 		t.Fatalf("init: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestRunApproveRespectsRequestIDFlag(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if _, err := executeCommand(t, "workspace", "init", dir,
+	if _, err := executeCommand(t, "init", dir,
 		"--registry-file", filepath.Join(t.TempDir(), "reg.toml")); err != nil {
 		t.Fatalf("init: %v", err)
 	}

@@ -19,7 +19,7 @@ import (
 // initWorkspace boots a workspace at dir and returns dir for chaining.
 func initWorkspace(t *testing.T, dir string) string {
 	t.Helper()
-	if _, err := executeCommand(t, "workspace", "init", dir); err != nil {
+	if _, err := executeCommand(t, "init", dir); err != nil {
 		t.Fatalf("workspace init: %v", err)
 	}
 	return dir

@@ -18,7 +18,7 @@ func TestQuietSuppressesConfirmations(t *testing.T) {
 	registryPath := filepath.Join(t.TempDir(), "reg.toml")
 
 	// workspace init: noisy by default.
-	out, err := executeCommand(t, "workspace", "init", dir,
+	out, err := executeCommand(t, "init", dir,
 		"--registry-file", registryPath)
 	if err != nil {
 		t.Fatalf("init: %v", err)
