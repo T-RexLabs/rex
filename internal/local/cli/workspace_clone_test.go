@@ -1,3 +1,5 @@
+//go:build central_e2e
+
 package cli
 
 import (

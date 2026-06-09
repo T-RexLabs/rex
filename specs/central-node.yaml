@@ -45,9 +45,9 @@ tasks:
     references: [DB.1, DB.2, DB.3]
     proof:
       - kind: code
-        path: internal/central/server/store_postgres.go
+        path: rex-centralized/central/server/store_postgres.go
       - kind: test
-        path: internal/central/server/store_postgres_test.go
+        path: rex-centralized/central/server/store_postgres_test.go
 
   - id: tenant-routing
     description: "Implement the tenant-routing middleware that scopes every request to an org based on the authenticated identity's membership and the workspace->org table; add the workspaces table, the org_id column on events, and the migration backfill via the default org seed. Defense-in-depth Row Level Security policies land separately under tenant-rls."
@@ -55,9 +55,9 @@ tasks:
     references: [TENANT.1, TENANT.2, TENANT.3]
     proof:
       - kind: code
-        path: internal/central/server/orgs.go
+        path: rex-centralized/central/server/orgs.go
       - kind: test
-        path: internal/central/server/orgs_test.go
+        path: rex-centralized/central/server/orgs_test.go
 
   - id: tenant-rls
     description: "Add Postgres Row Level Security policies on the multi-tenant tables (events, workspaces) and refactor PostgresStore methods to set app.current_org_id per transaction; defense-in-depth on top of the middleware-level scoping that ships with tenant-routing"
@@ -66,7 +66,7 @@ tasks:
     references: [DB.2]
     proof:
       - kind: test
-        path: internal/central/server/rls_test.go
+        path: rex-centralized/central/server/rls_test.go
 
   - id: admin-bootstrap
     description: "Implement the first-run admin bootstrap flow (initial org, initial admin identity)"
@@ -74,9 +74,9 @@ tasks:
     references: [BOOT.1, BOOT.2]
     proof:
       - kind: code
-        path: internal/central/server/bootstrap.go
+        path: rex-centralized/central/server/bootstrap.go
       - kind: test
-        path: internal/central/server/bootstrap_test.go
+        path: rex-centralized/central/server/bootstrap_test.go
 
   - id: backups-and-restore
     description: "Implement scheduled Postgres dumps and a `rex-central restore` flow"
@@ -84,9 +84,9 @@ tasks:
     references: [BACKUP.1, BACKUP.2, BACKUP.3]
     proof:
       - kind: code
-        path: internal/central/backup/backup.go
+        path: rex-centralized/central/backup/backup.go
       - kind: test
-        path: internal/central/backup/backup_test.go
+        path: rex-centralized/central/backup/backup_test.go
 
   - id: health-endpoints
     description: "Implement /health, /ready, and /metrics (Prometheus format) plus the org-independent metric subset"
@@ -94,11 +94,11 @@ tasks:
     references: [HEALTH.1, HEALTH.2]
     proof:
       - kind: code
-        path: internal/central/server/health.go
+        path: rex-centralized/central/server/health.go
       - kind: code
-        path: internal/central/server/metrics.go
+        path: rex-centralized/central/server/metrics.go
       - kind: test
-        path: internal/central/server/health_test.go
+        path: rex-centralized/central/server/health_test.go
 
   - id: structured-logging
     description: "Migrate the central-node binary to structured JSON logs on stdout; one log line per significant operation; redact secrets at the logger boundary"
@@ -106,9 +106,9 @@ tasks:
     references: [HEALTH.3]
     proof:
       - kind: code
-        path: internal/central/server/log.go
+        path: rex-centralized/central/server/log.go
       - kind: test
-        path: internal/central/server/log_test.go
+        path: rex-centralized/central/server/log_test.go
 
 components:
 

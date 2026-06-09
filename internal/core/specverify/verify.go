@@ -56,6 +56,14 @@ type Options struct {
 	// gitRefExists overrides exec.Command-based git checks; tests
 	// inject this so they don't depend on the host having git.
 	gitRefExists func(ref string) (bool, error)
+	// pathIgnored reports whether a workspace-relative path is
+	// intentionally git-ignored. A missing path that is ignored is
+	// a parked/external tree not present in this checkout (e.g. a
+	// module being broken out), so its absence is a warning rather
+	// than a hard error — mirroring the run-id clone-tolerance in
+	// PROOF.3. Tests inject this; the default shells to
+	// `git check-ignore` in GitDir.
+	pathIgnored func(rel string) bool
 }
 
 // Verify walks every structured proof entry across every task in
@@ -82,6 +90,9 @@ func Verify(ws *specfmt.Workspace, opts Options) specfmt.Result {
 	}
 	if opts.gitRefExists == nil {
 		opts.gitRefExists = makeGitRefLookup(opts.GitDir)
+	}
+	if opts.pathIgnored == nil {
+		opts.pathIgnored = makePathIgnoredLookup(opts.GitDir)
 	}
 
 	v := &verifier{
@@ -164,6 +175,19 @@ func (v *verifier) checkPathExists(doc *specfmt.Document, path, rel string) bool
 		return true
 	}
 	if errors.Is(err, fs.ErrNotExist) {
+		// A missing path that is intentionally git-ignored is a
+		// parked/external tree not present in this checkout (e.g. a
+		// module being broken out). Treat it like a not-yet-synced
+		// run (PROOF.3): a warning in both modes, not a hard error,
+		// so partial checkouts (CI, fresh clones) still pass while
+		// genuine path drift on tracked code stays a strict error.
+		if v.opts.pathIgnored(rel) {
+			v.emit(doc, path+".path", "parked-path",
+				fmt.Sprintf("path %q is git-ignored and absent from this checkout — parked/external, not verified here (spec-format.PROOF.2)", rel),
+				specfmt.SeverityWarning,
+			)
+			return false
+		}
 		v.emit(doc, path+".path", "missing-path",
 			fmt.Sprintf("path %q does not exist on disk (spec-format.PROOF.2)", rel),
 			v.strictOrLenient(),
@@ -353,6 +377,29 @@ func makeGitRefLookup(gitDir string) func(string) (bool, error) {
 			return false, err
 		}
 		return true, nil
+	}
+}
+
+// makePathIgnoredLookup runs `git check-ignore -q <rel>` in gitDir.
+// Returns true iff git reports the path as ignored (exit 0). git
+// check-ignore matches on the pathname rules, so it works for paths
+// that don't exist on disk — exactly the parked-tree case. Empty
+// gitDir (or any git failure) yields false, so absence stays a
+// strict error unless git can positively confirm the ignore rule.
+func makePathIgnoredLookup(gitDir string) func(string) bool {
+	if gitDir == "" {
+		return func(string) bool { return false }
+	}
+	return func(rel string) bool {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "git", "check-ignore", "-q", "--", rel)
+		cmd.Dir = gitDir
+		cmd.Stdout = io.Discard
+		cmd.Stderr = io.Discard
+		// Exit 0 = ignored; exit 1 = not ignored; >1 = git error.
+		// Only a clean exit 0 counts as "parked".
+		return cmd.Run() == nil
 	}
 }
 

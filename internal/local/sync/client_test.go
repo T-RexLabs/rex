@@ -1,3 +1,5 @@
+//go:build central_e2e
+
 package sync
 
 import (
@@ -9,8 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/asabla/rex/internal/central/server"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
+	"github.com/asabla/rex/rex-centralized/central/server"
 )
 
 func newTestServer(t *testing.T) (*server.Server, *httptest.Server) {
