@@ -86,15 +86,15 @@ tasks:
     references: [CENTRAL-LAYOUT.1, STACK.1, STACK.2]
     proof:
       - kind: code
-        path: internal/central/web/server.go
+        path: rex-centralized/central/web/server.go
       - kind: code
-        path: cmd/rex-central/main.go
+        path: rex-centralized/cmd/rex-central/main.go
       - kind: code
-        path: internal/central/server/server.go
+        path: rex-centralized/central/server/server.go
       - kind: test
-        path: internal/central/web/server_test.go
+        path: rex-centralized/central/web/server_test.go
       - kind: test
-        path: internal/central/server/server_test.go
+        path: rex-centralized/central/server/server_test.go
 
   - id: central-browser-auth
     description: "Implement the browser session: /login, /auth/redeem, the rex_session cookie, the cookie-or-bearer middleware, and logout. Add the rex remote login --challenge <s> CLI subcommand that signs the challenge"
@@ -103,17 +103,17 @@ tasks:
     references: [CENTRAL-AUTH.1, CENTRAL-AUTH.2, CENTRAL-AUTH.3, CENTRAL-AUTH.4, CENTRAL-AUTH.5]
     proof:
       - kind: code
-        path: internal/central/server/session.go
+        path: rex-centralized/central/server/session.go
       - kind: code
-        path: internal/central/web/server.go
+        path: rex-centralized/central/web/server.go
       - kind: code
         path: internal/local/cli/remote_login.go
       - kind: code
         path: internal/core/sync/proto/login.go
       - kind: test
-        path: internal/central/server/session_test.go
+        path: rex-centralized/central/server/session_test.go
       - kind: test
-        path: internal/central/web/server_test.go
+        path: rex-centralized/central/web/server_test.go
       - kind: test
         path: internal/local/cli/remote_login_test.go
 
@@ -128,13 +128,13 @@ tasks:
       - kind: code
         path: internal/web/resolver.go
       - kind: code
-        path: internal/central/web/specs.go
+        path: rex-centralized/central/web/specs.go
       - kind: code
         path: internal/local/web/specs.go
       - kind: code
-        path: cmd/rex-central/main.go
+        path: rex-centralized/cmd/rex-central/main.go
       - kind: test
-        path: internal/central/web/specs_test.go
+        path: rex-centralized/central/web/specs_test.go
 
   - id: central-read-side-runs-audit
     description: "Lift /runs (list), /runs/<run-id> (terminal-state only — no live SSE; that's central-live-run-watching), and /audit handlers into internal/web/ behind a RunsProjection + AuditProjection. Central implementations read from the central event store (Postgres). The live-tail UI degrades to a banner on /runs/<run-id> for non-terminal runs"
@@ -149,15 +149,15 @@ tasks:
       - kind: code
         path: internal/web/templates/pages/runs_central_detail.tmpl
       - kind: code
-        path: internal/central/web/runs.go
+        path: rex-centralized/central/web/runs.go
       - kind: code
-        path: internal/central/web/audit.go
+        path: rex-centralized/central/web/audit.go
       - kind: code
         path: internal/local/web/audit.go
       - kind: code
-        path: cmd/rex-central/main.go
+        path: rex-centralized/cmd/rex-central/main.go
       - kind: test
-        path: internal/central/web/runs_audit_test.go
+        path: rex-centralized/central/web/runs_audit_test.go
 
   - id: central-read-side-search-amendments
     description: "Lift /search and /amendments + /amendments/<stem> into internal/web/ behind SearchProjection and AmendmentsProjection. Central search hits the Postgres FTS index (central-node.DB.4); amendments project from the GitStore"
@@ -172,15 +172,15 @@ tasks:
       - kind: code
         path: internal/core/specamend/specamend.go
       - kind: code
-        path: internal/central/web/amendments.go
+        path: rex-centralized/central/web/amendments.go
       - kind: code
-        path: internal/central/web/search.go
+        path: rex-centralized/central/web/search.go
       - kind: code
         path: internal/local/web/amendments.go
       - kind: code
         path: internal/local/web/search.go
       - kind: test
-        path: internal/central/web/amendments_search_test.go
+        path: rex-centralized/central/web/amendments_search_test.go
 
   - id: central-read-side-remotes-settings
     description: "Lift /remotes and /settings into internal/web/ as read-only on central per the 2026-05-16 amendment. Local shell continues to surface per-machine config (identity, log levels, hook search paths); the shared handler hides those sections when the resolver reports no per-machine context"
@@ -195,13 +195,13 @@ tasks:
       - kind: code
         path: internal/local/remotes/registry.go
       - kind: code
-        path: internal/central/web/remotes.go
+        path: rex-centralized/central/web/remotes.go
       - kind: code
-        path: internal/central/web/settings.go
+        path: rex-centralized/central/web/settings.go
       - kind: code
         path: internal/local/web/remotes.go
       - kind: test
-        path: internal/central/web/remotes_settings_test.go
+        path: rex-centralized/central/web/remotes_settings_test.go
 
   - id: central-workspaces-index
     description: "Implement /orgs/<org-id>/workspaces — the per-org workspace index page that lists every workspace the central knows about for the org, with a click-through to the workspace overview. Uses the existing workspaces table + tenant routing"
@@ -214,9 +214,9 @@ tasks:
       - kind: code
         path: internal/web/templates/pages/workspaces_index.tmpl
       - kind: code
-        path: internal/central/web/workspaces.go
+        path: rex-centralized/central/web/workspaces.go
       - kind: test
-        path: internal/central/web/workspaces_test.go
+        path: rex-centralized/central/web/workspaces_test.go
 
   - id: central-live-run-watching
     description: "Implement live SSE on central's /orgs/<org-id>/workspaces/<ws-id>/runs/<run-id> plus inline permission-prompt POST handling. Gated: requires either central-side execution (v1.5 per overview.SCOPE.1) or a push-style protocol from a local executor to its synced central beyond the existing /sync/events terminal-event path. v1 ships with the terminal-state-only renderer from central-read-side-runs-audit and a 'live tail not available on central in v1' notice"
@@ -239,13 +239,13 @@ tasks:
       - kind: code
         path: internal/web/templates/pages/org_roles.tmpl
       - kind: code
-        path: internal/central/web/orgs.go
+        path: rex-centralized/central/web/orgs.go
       - kind: code
-        path: internal/central/server/orgs.go
+        path: rex-centralized/central/server/orgs.go
       - kind: code
-        path: cmd/rex-central/orgs_adapter.go
+        path: rex-centralized/cmd/rex-central/orgs_adapter.go
       - kind: test
-        path: internal/central/web/orgs_test.go
+        path: rex-centralized/central/web/orgs_test.go
 
   - id: central-placeholder-surfaces
     description: "Ship shell-only /orgs/<id>/idp and /orgs/<id>/encryption-keys pages that explain the feature is deferred and link to the tracking spec/issue. No mutation controls. Add the 'CENTRAL ONLY' banner per CENTRAL.2"
@@ -258,9 +258,9 @@ tasks:
       - kind: code
         path: internal/web/templates/pages/placeholder_central.tmpl
       - kind: code
-        path: internal/central/web/placeholders.go
+        path: rex-centralized/central/web/placeholders.go
       - kind: test
-        path: internal/central/web/placeholders_test.go
+        path: rex-centralized/central/web/placeholders_test.go
 
   - id: live-run-watching
     description: "Implement the live-run-watching SSE endpoint and the corresponding HTML view that streams transcript and permission prompts"

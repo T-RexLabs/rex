@@ -4,10 +4,10 @@
 #
 # Two-stage: a Go builder produces a static-cgo-free binary, then
 # distroless ships it. The binary is the same Go module the local
-# rex CLI compiles from; per overview.SYS.1 the central is "the
-# same Go module as the local-node binary; a build flag selects
-# which surfaces are compiled in" — today that flag is just the
-# choice of cmd/rex-central as the build target.
+# rex CLI compiles from; the central node source is parked under
+# rex-centralized/ while it is being broken out into its own service
+# (git-ignored, but present in the build context). The build target
+# is rex-centralized/cmd/rex-central.
 
 FROM golang:1.25-alpine AS builder
 WORKDIR /src
@@ -23,7 +23,7 @@ COPY . .
 # index — both cgo-free, so CGO_ENABLED=0 keeps the image static.
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=$(go env GOARCH) \
     go build -trimpath -ldflags="-s -w" \
-    -o /out/rex-central ./cmd/rex-central
+    -o /out/rex-central ./rex-centralized/cmd/rex-central
 
 # Runtime stage.
 #

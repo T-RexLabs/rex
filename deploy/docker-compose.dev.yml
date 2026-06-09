@@ -26,7 +26,7 @@ services:
     build: !reset null
     user: "0:0" # so go can write its module cache to a bind mount
     working_dir: /src
-    entrypoint: ["go", "run", "./cmd/rex-central", "serve"]
+    entrypoint: ["go", "run", "./rex-centralized/cmd/rex-central", "serve"]
     volumes:
       - ..:/src
       - go-mod-cache:/go/pkg/mod

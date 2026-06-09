@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/asabla/rex/internal/central/server"
+	"github.com/asabla/rex/rex-centralized/central/server"
 	"github.com/asabla/rex/internal/core/identity"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
 )

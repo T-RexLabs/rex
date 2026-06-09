@@ -40,3 +40,11 @@ coverage.html
 # Local env files
 .env
 .env.local
+
+# Parked central node. The centralized server code lives here while it
+# is being broken out into its own service; it is git-ignored on purpose
+# so the open-source local node (cmd/rex + shared core) is what's tracked.
+# Still part of the same Go module and present on disk, so the *-central
+# Makefile targets, `make test-pg`, and `make web-dev` work locally.
+# DO NOT push this directory; the git remote is mid-migration.
+/rex-centralized/

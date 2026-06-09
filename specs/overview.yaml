@@ -35,7 +35,7 @@ tasks:
       - kind: code
         path: cmd/rex/
       - kind: code
-        path: cmd/rex-central/
+        path: rex-centralized/cmd/rex-central/
       - kind: code
         path: .github/workflows/ci.yml
 

@@ -38,9 +38,9 @@ tasks:
     references: [AUTH.1, AUTH.2, AUTH.3]
     proof:
       - kind: code
-        path: internal/central/server/auth.go
+        path: rex-centralized/central/server/auth.go
       - kind: test
-        path: internal/central/server/auth_test.go
+        path: rex-centralized/central/server/auth_test.go
 
   - id: token-lifecycle
     description: Implement short-lived access tokens, refresh tokens, and the server-side revocation list
@@ -49,13 +49,13 @@ tasks:
     references: [TOKEN.1, TOKEN.2, TOKEN.3, TOKEN.4]
     proof:
       - kind: code
-        path: internal/central/server/auth.go
+        path: rex-centralized/central/server/auth.go
       - kind: code
-        path: internal/central/server/server.go
+        path: rex-centralized/central/server/server.go
       - kind: code
         path: internal/core/sync/proto/types.go
       - kind: test
-        path: internal/central/server/auth_token_test.go
+        path: rex-centralized/central/server/auth_token_test.go
 
   - id: rbac-engine
     description: Implement the RBAC engine with role defaults and fine-grained scoping
@@ -68,11 +68,11 @@ tasks:
       - kind: test
         path: internal/core/rbac/rbac_test.go
       - kind: code
-        path: internal/central/server/rbac.go
+        path: rex-centralized/central/server/rbac.go
       - kind: code
-        path: internal/central/server/orgs.go
+        path: rex-centralized/central/server/orgs.go
       - kind: test
-        path: internal/central/server/rbac_test.go
+        path: rex-centralized/central/server/rbac_test.go
 
   - id: org-model-central
     description: "Implement orgs, org_memberships, and org_invites as central-only entities; seed a default org on first multi-tenant migration so existing single-tenant deployments keep working until BOOT.* ships real org creation"
@@ -80,9 +80,9 @@ tasks:
     references: [ORG.1, ORG.2, ORG.3, ORG.4]
     proof:
       - kind: code
-        path: internal/central/server/orgs.go
+        path: rex-centralized/central/server/orgs.go
       - kind: test
-        path: internal/central/server/orgs_test.go
+        path: rex-centralized/central/server/orgs_test.go
 
   - id: invite-redeem-flow
     description: |
@@ -99,21 +99,21 @@ tasks:
     note: "Shipped 2026-05-17 against the same-day invite-redeem amendment. Schema step 8 adds authorized_keys (no org scope; keys are user-global per AUTH.2.2). PostgresStore grows PeekInvite / RedeemInvite / RegisterAuthorizedKey / ListAuthorizedKeys; LoadAuthorizedKeysIntoKeystore overlays DB rows onto the TOML-loaded keystore at startup. cmd/rex-central's postgresInviteRedeemer adapter wraps the storage txn with in-memory keystore overlay (so a freshly-redeemed key authenticates immediately without restart) + audit emission (identity.key_registered when KeyRegistered, org.member.joined when MemberJoined). Web handlers GET /invites/<token> + POST /invites/redeem live in internal/central/web/invites.go and are listed in isPublicWebPath (the invite token IS the credential — the session gate would loop). Coverage: 11 storage tests under PG + 7 web handler tests."
     proof:
       - kind: code
-        path: internal/central/server/orgs.go
+        path: rex-centralized/central/server/orgs.go
       - kind: code
-        path: internal/central/server/authorized_keys.go
+        path: rex-centralized/central/server/authorized_keys.go
       - kind: code
-        path: internal/central/server/store_postgres.go
+        path: rex-centralized/central/server/store_postgres.go
       - kind: code
-        path: internal/central/web/invites.go
+        path: rex-centralized/central/web/invites.go
       - kind: code
-        path: cmd/rex-central/redeem_adapter.go
+        path: rex-centralized/cmd/rex-central/redeem_adapter.go
       - kind: test
-        path: internal/central/server/orgs_mutate_test.go
+        path: rex-centralized/central/server/orgs_mutate_test.go
       - kind: test
-        path: internal/central/server/authorized_keys_test.go
+        path: rex-centralized/central/server/authorized_keys_test.go
       - kind: test
-        path: internal/central/web/invites_test.go
+        path: rex-centralized/central/web/invites_test.go
 
 components:
 
