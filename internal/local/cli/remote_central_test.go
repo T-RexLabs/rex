@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -12,6 +13,18 @@ import (
 // `central_e2e` build tag. The registry-only remote tests (add/list/
 // show/remove/validation) stay in remote_test.go in the default suite.
 // They share the tempRegistry + executeCommand* helpers defined there.
+
+func executeCommandWithStdin(t *testing.T, stdin string, args ...string) (string, error) {
+	t.Helper()
+	cmd := NewRootCmd("test")
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetIn(strings.NewReader(stdin))
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+	return buf.String(), err
+}
 
 func TestRemoteTestRecordsFingerprint(t *testing.T) {
 	t.Parallel()

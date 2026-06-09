@@ -26,22 +26,6 @@ func executeCommandVersion(t *testing.T, version string, args ...string) (string
 	return buf.String(), err
 }
 
-// executeCommandWithStdin runs the root command with a pre-populated
-// stdin so confirmation-prompt-style commands (e.g. rex remote add)
-// can be exercised non-interactively. stdin may be empty — readers
-// then see immediate EOF, which the prompt treats as decline.
-func executeCommandWithStdin(t *testing.T, stdin string, args ...string) (string, error) {
-	t.Helper()
-	cmd := NewRootCmd("test")
-	buf := new(bytes.Buffer)
-	cmd.SetOut(buf)
-	cmd.SetErr(buf)
-	cmd.SetIn(strings.NewReader(stdin))
-	cmd.SetArgs(args)
-	err := cmd.Execute()
-	return buf.String(), err
-}
-
 func TestRootHelpListsTopLevelCommands(t *testing.T) {
 	t.Parallel()
 
