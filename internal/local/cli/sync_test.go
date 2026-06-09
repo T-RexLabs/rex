@@ -1,3 +1,5 @@
+//go:build central_e2e
+
 package cli
 
 import (
@@ -9,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/asabla/rex/rex-centralized/central/server"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
+	"github.com/asabla/rex/rex-centralized/central/server"
 )
 
 func startCentral(t *testing.T) (*server.Server, *httptest.Server) {

@@ -124,9 +124,9 @@ tasks:
       - kind: code
         path: internal/local/cli/sync.go
       - kind: test
-        path: internal/local/sync/draft_state_test.go
+        path: internal/local/sync/draft_state_central_test.go
       - kind: test
-        path: internal/local/cli/status_test.go
+        path: internal/local/cli/status_central_test.go
         name: TestStatusFlagsRebaseNeeded
 
   - id: bootstrap-flow

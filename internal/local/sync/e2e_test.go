@@ -1,3 +1,5 @@
+//go:build central_e2e
+
 package sync
 
 import (
@@ -10,8 +12,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/asabla/rex/rex-centralized/central/server"
 	"github.com/asabla/rex/internal/core/storage/eventlog"
+	"github.com/asabla/rex/rex-centralized/central/server"
 )
 
 // TestTwoLocalsViaCentralRoundTrip wires up one in-process central

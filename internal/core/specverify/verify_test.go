@@ -94,6 +94,49 @@ func TestVerifyCodePathMissingLenientWarning(t *testing.T) {
 	}
 }
 
+// TestVerifyCodePathMissingButIgnoredIsWarning covers the
+// parked/external-tree case: a missing path that git reports as
+// ignored is absent-by-design (e.g. a module being broken out), so
+// even in strict mode it downgrades to a warning rather than failing
+// a partial checkout — mirroring the run-id clone-tolerance.
+func TestVerifyCodePathMissingButIgnoredIsWarning(t *testing.T) {
+	t.Parallel()
+	ws, root := makeWorkspaceWithSpec(t, "done", []specfmt.ProofEntry{
+		{Kind: specfmt.ProofKindCode, Path: "rex-centralized/central/server/server.go"},
+	})
+	res := Verify(ws, Options{
+		WorkspaceRoot: root,
+		pathIgnored:   func(string) bool { return true },
+	})
+	if res.HasErrors() {
+		t.Fatalf("git-ignored missing path should warn, not error: %v", res.Issues)
+	}
+	if len(res.Warnings()) != 1 {
+		t.Fatalf("expected 1 parked-path warning; got %v", res.Issues)
+	}
+	if res.Warnings()[0].Category != "parked-path" {
+		t.Fatalf("wrong category: %v", res.Warnings()[0])
+	}
+}
+
+// TestVerifyCodePathMissingNotIgnoredStaysError confirms the
+// downgrade is gated on the ignore check: a missing path that is NOT
+// git-ignored is still a strict error, so genuine path drift on
+// tracked code keeps failing.
+func TestVerifyCodePathMissingNotIgnoredStaysError(t *testing.T) {
+	t.Parallel()
+	ws, root := makeWorkspaceWithSpec(t, "done", []specfmt.ProofEntry{
+		{Kind: specfmt.ProofKindCode, Path: "internal/missing.go"},
+	})
+	res := Verify(ws, Options{
+		WorkspaceRoot: root,
+		pathIgnored:   func(string) bool { return false },
+	})
+	if !res.HasErrors() {
+		t.Fatalf("non-ignored missing path must stay a strict error; got %v", res.Issues)
+	}
+}
+
 // TestVerifyTestFuncFound greps for the test function name and
 // passes when present.
 func TestVerifyTestFuncFound(t *testing.T) {
