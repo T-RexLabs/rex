@@ -1,0 +1,51 @@
+# PROPOSED AMENDMENT — awaiting human signoff. Do not fold into specs/spec-format.yaml until approved.
+# Spec: spec-format
+# Date: 2026-06-09
+# Status: proposed
+
+metadata:
+  target_spec: spec-format
+  motivation: |
+    The central node is parked under rex-centralized/ (git-ignored) while it is
+    broken out into its own service. Specs still cite central code as `kind: code`
+    / `kind: test` proof. On a partial checkout (CI, a fresh clone) those paths are
+    absent, so strict PROOF.2 turns every central proof into a hard error and
+    `rex spec verify` fails on the whole tracked spec set.
+
+    This is the same situation PROOF.3 already carves out for `kind: run`: a fresh
+    clone "may not have synced the run yet", so a missing run is a warning in both
+    modes rather than an error. A git-ignored proof path is the code-evidence
+    analogue: evidence that lives in a parked/external tree not present here.
+
+changes:
+
+  - requirement: PROOF.2
+    current: |
+      `kind: code` and `kind: test` entries have a required `path` field
+      (workspace-relative). The validator requires the path to exist on disk;
+      missing paths are a strict error and a lenient warning.
+    proposed: |
+      `kind: code` and `kind: test` entries have a required `path` field
+      (workspace-relative). The validator requires the path to exist on disk;
+      missing paths are a strict error and a lenient warning — EXCEPT when the
+      path is intentionally git-ignored, in which case it names a parked/external
+      tree absent from this checkout and the miss is a warning in both modes
+      (category `parked-path`), mirroring PROOF.3's clone-tolerance. `rex spec
+      verify` decides this via `git check-ignore`; with no git available the path
+      is treated as not-ignored, so the absence stays a strict error.
+    rationale: |
+      Keeps the strict typo/drift guard for tracked code (a missing, non-ignored
+      path is still an error) while letting partial checkouts pass. Bounds the
+      relaxation precisely to paths git is told to ignore — not "any missing path".
+
+implementation_status: |
+  Already implemented (committed) so CI passes while central is parked:
+  internal/core/specverify/verify.go (pathIgnored hook + makePathIgnoredLookup,
+  parked-path warning), two unit tests in verify_test.go. This file documents the
+  contract change for signoff; once approved, fold the wording into PROOF.2 and
+  move this file to specs/_accepted/.
+
+reversibility: |
+  When central becomes its own module (the real extraction), its specs/proofs
+  travel with it and this carve-out is no longer exercised by the tracked set,
+  though the behavior remains correct and harmless to keep.
